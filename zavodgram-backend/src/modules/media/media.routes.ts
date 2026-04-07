@@ -231,4 +231,70 @@ router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, 
   } catch (err) { next(err); }
 });
 
+const attachSchema = z.object({ chatId: z.string().uuid(), messageId: z.string().uuid() });
+
+router.post('/:id/attach', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { chatId, messageId } = attachSchema.parse(req.body);
+    const mediaId = req.params.id;
+    const userId = req.user!.userId;
+
+    await requireChatMembership(prisma, chatId, userId);
+    const message = await requireMessageInChat(prisma, messageId, chatId);
+    if (message.fromId !== userId) throw new ForbiddenError('Можно прикреплять только к своим сообщениям');
+
+    const media = await prisma.mediaFile.findUnique({ where: { id: mediaId } });
+    if (!media) throw new NotFoundError('Медиафайл');
+    if (media.uploaderId !== userId) throw new ForbiddenError('Чужой медиафайл');
+    if (media.messageId && media.messageId !== messageId) throw new ForbiddenError('Файл уже привязан к другому сообщению');
+
+    const updated = await prisma.mediaFile.update({
+      where: { id: mediaId },
+      data: { messageId },
+    });
+
+    res.json({ ok: true, data: updated });
+  } catch (err) { next(err); }
+});
+
+router.get('/:id/download', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = resolveAuthPayload(req);
+    const media = await prisma.mediaFile.findUnique({ where: { id: req.params.id } });
+    if (!media) throw new NotFoundError('Медиафайл');
+
+    await assertMediaReadableByUser(media, payload.userId);
+
+    const relative = media.url.replace('/internal/', '');
+    const filePath = path.resolve(config.upload.dir, relative);
+
+    res.setHeader('Content-Type', media.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
+    createReadStream(filePath).pipe(res);
+  } catch (err) { next(err); }
+});
+
+
+router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = resolveAuthPayload(req);
+    const rawPath = typeof req.query.path === 'string' ? req.query.path : '';
+    const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+
+    const media = await prisma.mediaFile.findFirst({
+      where: { OR: [{ url: normalized }, { thumbnail: normalized }] },
+    });
+
+    if (!media) throw new NotFoundError('Медиафайл');
+    await assertMediaReadableByUser(media, payload.userId);
+
+    const relative = media.url.replace('/internal/', '');
+    const filePath = path.resolve(config.upload.dir, relative);
+
+    res.setHeader('Content-Type', media.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
+    createReadStream(filePath).pipe(res);
+  } catch (err) { next(err); }
+});
+
 export default router;
