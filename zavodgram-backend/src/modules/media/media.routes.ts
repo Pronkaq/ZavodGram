@@ -156,7 +156,12 @@ router.post('/upload-multiple', authMiddleware, rateLimiter(10, 60), upload.arra
       results.push(media);
     }
 
-    res.status(201).json({ ok: true, data: results });
+    const relative = media.url.replace('/api/media/file/', '');
+    const filePath = path.resolve(config.upload.dir, relative);
+
+    res.setHeader('Content-Type', media.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
+    createReadStream(filePath).pipe(res);
   } catch (err) { next(err); }
 });
 
