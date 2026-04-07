@@ -115,10 +115,9 @@ export const messagesApi = {
 
 // ── Media API ──
 export const mediaApi = {
-  upload: (file, messageId) => {
+  upload: (file) => {
     const form = new FormData();
     form.append('file', file);
-    if (messageId) form.append('messageId', messageId);
     return api('/media/upload', { method: 'POST', body: form, upload: true });
   },
 };

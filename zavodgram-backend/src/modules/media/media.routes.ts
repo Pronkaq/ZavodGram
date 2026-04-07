@@ -6,10 +6,11 @@ import fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import { prisma } from '../../core/database';
-import { authMiddleware } from '../../middleware/auth';
+import { authMiddleware, AuthPayload } from '../../middleware/auth';
 import { config } from '../../config';
-import { ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
+import { AuthError, ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
 import { rateLimiter } from '../../middleware/errorHandler';
 import { requireChatMembership, requireMessageInChat } from '../../core/security';
 
@@ -51,6 +52,32 @@ function getMediaType(mime: string): 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO' {
   return 'DOCUMENT';
 }
 
+
+function resolveAuthPayload(req: Request): AuthPayload {
+  const header = req.headers.authorization;
+  const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : null;
+  const token = bearer || queryToken;
+  if (!token) throw new AuthError();
+  try {
+    return jwt.verify(token, config.jwt.secret) as AuthPayload;
+  } catch {
+    throw new AuthError();
+  }
+}
+
+async function assertMediaReadableByUser(media: { uploaderId: string; messageId: string | null }, userId: string) {
+  if (!media.messageId) {
+    if (media.uploaderId !== userId) throw new ForbiddenError('Нет доступа к файлу');
+    return;
+  }
+
+  const message = await prisma.message.findUnique({ where: { id: media.messageId } });
+  if (!message || message.deleted) throw new NotFoundError('Сообщение');
+  await requireChatMembership(prisma, message.chatId, userId);
+}
+
+
 async function persistFile(file: Express.Multer.File, userId: string) {
   const mediaType = getMediaType(file.mimetype);
   const dateDir = new Date().toISOString().slice(0, 10);
@@ -80,10 +107,10 @@ async function persistFile(file: Express.Multer.File, userId: string) {
       .jpeg({ quality: 70 })
       .toFile(thumbPath);
 
-    thumbnail = `/api/media/thumbnail/${dateDir}/${thumbFilename}`;
+    thumbnail = `/internal/thumbnails/${dateDir}/${thumbFilename}`;
   }
 
-  const url = `/api/media/file/${mediaType.toLowerCase()}/${dateDir}/${file.filename}`;
+  const url = `/internal/${mediaType.toLowerCase()}/${dateDir}/${file.filename}`;
 
   return prisma.mediaFile.create({
     data: {
@@ -129,7 +156,12 @@ router.post('/upload-multiple', authMiddleware, rateLimiter(10, 60), upload.arra
       results.push(media);
     }
 
-    res.status(201).json({ ok: true, data: results });
+    const relative = media.url.replace('/api/media/file/', '');
+    const filePath = path.resolve(config.upload.dir, relative);
+
+    res.setHeader('Content-Type', media.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
+    createReadStream(filePath).pipe(res);
   } catch (err) { next(err); }
 });
 
@@ -159,20 +191,38 @@ router.post('/:id/attach', authMiddleware, rateLimiter(60, 60), async (req: Requ
   } catch (err) { next(err); }
 });
 
-router.get('/:id/download', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id/download', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const payload = resolveAuthPayload(req);
     const media = await prisma.mediaFile.findUnique({ where: { id: req.params.id } });
     if (!media) throw new NotFoundError('Медиафайл');
 
-    if (!media.messageId) {
-      if (media.uploaderId !== req.user!.userId) throw new ForbiddenError('Нет доступа к файлу');
-    } else {
-      const message = await prisma.message.findUnique({ where: { id: media.messageId } });
-      if (!message || message.deleted) throw new NotFoundError('Сообщение');
-      await requireChatMembership(prisma, message.chatId, req.user!.userId);
-    }
+    await assertMediaReadableByUser(media, payload.userId);
 
-    const relative = media.url.replace('/api/media/file/', '');
+    const relative = media.url.replace('/internal/', '');
+    const filePath = path.resolve(config.upload.dir, relative);
+
+    res.setHeader('Content-Type', media.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
+    createReadStream(filePath).pipe(res);
+  } catch (err) { next(err); }
+});
+
+
+router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payload = resolveAuthPayload(req);
+    const rawPath = typeof req.query.path === 'string' ? req.query.path : '';
+    const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+
+    const media = await prisma.mediaFile.findFirst({
+      where: { OR: [{ url: normalized }, { thumbnail: normalized }] },
+    });
+
+    if (!media) throw new NotFoundError('Медиафайл');
+    await assertMediaReadableByUser(media, payload.userId);
+
+    const relative = media.url.replace('/internal/', '');
     const filePath = path.resolve(config.upload.dir, relative);
 
     res.setHeader('Content-Type', media.mimeType);

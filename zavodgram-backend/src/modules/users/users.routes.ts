@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
-import { ConflictError, NotFoundError, ValidationError } from '../../core/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
 import { isUserOnline, cacheGet, cacheSet, cacheInvalidate } from '../../core/redis';
 import { rateLimiter } from '../../middleware/errorHandler';
 
@@ -25,11 +25,20 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   bio: z.string().max(300).optional(),
+  avatar: z.string().max(100).optional().nullable(),
 });
 
 router.patch('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = updateSchema.parse(req.body);
+
+    if (data.avatar !== undefined && data.avatar !== null) {
+      if (!data.avatar.startsWith('media:')) throw new ValidationError('Некорректный формат avatar');
+      const mediaId = data.avatar.slice(6);
+      const media = await prisma.mediaFile.findUnique({ where: { id: mediaId }, select: { uploaderId: true } });
+      if (!media || media.uploaderId !== req.user!.userId) throw new ForbiddenError('Чужой медиафайл нельзя ставить как аватар');
+    }
+
     const user = await prisma.user.update({
       where: { id: req.user!.userId },
       data,

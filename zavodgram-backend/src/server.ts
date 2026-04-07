@@ -36,6 +36,7 @@ async function bootstrap() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
+
   // ── Health check ──
   app.get('/health', (_req, res) => {
     res.json({ ok: true, version: '0.3.0', uptime: process.uptime() });
