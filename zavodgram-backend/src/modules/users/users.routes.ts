@@ -2,8 +2,9 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
-import { ConflictError, NotFoundError, ValidationError } from '../../core/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
 import { isUserOnline, cacheGet, cacheSet, cacheInvalidate } from '../../core/redis';
+import { rateLimiter } from '../../middleware/errorHandler';
 
 const router = Router();
 
@@ -24,11 +25,20 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   bio: z.string().max(300).optional(),
+  avatar: z.string().max(100).optional().nullable(),
 });
 
 router.patch('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = updateSchema.parse(req.body);
+
+    if (data.avatar !== undefined && data.avatar !== null) {
+      if (!data.avatar.startsWith('media:')) throw new ValidationError('Некорректный формат avatar');
+      const mediaId = data.avatar.slice(6);
+      const media = await prisma.mediaFile.findUnique({ where: { id: mediaId }, select: { uploaderId: true } });
+      if (!media || media.uploaderId !== req.user!.userId) throw new ForbiddenError('Чужой медиафайл нельзя ставить как аватар');
+    }
+
     const user = await prisma.user.update({
       where: { id: req.user!.userId },
       data,
@@ -77,7 +87,7 @@ router.put('/me/tag', authMiddleware, async (req: Request, res: Response, next: 
 });
 
 // ── GET /users/search?q=... ──
-router.get('/search', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/search', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const q = (req.query.q as string || '').trim();
     if (q.length < 2) {
@@ -90,7 +100,6 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
           { tag: { contains: q, mode: 'insensitive' } },
-          { phone: { contains: q } },
         ],
         id: { not: req.user!.userId },
       },
@@ -107,8 +116,23 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
   } catch (err) { next(err); }
 });
 
+// ── GET /users/tag/:tag ── Поиск по тегу
+router.get('/tag/:tag', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tag = req.params.tag.startsWith('@') ? req.params.tag : `@${req.params.tag}`;
+    const user = await prisma.user.findUnique({
+      where: { tag },
+      select: { id: true, name: true, tag: true, bio: true, avatar: true, lastSeen: true },
+    });
+    if (!user) throw new NotFoundError('Пользователь');
+
+    const online = await isUserOnline(user.id);
+    res.json({ ok: true, data: { ...user, online } });
+  } catch (err) { next(err); }
+});
+
 // ── GET /users/:id ──
-router.get('/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cached = await cacheGet(`user:${req.params.id}`);
     if (cached) {
@@ -126,21 +150,6 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
     await cacheSet(`user:${user.id}`, user, 600);
     const online = await isUserOnline(user.id);
 
-    res.json({ ok: true, data: { ...user, online } });
-  } catch (err) { next(err); }
-});
-
-// ── GET /users/tag/:tag ── Поиск по тегу
-router.get('/tag/:tag', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const tag = req.params.tag.startsWith('@') ? req.params.tag : `@${req.params.tag}`;
-    const user = await prisma.user.findUnique({
-      where: { tag },
-      select: { id: true, name: true, tag: true, bio: true, avatar: true, lastSeen: true },
-    });
-    if (!user) throw new NotFoundError('Пользователь');
-
-    const online = await isUserOnline(user.id);
     res.json({ ok: true, data: { ...user, online } });
   } catch (err) { next(err); }
 });

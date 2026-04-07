@@ -25,6 +25,9 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
+const refreshSchema = z.object({ refreshToken: z.string().min(20) });
+const logoutSchema = z.object({ refreshToken: z.string().min(20).optional() });
+
 // ── Helpers ──
 function generateTokens(payload: AuthPayload) {
   const accessToken = (jwt.sign as any)(payload, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
@@ -135,9 +138,9 @@ router.post('/login', rateLimiter(10, 60), async (req: Request, res: Response, n
 });
 
 // ── POST /auth/refresh ──
-router.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken } = refreshSchema.parse(req.body);
     if (!refreshToken) throw new AuthError('Refresh token не предоставлен');
 
     const payload = jwt.verify(refreshToken, config.jwt.refreshSecret) as AuthPayload & { jti: string };
@@ -148,7 +151,10 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
       throw new AuthError('Сессия истекла');
     }
 
-    const tokens = generateTokens({ userId: payload.userId, tag: payload.tag });
+    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, tag: true } });
+    if (!user) throw new AuthError('Сессия недействительна');
+
+    const tokens = generateTokens({ userId: user.id, tag: user.tag });
 
     // Ротация refresh token
     await prisma.session.update({
@@ -163,9 +169,9 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
 });
 
 // ── POST /auth/logout ──
-router.post('/logout', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/logout', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken } = logoutSchema.parse(req.body);
     if (refreshToken) {
       await prisma.session.deleteMany({ where: { refreshToken, userId: req.user!.userId } });
     }

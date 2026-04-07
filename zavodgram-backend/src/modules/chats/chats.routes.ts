@@ -4,28 +4,32 @@ import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
 import { cacheInvalidate } from '../../core/redis';
+import { rateLimiter } from '../../middleware/errorHandler';
+import { ensureUuidArray, requireChatMembership, requireChatRole } from '../../core/security';
 
 const router = Router();
 
-// ── POST /chats — Создать чат ──
 const createChatSchema = z.object({
   type: z.enum(['PRIVATE', 'GROUP', 'CHANNEL', 'SECRET']),
   name: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
-  memberIds: z.array(z.string()).optional(), // ID пользователей для добавления
+  memberIds: z.array(z.string().uuid()).max(100).optional(),
 });
 
-router.post('/', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = createChatSchema.parse(req.body);
     const userId = req.user!.userId;
 
-    // Для приватного чата — ищем существующий или создаём
+    const memberIds = ensureUuidArray(data.memberIds || [], 'memberIds').filter((id) => id !== userId);
+
     if (data.type === 'PRIVATE' || data.type === 'SECRET') {
-      const otherUserId = data.memberIds?.[0];
+      const otherUserId = memberIds[0];
       if (!otherUserId) throw new ValidationError('Укажите собеседника');
 
-      // Проверяем, нет ли уже такого чата
+      const otherUser = await prisma.user.findUnique({ where: { id: otherUserId }, select: { id: true } });
+      if (!otherUser) throw new ValidationError('Собеседник не существует');
+
       if (data.type === 'PRIVATE') {
         const existing = await prisma.chat.findFirst({
           where: {
@@ -63,8 +67,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
       return;
     }
 
-    // Группа или канал
     if (!data.name) throw new ValidationError('Укажите название');
+
+    if (memberIds.length > 0) {
+      const existingUsers = await prisma.user.count({ where: { id: { in: memberIds } } });
+      if (existingUsers !== memberIds.length) throw new ValidationError('Список участников содержит несуществующих пользователей');
+    }
 
     const chat = await prisma.chat.create({
       data: {
@@ -76,7 +84,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
           createMany: {
             data: [
               { userId, role: 'OWNER' },
-              ...(data.memberIds || []).map((id) => ({ userId: id, role: 'MEMBER' as const })),
+              ...memberIds.map((id) => ({ userId: id, role: 'MEMBER' as const })),
             ],
           },
         },
@@ -91,8 +99,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
   }
 });
 
-// ── GET /chats — Список моих чатов ──
-router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
 
@@ -103,6 +110,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFu
           include: { user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } } },
         },
         messages: {
+          where: { deleted: false },
           orderBy: { createdAt: 'desc' },
           take: 1,
           include: { from: { select: { id: true, name: true } } },
@@ -112,7 +120,6 @@ router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFu
       orderBy: { updatedAt: 'desc' },
     });
 
-    // Подсчёт непрочитанных для каждого чата
     const chatsWithUnread = await Promise.all(
       chats.map(async (chat) => {
         const myMembership = chat.members.find((m) => m.userId === userId);
@@ -139,8 +146,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFu
   } catch (err) { next(err); }
 });
 
-// ── GET /chats/:id ──
-router.get('/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const chat = await prisma.chat.findUnique({
       where: { id: req.params.id },
@@ -160,47 +166,43 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
 });
 
-// ── POST /chats/:id/members — Добавить участника ──
-router.post('/:id/members', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id/members', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { userId: newUserId } = req.body;
+    const payload = z.object({ userId: z.string().uuid() }).parse(req.body);
     const chatId = req.params.id;
 
-    const chat = await prisma.chat.findUnique({
-      where: { id: chatId },
-      include: { members: true },
-    });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { id: true, type: true } });
     if (!chat) throw new NotFoundError('Чат');
 
-    const myMembership = chat.members.find((m) => m.userId === req.user!.userId);
-    if (!myMembership || (myMembership.role === 'MEMBER' && chat.type === 'CHANNEL')) {
-      throw new ForbiddenError('Нет прав для добавления участников');
+    if (chat.type === 'PRIVATE' || chat.type === 'SECRET') {
+      throw new ForbiddenError('Нельзя добавлять участников в личные чаты');
     }
 
-    const member = await prisma.chatMember.create({
-      data: { chatId, userId: newUserId, role: 'MEMBER' },
+    await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
+
+    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
+    if (!user) throw new ValidationError('Пользователь не найден');
+
+    const member = await prisma.chatMember.upsert({
+      where: { chatId_userId: { chatId, userId: payload.userId } },
+      create: { chatId, userId: payload.userId, role: 'MEMBER' },
+      update: {},
       include: { user: { select: { id: true, name: true, tag: true, avatar: true } } },
     });
 
+    await cacheInvalidate(`chat:${chatId}`);
     res.status(201).json({ ok: true, data: member });
   } catch (err) { next(err); }
 });
 
-// ── DELETE /chats/:id/members/:userId — Удалить участника ──
-router.delete('/:id/members/:userId', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id/members/:userId', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id: chatId, userId: targetId } = req.params;
 
-    const chat = await prisma.chat.findUnique({
-      where: { id: chatId },
-      include: { members: true },
-    });
-    if (!chat) throw new NotFoundError('Чат');
-
-    const myMembership = chat.members.find((m) => m.userId === req.user!.userId);
+    const myMembership = await requireChatMembership(prisma, chatId, req.user!.userId);
     const isLeavingSelf = targetId === req.user!.userId;
 
-    if (!isLeavingSelf && (!myMembership || myMembership.role === 'MEMBER')) {
+    if (!isLeavingSelf && !['OWNER', 'ADMIN'].includes(myMembership.role)) {
       throw new ForbiddenError();
     }
 
@@ -210,13 +212,14 @@ router.delete('/:id/members/:userId', authMiddleware, async (req: Request, res: 
   } catch (err) { next(err); }
 });
 
-// ── PATCH /chats/:id/mute — Замьютить/размьютить чат ──
-router.patch('/:id/mute', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/mute', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { muted } = req.body;
-    await prisma.chatMember.updateMany({
-      where: { chatId: req.params.id, userId: req.user!.userId },
-      data: { muted: Boolean(muted) },
+    const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
+    await requireChatMembership(prisma, req.params.id, req.user!.userId);
+
+    await prisma.chatMember.update({
+      where: { chatId_userId: { chatId: req.params.id, userId: req.user!.userId } },
+      data: { muted },
     });
     res.json({ ok: true });
   } catch (err) { next(err); }

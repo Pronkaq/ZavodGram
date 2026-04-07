@@ -1,11 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
+import { rateLimiter } from '../../middleware/errorHandler';
 
 const router = Router();
 
 // ── GET /notifications ──
-router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
 
@@ -24,7 +25,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFu
 });
 
 // ── POST /notifications/read — Отметить прочитанными ──
-router.post('/read', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/read', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { ids } = req.body; // массив ID или пусто для "все"
 
@@ -45,7 +46,7 @@ router.post('/read', authMiddleware, async (req: Request, res: Response, next: N
 });
 
 // ── DELETE /notifications — Очистить все ──
-router.delete('/', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await prisma.notification.deleteMany({ where: { userId: req.user!.userId } });
     res.json({ ok: true });
