@@ -4,6 +4,7 @@ import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
 import { ConflictError, NotFoundError, ValidationError } from '../../core/errors';
 import { isUserOnline, cacheGet, cacheSet, cacheInvalidate } from '../../core/redis';
+import { rateLimiter } from '../../middleware/errorHandler';
 
 const router = Router();
 
@@ -77,7 +78,7 @@ router.put('/me/tag', authMiddleware, async (req: Request, res: Response, next: 
 });
 
 // ── GET /users/search?q=... ──
-router.get('/search', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/search', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const q = (req.query.q as string || '').trim();
     if (q.length < 2) {
@@ -90,7 +91,6 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
           { tag: { contains: q, mode: 'insensitive' } },
-          { phone: { contains: q } },
         ],
         id: { not: req.user!.userId },
       },
@@ -107,8 +107,23 @@ router.get('/search', authMiddleware, async (req: Request, res: Response, next: 
   } catch (err) { next(err); }
 });
 
+// ── GET /users/tag/:tag ── Поиск по тегу
+router.get('/tag/:tag', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tag = req.params.tag.startsWith('@') ? req.params.tag : `@${req.params.tag}`;
+    const user = await prisma.user.findUnique({
+      where: { tag },
+      select: { id: true, name: true, tag: true, bio: true, avatar: true, lastSeen: true },
+    });
+    if (!user) throw new NotFoundError('Пользователь');
+
+    const online = await isUserOnline(user.id);
+    res.json({ ok: true, data: { ...user, online } });
+  } catch (err) { next(err); }
+});
+
 // ── GET /users/:id ──
-router.get('/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cached = await cacheGet(`user:${req.params.id}`);
     if (cached) {
@@ -126,21 +141,6 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response, next: Nex
     await cacheSet(`user:${user.id}`, user, 600);
     const online = await isUserOnline(user.id);
 
-    res.json({ ok: true, data: { ...user, online } });
-  } catch (err) { next(err); }
-});
-
-// ── GET /users/tag/:tag ── Поиск по тегу
-router.get('/tag/:tag', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const tag = req.params.tag.startsWith('@') ? req.params.tag : `@${req.params.tag}`;
-    const user = await prisma.user.findUnique({
-      where: { tag },
-      select: { id: true, name: true, tag: true, bio: true, avatar: true, lastSeen: true },
-    });
-    if (!user) throw new NotFoundError('Пользователь');
-
-    const online = await isUserOnline(user.id);
     res.json({ ok: true, data: { ...user, online } });
   } catch (err) { next(err); }
 });
