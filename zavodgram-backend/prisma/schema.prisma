@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Пользователь ──
+model User {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  tag       String   @unique  // @username — бронируется навсегда
+  name      String
+  bio       String?  @default("")
+  avatar    String?  // URL к файлу
+  online    Boolean  @default(false)
+  lastSeen  DateTime @default(now())
+  password  String   // bcrypt hash
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  sessions       Session[]
+  chatMembers    ChatMember[]
+  messages       Message[]
+  notifications  Notification[]
+  mediaFiles     MediaFile[]
+  tagHistory     TagHistory[]
+
+  @@index([tag])
+  @@index([phone])
+  @@index([online])
+}
+
+// ── Сессии (multi-device) ──
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  deviceInfo   String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([refreshToken])
+}
+
+// ── История тегов (бронирование) ──
+model TagHistory {
+  id        String   @id @default(uuid())
+  tag       String   @unique  // Тег навсегда забронирован
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  claimedAt DateTime @default(now())
+
+  @@index([tag])
+}
+
+// ── Чат ──
+enum ChatType {
+  PRIVATE
+  GROUP
+  CHANNEL
+  SECRET
+}
+
+model Chat {
+  id          String   @id @default(uuid())
+  type        ChatType
+  name        String?          // null для приватных
+  description String?
+  avatar      String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // E2E encryption для секретных чатов
+  publicKey   String?  // DH public key
+
+  members  ChatMember[]
+  messages Message[]
+
+  @@index([type])
+}
+
+// ── Участник чата ──
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model ChatMember {
+  id        String     @id @default(uuid())
+  chatId    String
+  chat      Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      MemberRole @default(MEMBER)
+  muted     Boolean    @default(false)
+  joinedAt  DateTime   @default(now())
+  lastRead  DateTime   @default(now())  // Для подсчёта непрочитанных
+
+  @@unique([chatId, userId])
+  @@index([userId])
+  @@index([chatId])
+}
+
+// ── Сообщение ──
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+model Message {
+  id        String        @id @default(uuid())
+  chatId    String
+  chat      Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  fromId    String
+  from      User          @relation(fields: [fromId], references: [id])
+  text      String?
+  status    MessageStatus @default(SENT)
+  edited    Boolean       @default(false)
+  deleted   Boolean       @default(false)
+  encrypted Boolean       @default(false)  // E2E encrypted content
+
+  // Ответ на сообщение
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies   Message[] @relation("MessageReplies")
+
+  // Пересылка
+  forwardedFromId   String?  // original message id
+  forwardedFromName String?  // имя отправителя оригинала
+
+  // Медиа
+  media MediaFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chatId, createdAt])
+  @@index([fromId])
+  @@index([chatId, fromId])
+}
+
+// ── Медиа-файлы ──
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+}
+
+model MediaFile {
+  id         String    @id @default(uuid())
+  messageId  String?
+  message    Message?  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader   User      @relation(fields: [uploaderId], references: [id])
+  type       MediaType
+  filename   String
+  originalName String
+  mimeType   String
+  size       Int       // bytes
+  url        String
+  thumbnail  String?   // для изображений и видео
+  width      Int?
+  height     Int?
+  duration   Int?      // для видео/аудио в секундах
+  createdAt  DateTime  @default(now())
+
+  @@index([messageId])
+  @@index([uploaderId])
+}
+
+// ── Уведомления ──
+enum NotificationType {
+  NEW_MESSAGE
+  MENTION
+  ADDED_TO_CHAT
+  REMOVED_FROM_CHAT
+  CHAT_UPDATED
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?            // chatId, messageId и т.д.
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}

@@ -1,0 +1,532 @@
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useChat } from '../context/ChatContext';
+import { chatsApi, usersApi, mediaApi } from '../api/client';
+import { Icons, typeColors } from './Icons';
+import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
+
+const tc = typeColors;
+
+export default function ChatApp() {
+  const { user, logout, updateUser } = useAuth();
+  const {
+    chats, activeChat, messages, typingUsers, notifications,
+    setNotifications, loadChats,
+    selectChat, sendMessage, editMessage, deleteMessage, startTyping,
+  } = useChat();
+
+  const [search, setSearch] = useState('');
+  const [input, setInput] = useState('');
+  const [contextMenu, setContextMenu] = useState(null);
+  const [editingMsg, setEditingMsg] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [forwardMsg, setForwardMsg] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [newChatModal, setNewChatModal] = useState(false);
+  const [showMobileChat, setShowMobileChat] = useState(false);
+  const [profilePanel, setProfilePanel] = useState(null);
+  const [profileData, setProfileData] = useState(null);
+  const [msgSearch, setMsgSearch] = useState('');
+  const [msgSearchOpen, setMsgSearchOpen] = useState(false);
+  const [msgSearchIdx, setMsgSearchIdx] = useState(-1);
+  const [notifPanel, setNotifPanel] = useState(false);
+  const [attachMenu, setAttachMenu] = useState(false);
+  const [newChatSearch, setNewChatSearch] = useState('');
+  const [newChatResults, setNewChatResults] = useState([]);
+  const [settingsMode, setSettingsMode] = useState(false);
+  const [tagEdit, setTagEdit] = useState('');
+  const [tagError, setTagError] = useState('');
+  const endRef = useRef(null);
+  const inpRef = useRef(null);
+  const typingTimer = useRef(null);
+
+  const acd = chats.find((c) => c.id === activeChat);
+  const cms = messages[activeChat] || [];
+
+  const filteredChats = useMemo(() =>
+    chats.filter((c) => {
+      const q = search.toLowerCase();
+      if (!q) return true;
+      const name = getChatName(c, user.id).toLowerCase();
+      return name.includes(q);
+    }), [chats, search, user]);
+
+  const searchResults = useMemo(() => {
+    if (!msgSearch.trim()) return [];
+    return cms.filter((m) => m.text?.toLowerCase().includes(msgSearch.toLowerCase())).map((m) => m.id);
+  }, [msgSearch, cms]);
+
+  useEffect(() => {
+    if (searchResults.length > 0 && msgSearchIdx >= 0) {
+      document.getElementById(`msg-${searchResults[msgSearchIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [msgSearchIdx, searchResults]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [cms.length, activeChat]);
+  useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
+
+  // ── Actions ──
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text || !activeChat) return;
+    if (editingMsg) {
+      editMessage(activeChat, editingMsg.id, text);
+      setEditingMsg(null);
+    } else {
+      sendMessage(activeChat, text, replyTo?.id, null);
+      setReplyTo(null);
+    }
+    setInput('');
+  };
+
+  const handleTyping = () => {
+    if (!activeChat) return;
+    clearTimeout(typingTimer.current);
+    startTyping(activeChat);
+    typingTimer.current = setTimeout(() => {}, 3000);
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeChat) return;
+    try {
+      await mediaApi.upload(file);
+      sendMessage(activeChat, `[Файл: ${file.name}]`);
+    } catch (err) {
+      console.error('Upload failed', err);
+    }
+    setAttachMenu(false);
+  };
+
+  const openProfile = async (userId) => {
+    if (userId === user.id) {
+      setProfileData({ ...user, online: true });
+    } else {
+      try {
+        const data = await usersApi.getById(userId);
+        setProfileData(data);
+      } catch { }
+    }
+    setProfilePanel(userId);
+  };
+
+  const handleNewChat = async (otherUserId) => {
+    try {
+      const chat = await chatsApi.create({ type: 'PRIVATE', memberIds: [otherUserId] });
+      await loadChats();
+      selectChat(chat.id);
+      setShowMobileChat(true);
+      setNewChatModal(false);
+    } catch (err) {
+      console.error('Create chat failed', err);
+    }
+  };
+
+  const searchNewChat = async (q) => {
+    setNewChatSearch(q);
+    if (q.length < 2) { setNewChatResults([]); return; }
+    try {
+      const results = await usersApi.search(q);
+      setNewChatResults(results);
+    } catch { }
+  };
+
+  const handleMute = async (chatId) => {
+    const chat = chats.find((c) => c.id === chatId);
+    const muted = !chat?.muted;
+    try { await chatsApi.mute(chatId, muted); loadChats(); } catch { }
+  };
+
+  const saveTag = async () => {
+    try {
+      await usersApi.updateTag(tagEdit);
+      updateUser({ tag: tagEdit });
+      setTagError('');
+    } catch (e) { setTagError(e.message); }
+  };
+
+  const doForward = (chatId) => {
+    if (!forwardMsg) return;
+    sendMessage(chatId, forwardMsg.text, null, forwardMsg.id);
+    setForwardMsg(null);
+    selectChat(chatId);
+    setShowMobileChat(true);
+  };
+
+  const scrollToMsg = (msgId) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.background = 'rgba(74,158,229,0.15)'; setTimeout(() => el.style.background = 'transparent', 1500); }
+  };
+
+  const ctx = (e, msg) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 220), msg }); };
+
+  // ── Typing indicator text ──
+  const typingText = useMemo(() => {
+    if (!activeChat) return null;
+    const t = typingUsers[activeChat];
+    if (!t || t.size === 0) return null;
+    const names = [...t].map((uid) => {
+      const member = acd?.members?.find((m) => m.userId === uid);
+      return member?.user?.name?.split(' ')[0] || 'Кто-то';
+    });
+    return names.length === 1 ? `${names[0]} печатает...` : `${names.join(', ')} печатают...`;
+  }, [typingUsers, activeChat, acd]);
+
+  // ── Toast notifications ──
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const latest = notifications[0];
+      if (!toasts.some((t) => t.id === latest.id)) {
+        setToasts((p) => [latest, ...p].slice(0, 3));
+        setTimeout(() => setToasts((p) => p.filter((t) => t.id !== latest.id)), 4000);
+      }
+    }
+  }, [notifications]);
+
+  return (
+    <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); }}>
+
+      {/* Toasts */}
+      <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
+        {toasts.map((n) => (
+          <div key={n.id} style={{ pointerEvents: 'auto', background: '#1E2130', border: '1px solid rgba(74,158,229,0.2)', borderRadius: 14, padding: '12px 16px', minWidth: 260, maxWidth: 340, boxShadow: '0 8px 32px rgba(0,0,0,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, animation: 'slideDown .3s ease' }}
+            onClick={() => { selectChat(n.chatId); setShowMobileChat(true); setToasts((p) => p.filter((t) => t.id !== n.id)); }}>
+            <Icons.Bell size={16} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{n.chatName}</div><div style={{ fontSize: 12, color: '#6A7090', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Sidebar */}
+      <div style={{ ...s.sb, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => { setSidebarOpen(false); openProfile(user.id); }}>
+            <div style={{ ...s.av, width: 42, height: 42, background: '#4A9EE5' }}><span style={{ ...s.avt, fontSize: 15 }}>{user.name?.split(' ').map(w=>w[0]).join('').slice(0,2)}</span></div>
+            <div><div style={{ fontSize: 15, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 12, color: '#4A9EE5', fontFamily: 'mono' }}>{user.tag}</div></div>
+          </div>
+        </div>
+        <div style={{ flex: 1, padding: '6px 0' }}>
+          {[
+            { l: 'Мой профиль', a: () => { setSidebarOpen(false); setSettingsMode(false); openProfile(user.id); } },
+            { l: 'Настройки', a: () => { setSidebarOpen(false); setSettingsMode(true); openProfile(user.id); } },
+            { l: 'Уведомления', a: () => { setSidebarOpen(false); setNotifPanel(true); } },
+          ].map((it, i) => (
+            <div key={i} style={{ padding: '11px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }} onClick={it.a}>{it.l}</div>
+          ))}
+          <div style={{ padding: '11px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer', color: '#E55A5A' }} onClick={() => { setSidebarOpen(false); logout(); }}>
+            Выйти
+          </div>
+        </div>
+        <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.06)', opacity: 0.3, fontSize: 11, fontFamily: 'mono' }}>ZavodGram v0.3.0</div>
+      </div>
+
+      {/* Chat List */}
+      <div style={s.cl} className="chat-list-panel">
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 12px', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <button style={s.ib} onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}><Icons.Menu /></button>
+          <h1 style={s.title}>ZavodGram</h1>
+          <button style={s.ib} onClick={(e) => { e.stopPropagation(); setNotifPanel(!notifPanel); }}><Icons.Bell /></button>
+          <button style={s.ib} onClick={() => setNewChatModal(true)}><Icons.Plus /></button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 10, color: '#3A4050' }}>
+          <Icons.Search /><input style={s.si} placeholder="Поиск чатов..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {filteredChats.map((c) => {
+            const name = getChatName(c, user.id);
+            const avatar = getChatAvatar(c, user.id);
+            const online = isOnline(c, user.id);
+            const lastMsg = getLastMessage(c);
+            const lastTime = c.messages?.[0]?.createdAt || c.updatedAt;
+            return (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(74,158,229,0.1)', borderLeft: '3px solid #4A9EE5' } : {}) }}
+                onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
+                <div style={{ ...s.av, background: tc[c.type] || '#4A9EE5' }}>
+                  <span style={s.avt}>{avatar}</span>
+                  {online && <div style={s.od} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.type === 'SECRET' && <Icons.Lock />}{c.type === 'GROUP' && <Icons.Group />}{c.type === 'CHANNEL' && <Icons.Channel />}
+                      {c.muted && <Icons.BellOff size={12} />} {name}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#3A4050', flexShrink: 0, fontFamily: 'mono' }}>{formatTime(lastTime)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: '#4A5060', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastMsg}</span>
+                    {c.unreadCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', padding: '2px 7px', borderRadius: 10, background: c.muted ? '#3A4050' : tc[c.type], fontFamily: 'mono' }}>{c.unreadCount}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filteredChats.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: '#3A4050', fontSize: 14 }}>Нет чатов</div>}
+        </div>
+      </div>
+
+      {/* Chat Area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0C0E13' }} className="chat-area-panel">
+        {activeChat && acd ? (() => {
+          const chatName = getChatName(acd, user.id);
+          const otherUser = getOtherUser(acd, user.id);
+          const online = isOnline(acd, user.id);
+          return (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
+                <button style={{ ...s.ib, display: 'none' }} className="back-btn" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
+                <div style={{ ...s.av, width: 38, height: 38, background: tc[acd.type], cursor: otherUser ? 'pointer' : 'default' }} onClick={() => otherUser && openProfile(otherUser.id)}>
+                  <span style={{ ...s.avt, fontSize: 14 }}>{getChatAvatar(acd, user.id)}</span>
+                </div>
+                <div style={{ flex: 1, cursor: otherUser ? 'pointer' : 'default' }} onClick={() => otherUser && openProfile(otherUser.id)}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
+                  <div style={{ fontSize: 12, color: typingText ? '#4A9EE5' : '#3A4050' }}>
+                    {typingText || (acd.type === 'SECRET' ? '🔐 End-to-end' : acd.type === 'GROUP' ? `${acd._count?.members || acd.members?.length} участников` : acd.type === 'CHANNEL' ? `${acd._count?.members} подписчиков` : online ? 'в сети' : 'был(а) недавно')}
+                  </div>
+                </div>
+                <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
+                <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
+                {otherUser && <button style={s.ib} onClick={() => openProfile(otherUser.id)}><Icons.User /></button>}
+              </div>
+
+              {msgSearchOpen && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.95)' }}>
+                  <Icons.Search size={16} />
+                  <input style={{ ...s.si, fontSize: 13 }} placeholder="Поиск..." value={msgSearch} onChange={(e) => { setMsgSearch(e.target.value); setMsgSearchIdx(0); }} autoFocus />
+                  <span style={{ fontSize: 12, color: '#4A5060', fontFamily: 'mono', whiteSpace: 'nowrap' }}>{searchResults.length > 0 ? `${msgSearchIdx + 1}/${searchResults.length}` : msgSearch ? '0' : ''}</span>
+                  {searchResults.length > 1 && <>
+                    <button style={s.ib} onClick={() => setMsgSearchIdx((i) => Math.max(0, i - 1))}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><Icons.ArrowDown /></span></button>
+                    <button style={s.ib} onClick={() => setMsgSearchIdx((i) => Math.min(searchResults.length - 1, i + 1))}><Icons.ArrowDown /></button>
+                  </>}
+                  <button style={s.ib} onClick={() => { setMsgSearchOpen(false); setMsgSearch(''); }}><Icons.Close /></button>
+                </div>
+              )}
+
+              {acd.type === 'SECRET' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 5, background: 'rgba(74,229,142,0.06)', color: '#4AE58E', fontSize: 12, fontFamily: 'mono' }}><Icons.Lock /> Сквозное шифрование</div>}
+
+              {/* Messages */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {cms.map((msg) => {
+                  const isMine = msg.fromId === user.id || msg.from?.id === user.id;
+                  const senderName = msg.from?.name || 'Неизвестный';
+                  const senderColor = '#7C6BDE';
+                  const isHL = searchResults[msgSearchIdx] === msg.id;
+                  return (
+                    <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
+                      onContextMenu={(e) => ctx(e, { ...msg, mine: isMine })}>
+                      {!isMine && acd.type === 'GROUP' && (
+                        <div style={{ width: 28, height: 28, borderRadius: 8, background: senderColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'mono', flexShrink: 0 }}
+                          onClick={() => openProfile(msg.fromId || msg.from?.id)}>{senderName[0]}</div>
+                      )}
+                      <div style={{ maxWidth: '72%', padding: '8px 12px', borderRadius: 14, lineHeight: 1.45, ...(isMine ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.15), rgba(124,107,222,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(74,158,229,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }) }}>
+                        {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#4A9EE5', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
+                        {msg.replyTo && (
+                          <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #4A9EE5', background: 'rgba(74,158,229,0.08)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
+                            onClick={() => scrollToMsg(msg.replyTo.id)}>
+                            <span style={{ fontWeight: 600, color: '#4A9EE5', display: 'block', marginBottom: 1 }}>{msg.replyTo.from?.name}</span>
+                            <span style={{ color: '#6A7090' }}>{msg.replyTo.text?.slice(0, 60)}</span>
+                          </div>
+                        )}
+                        {!isMine && acd.type === 'GROUP' && !msg.forwardedFromName && (
+                          <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: senderColor, marginBottom: 2, cursor: 'pointer' }} onClick={() => openProfile(msg.fromId || msg.from?.id)}>
+                            {senderName} <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.4, fontFamily: 'mono' }}>{msg.from?.tag}</span>
+                          </span>
+                        )}
+                        {msg.media?.length > 0 && msg.media.map((m) => (
+                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(74,158,229,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A9EE5' }}><Icons.File /></div>
+                            <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#3A4050', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
+                          </div>
+                        ))}
+                        {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{msgSearch ? highlightText(msg.text, msgSearch) : msg.text}</span>}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#3A4050', marginTop: 4, fontFamily: 'mono' }}>
+                          {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
+                          {msg.encrypted && <Icons.Lock />}
+                          {formatTimeShort(msg.createdAt)}
+                          {isMine && <span style={{ display: 'flex', alignItems: 'center', color: '#4A9EE5' }}><Icons.Check double={msg.status === 'READ'} /></span>}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={endRef} />
+              </div>
+
+              {/* Reply / Edit bar */}
+              {(editingMsg || replyTo) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderTop: '1px solid rgba(74,158,229,0.15)', background: 'rgba(74,158,229,0.05)', color: '#4A9EE5' }}>
+                  {editingMsg ? <Icons.Edit /> : <Icons.Reply />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{editingMsg ? 'Редактирование' : `Ответ для ${replyTo?.from?.name}`}</div>
+                    <div style={{ fontSize: 13, color: '#4A5060', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editingMsg?.text || replyTo?.text}</div>
+                  </div>
+                  <button style={s.ib} onClick={() => { setEditingMsg(null); setReplyTo(null); setInput(''); }}><Icons.Close /></button>
+                </div>
+              )}
+
+              {/* Input */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)' }}>
+                <div style={{ position: 'relative' }}>
+                  <button style={s.ib} onClick={(e) => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
+                  {attachMenu && (
+                    <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={(e) => e.stopPropagation()}>
+                      <label style={s.mi}><Icons.Image /> Фото<input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                      <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                    </div>
+                  )}
+                </div>
+                <input ref={inpRef} style={s.inp2} placeholder="Сообщение..." value={input}
+                  onChange={(e) => { setInput(e.target.value); handleTyping(); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSend()} />
+                <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
+              </div>
+            </>
+          );
+        })() : (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
+            <div style={{ width: 80, height: 80, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, fontWeight: 700, fontFamily: 'mono', color: '#fff', marginBottom: 16 }}>Z</div>
+            <h2 style={{ fontSize: 24, fontWeight: 700, fontFamily: 'mono', marginBottom: 8 }}>ZavodGram</h2>
+            <p style={{ fontSize: 14, color: '#4A5060' }}>Выберите чат для начала</p>
+          </div>
+        )}
+      </div>
+
+      {/* Profile panel */}
+      {profilePanel && profileData && (
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#11141B', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 90, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <button style={s.ib} onClick={() => setProfilePanel(null)}><Icons.Close /></button>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{settingsMode ? 'Настройки' : 'Профиль'}</span>
+          </div>
+          <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ width: 90, height: 90, borderRadius: 22, background: '#4A9EE5', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+              <span style={{ fontSize: 32, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>{profileData.name?.split(' ').map(w=>w[0]).join('').slice(0,2)}</span>
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(74,158,229,0.1)', borderRadius: 20, color: '#4A9EE5', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
+            {settingsMode ? (
+              <div style={{ width: '100%' }}>
+                <label style={s.lbl}>Персональный тег</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit || user.tag} onChange={(e) => { setTagEdit(e.target.value); setTagError(''); }} placeholder="@your_tag" />
+                  <button onClick={saveTag} style={s.saveBtn}>Сохранить</button>
+                </div>
+                {tagError && <span style={{ color: '#E55A5A', fontSize: 12, fontFamily: 'mono', marginTop: 4 }}>{tagError}</span>}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 18, padding: '12px 14px', background: 'rgba(74,229,142,0.06)', borderRadius: 10, color: '#4AE58E', fontSize: 12, lineHeight: 1.5 }}>
+                  <Icons.Shield /><span>Тег бронируется за вами навсегда.</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: 14, color: '#7A8090', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
+                <div style={{ width: '100%' }}>
+                  {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#4A9EE5']].map(([l, v, c], i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <span style={{ fontSize: 13, color: '#4A5060' }}>{l}</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, fontFamily: 'mono', color: c || '#E8E8ED' }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Notification panel */}
+      {notifPanel && (
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#11141B', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 95, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <button style={s.ib} onClick={() => setNotifPanel(false)}><Icons.Close /></button>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>Уведомления</span>
+            {notifications.length > 0 && <button style={{ ...s.ib, marginLeft: 'auto', fontSize: 12, color: '#4A9EE5' }} onClick={() => setNotifications([])}>Очистить</button>}
+          </div>
+          <div style={{ flex: 1, padding: '8px 0' }}>
+            {notifications.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: '#3A4050' }}>Нет уведомлений</div> : notifications.map((n) => (
+              <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)' }}
+                onClick={() => { selectChat(n.chatId); setShowMobileChat(true); setNotifPanel(false); }}>
+                <Icons.Bell size={14} />
+                <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{n.chatName}</div><div style={{ fontSize: 12, color: '#4A5060' }}>{n.text}</div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 200, minWidth: 180, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
+          <div style={s.mi} onClick={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}><Icons.Reply /> Ответить</div>
+          <div style={s.mi} onClick={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}><Icons.Forward /> Переслать</div>
+          <div style={s.mi} onClick={() => { navigator.clipboard?.writeText(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Copy /> Копировать</div>
+          {contextMenu.msg.mine && <div style={s.mi} onClick={() => { setEditingMsg(contextMenu.msg); setReplyTo(null); setInput(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Edit /> Редактировать</div>}
+          {contextMenu.msg.mine && <div style={{ ...s.mi, color: '#E55A5A' }} onClick={() => { deleteMessage(activeChat, contextMenu.msg.id); setContextMenu(null); }}><Icons.Trash /> Удалить</div>}
+        </div>
+      )}
+
+      {/* Forward modal */}
+      {forwardMsg && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => setForwardMsg(null)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, minWidth: 300, maxWidth: 380, border: '1px solid rgba(255,255,255,0.08)' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, fontFamily: 'mono' }}>Переслать</h3>
+            <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 14, fontSize: 13, color: '#6A7090', borderLeft: '3px solid #4A9EE5' }}>{forwardMsg.text || '[медиа]'}</div>
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              {chats.filter((c) => c.type !== 'CHANNEL').map((c) => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => doForward(c.id)}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: tc[c.type], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>{getChatAvatar(c, user.id)[0]}</div>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>{getChatName(c, user.id)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Chat Modal */}
+      {newChatModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => setNewChatModal(false)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 340, border: '1px solid rgba(255,255,255,0.08)' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Новый чат</h3>
+            <input style={s.inp2} placeholder="Поиск по имени или @тегу..." value={newChatSearch} onChange={(e) => searchNewChat(e.target.value)} autoFocus />
+            <div style={{ maxHeight: 280, overflowY: 'auto', marginTop: 12 }}>
+              {newChatResults.map((u) => (
+                <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => handleNewChat(u.id)}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: '#4A9EE5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>{u.name?.[0]}</div>
+                  <div><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#4A9EE5', fontFamily: 'mono' }}>{u.tag}</div></div>
+                  {u.online && <div style={{ width: 8, height: 8, background: '#4AE58E', borderRadius: '50%', marginLeft: 'auto' }} />}
+                </div>
+              ))}
+              {newChatSearch.length >= 2 && newChatResults.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: '#3A4050', fontSize: 13 }}>Никого не найдено</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+        @media(max-width:700px){
+          .chat-list-panel{${showMobileChat ? 'display:none !important' : 'width:100% !important;max-width:100% !important'}}
+          .chat-area-panel{${showMobileChat ? 'display:flex !important;width:100% !important' : 'display:none !important'}}
+          .back-btn{display:flex !important}
+        }
+      `}</style>
+    </div>
+  );
+}
+
+const s = {
+  root: { display: 'flex', width: '100%', height: '100vh', background: '#0C0E13', fontFamily: "'Manrope', sans-serif", color: '#E8E8ED', position: 'relative', overflow: 'hidden' },
+  sb: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 280, background: '#11141B', borderRight: '1px solid rgba(255,255,255,0.06)', zIndex: 100, display: 'flex', flexDirection: 'column', transition: 'transform .25s cubic-bezier(.4,0,.2,1)' },
+  cl: { width: 360, minWidth: 280, maxWidth: 400, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', background: '#0F1219' },
+  title: { flex: 1, fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
+  ib: { background: 'none', border: 'none', color: '#5A6070', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  av: { width: 46, height: 46, borderRadius: 12, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  avt: { fontSize: 15, fontWeight: 600, color: '#fff', fontFamily: "'JetBrains Mono', monospace" },
+  od: { position: 'absolute', bottom: 1, right: 1, width: 10, height: 10, background: '#4AE58E', borderRadius: '50%', border: '2px solid #0F1219' },
+  si: { flex: 1, background: 'none', border: 'none', outline: 'none', color: '#E8E8ED', fontSize: 13, fontFamily: "'Manrope', sans-serif" },
+  mi: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', borderRadius: 8 },
+  lbl: { fontSize: 11, color: '#4A5060', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: "'JetBrains Mono', monospace", display: 'block', marginTop: 14, marginBottom: 4 },
+  inp2: { flex: 1, width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '10px 14px', color: '#E8E8ED', fontSize: 14, fontFamily: "'Manrope', sans-serif", outline: 'none' },
+  saveBtn: { padding: '10px 16px', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
+  sendBtn: { width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+};
