@@ -2,7 +2,6 @@ import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
-import path from 'path';
 
 import { config } from './config';
 import { logger } from './core/logger';
@@ -24,13 +23,19 @@ async function bootstrap() {
   const httpServer = createServer(app);
 
   // ── Middleware ──
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-  app.use(cors({ origin: config.corsOrigin, credentials: true }));
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'same-site' },
+    contentSecurityPolicy: false,
+    referrerPolicy: { policy: 'no-referrer' },
+  }));
+  app.use(cors({
+    origin: config.corsOrigin,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
+  }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // ── Static files (uploads) ──
-  app.use('/uploads', express.static(path.join(process.cwd(), config.upload.dir)));
 
   // ── Health check ──
   app.get('/health', (_req, res) => {

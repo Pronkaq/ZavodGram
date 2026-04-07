@@ -7,9 +7,27 @@ import { prisma } from '../core/database';
 import { setUserOnline, setUserOffline, setTyping, redisPub, redisSub } from '../core/redis';
 import { createNotification } from '../modules/notifications/notifications.routes';
 import { AuthPayload } from '../middleware/auth';
+import { requireChatMembership, requireMessageInChat } from '../core/security';
 
 interface AuthSocket extends Socket {
   user?: AuthPayload;
+}
+
+const socketWindow = new Map<string, { count: number; resetAt: number }>();
+
+function enforceSocketRate(userId: string, action: string, limit: number, windowMs: number) {
+  const now = Date.now();
+  const key = `${userId}:${action}`;
+  const current = socketWindow.get(key);
+
+  if (!current || current.resetAt <= now) {
+    socketWindow.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+
+  if (current.count >= limit) return false;
+  current.count += 1;
+  return true;
 }
 
 export function setupWebSocket(httpServer: HttpServer) {
@@ -22,7 +40,6 @@ export function setupWebSocket(httpServer: HttpServer) {
     pingInterval: 25000,
   });
 
-  // ── Auth middleware для WebSocket ──
   io.use((socket: AuthSocket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace('Bearer ', '');
     if (!token) return next(new Error('AUTH_REQUIRED'));
@@ -36,7 +53,6 @@ export function setupWebSocket(httpServer: HttpServer) {
     }
   });
 
-  // ── Redis Pub/Sub для масштабирования на несколько инстансов ──
   redisSub.subscribe('chat:message', 'chat:typing', 'chat:status', 'chat:edit', 'chat:delete');
 
   redisSub.on('message', (channel, data) => {
@@ -49,7 +65,7 @@ export function setupWebSocket(httpServer: HttpServer) {
         io.to(`chat:${parsed.chatId}`).emit('user:typing', parsed);
         break;
       case 'chat:status':
-        io.emit('user:status', parsed); // Broadcast online/offline
+        io.emit('user:status', parsed);
         break;
       case 'chat:edit':
         io.to(`chat:${parsed.chatId}`).emit('message:edited', parsed);
@@ -60,17 +76,14 @@ export function setupWebSocket(httpServer: HttpServer) {
     }
   });
 
-  // ── Connection handler ──
   io.on('connection', async (socket: AuthSocket) => {
     const userId = socket.user!.userId;
     logger.info(`WS connected: ${userId}`);
 
-    // Устанавливаем онлайн
     await setUserOnline(userId);
     await prisma.user.update({ where: { id: userId }, data: { online: true } });
     redisPub.publish('chat:status', JSON.stringify({ userId, online: true }));
 
-    // Подключаем к комнатам всех чатов пользователя
     const memberships = await prisma.chatMember.findMany({
       where: { userId },
       select: { chatId: true },
@@ -78,7 +91,6 @@ export function setupWebSocket(httpServer: HttpServer) {
     memberships.forEach((m) => socket.join(`chat:${m.chatId}`));
     socket.join(`user:${userId}`);
 
-    // ── Отправка сообщения ──
     socket.on('message:send', async (data: {
       chatId: string;
       text?: string;
@@ -87,13 +99,9 @@ export function setupWebSocket(httpServer: HttpServer) {
       encrypted?: boolean;
     }) => {
       try {
-        // Проверяем членство
-        const membership = await prisma.chatMember.findUnique({
-          where: { chatId_userId: { chatId: data.chatId, userId } },
-        });
-        if (!membership) return socket.emit('error', { message: 'Нет доступа' });
+        if (!enforceSocketRate(userId, 'message:send', 40, 60000)) return;
+        await requireChatMembership(prisma, data.chatId, userId);
 
-        // Пересылка
         let forwardedFromName: string | null = null;
         let text = data.text;
         if (data.forwardedFromId) {
@@ -101,7 +109,14 @@ export function setupWebSocket(httpServer: HttpServer) {
             where: { id: data.forwardedFromId },
             include: { from: { select: { name: true } } },
           });
-          if (orig) { forwardedFromName = orig.from.name; text = text || orig.text || undefined; }
+          if (!orig || orig.deleted) return socket.emit('error', { message: 'Источник пересылки не найден' });
+          await requireChatMembership(prisma, orig.chatId, userId);
+          forwardedFromName = orig.from.name;
+          text = text || orig.text || undefined;
+        }
+
+        if (data.replyToId) {
+          await requireMessageInChat(prisma, data.replyToId, data.chatId);
         }
 
         const message = await prisma.message.create({
@@ -123,16 +138,14 @@ export function setupWebSocket(httpServer: HttpServer) {
 
         await prisma.chat.update({ where: { id: data.chatId }, data: { updatedAt: new Date() } });
 
-        // Публикуем через Redis (для масштабирования)
         redisPub.publish('chat:message', JSON.stringify({ ...message, chatId: data.chatId }));
 
-        // Уведомления участникам (кроме отправителя и замьюченных)
         const chatMembers = await prisma.chatMember.findMany({
           where: { chatId: data.chatId, userId: { not: userId }, muted: false },
           select: { userId: true },
         });
 
-        const chat = await prisma.chat.findUnique({ where: { id: data.chatId }, select: { name: true, type: true } });
+        const chat = await prisma.chat.findUnique({ where: { id: data.chatId }, select: { name: true } });
         const senderName = message.from.name;
 
         for (const member of chatMembers) {
@@ -144,7 +157,6 @@ export function setupWebSocket(httpServer: HttpServer) {
             data: { chatId: data.chatId, messageId: message.id },
           });
 
-          // Push через WebSocket
           io.to(`user:${member.userId}`).emit('notification', {
             chatId: data.chatId,
             chatName: chat?.name || senderName,
@@ -153,7 +165,6 @@ export function setupWebSocket(httpServer: HttpServer) {
           });
         }
 
-        // Подтверждение отправителю
         socket.emit('message:sent', { tempId: data.chatId, message });
       } catch (err) {
         logger.error('WS message:send error', { error: (err as Error).message });
@@ -161,15 +172,17 @@ export function setupWebSocket(httpServer: HttpServer) {
       }
     });
 
-    // ── Редактирование ──
     socket.on('message:edit', async (data: { messageId: string; chatId: string; text: string }) => {
       try {
-        const msg = await prisma.message.findUnique({ where: { id: data.messageId } });
-        if (!msg || msg.fromId !== userId) return;
+        if (!enforceSocketRate(userId, 'message:edit', 30, 60000)) return;
+        await requireChatMembership(prisma, data.chatId, userId);
+
+        const msg = await requireMessageInChat(prisma, data.messageId, data.chatId);
+        if (msg.fromId !== userId) return;
 
         const updated = await prisma.message.update({
           where: { id: data.messageId },
-          data: { text: data.text, edited: true },
+          data: { text: data.text.slice(0, 4096), edited: true },
         });
 
         redisPub.publish('chat:edit', JSON.stringify({ ...updated, chatId: data.chatId }));
@@ -178,11 +191,13 @@ export function setupWebSocket(httpServer: HttpServer) {
       }
     });
 
-    // ── Удаление ──
     socket.on('message:delete', async (data: { messageId: string; chatId: string }) => {
       try {
-        const msg = await prisma.message.findUnique({ where: { id: data.messageId } });
-        if (!msg || msg.fromId !== userId) return;
+        if (!enforceSocketRate(userId, 'message:delete', 30, 60000)) return;
+        const membership = await requireChatMembership(prisma, data.chatId, userId);
+        const msg = await requireMessageInChat(prisma, data.messageId, data.chatId, true);
+
+        if (msg.fromId !== userId && membership.role === 'MEMBER') return;
 
         await prisma.message.update({ where: { id: data.messageId }, data: { deleted: true, text: null } });
         redisPub.publish('chat:delete', JSON.stringify({ messageId: data.messageId, chatId: data.chatId }));
@@ -191,37 +206,50 @@ export function setupWebSocket(httpServer: HttpServer) {
       }
     });
 
-    // ── Набор текста ──
     socket.on('typing:start', async (data: { chatId: string }) => {
-      await setTyping(data.chatId, userId);
-      redisPub.publish('chat:typing', JSON.stringify({ chatId: data.chatId, userId, typing: true }));
-    });
-
-    // ── Прочитано ──
-    socket.on('message:read', async (data: { chatId: string; messageId: string }) => {
-      await prisma.chatMember.updateMany({
-        where: { chatId: data.chatId, userId },
-        data: { lastRead: new Date() },
-      });
-
-      // Уведомляем отправителя о прочтении
-      const msg = await prisma.message.findUnique({ where: { id: data.messageId } });
-      if (msg && msg.fromId !== userId) {
-        await prisma.message.update({ where: { id: data.messageId }, data: { status: 'READ' } });
-        io.to(`user:${msg.fromId}`).emit('message:status', {
-          messageId: data.messageId,
-          chatId: data.chatId,
-          status: 'READ',
-        });
+      if (!enforceSocketRate(userId, 'typing:start', 100, 60000)) return;
+      try {
+        await requireChatMembership(prisma, data.chatId, userId);
+        await setTyping(data.chatId, userId);
+        redisPub.publish('chat:typing', JSON.stringify({ chatId: data.chatId, userId, typing: true }));
+      } catch {
+        return;
       }
     });
 
-    // ── Присоединение к новому чату (после создания) ──
-    socket.on('chat:join', (data: { chatId: string }) => {
-      socket.join(`chat:${data.chatId}`);
+    socket.on('message:read', async (data: { chatId: string; messageId: string }) => {
+      try {
+        if (!enforceSocketRate(userId, 'message:read', 100, 60000)) return;
+        await requireChatMembership(prisma, data.chatId, userId);
+        const msg = await requireMessageInChat(prisma, data.messageId, data.chatId);
+
+        await prisma.chatMember.update({
+          where: { chatId_userId: { chatId: data.chatId, userId } },
+          data: { lastRead: new Date() },
+        });
+
+        if (msg.fromId !== userId) {
+          await prisma.message.update({ where: { id: data.messageId }, data: { status: 'READ' } });
+          io.to(`user:${msg.fromId}`).emit('message:status', {
+            messageId: data.messageId,
+            chatId: data.chatId,
+            status: 'READ',
+          });
+        }
+      } catch {
+        return;
+      }
     });
 
-    // ── Отключение ──
+    socket.on('chat:join', async (data: { chatId: string }) => {
+      try {
+        await requireChatMembership(prisma, data.chatId, userId);
+        socket.join(`chat:${data.chatId}`);
+      } catch {
+        socket.emit('error', { message: 'Нет доступа к чату' });
+      }
+    });
+
     socket.on('disconnect', async () => {
       logger.info(`WS disconnected: ${userId}`);
       await setUserOffline(userId);

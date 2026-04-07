@@ -3,21 +3,18 @@ import { z } from 'zod';
 import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
+import { rateLimiter } from '../../middleware/errorHandler';
+import { ensureUuidArray, requireChatMembership, requireMessageInChat } from '../../core/security';
 
 const router = Router();
 
-// ── GET /chats/:chatId/messages — Получить сообщения (с пагинацией) ──
-router.get('/:chatId/messages', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chatId } = req.params;
     const cursor = req.query.cursor as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
-    // Проверяем членство
-    const membership = await prisma.chatMember.findUnique({
-      where: { chatId_userId: { chatId, userId: req.user!.userId } },
-    });
-    if (!membership) throw new ForbiddenError();
+    await requireChatMembership(prisma, chatId, req.user!.userId);
 
     const messages = await prisma.message.findMany({
       where: { chatId, deleted: false },
@@ -33,7 +30,7 @@ router.get('/:chatId/messages', authMiddleware, async (req: Request, res: Respon
           },
         },
         media: {
-          select: { id: true, type: true, filename: true, originalName: true, mimeType: true, size: true, url: true, thumbnail: true, width: true, height: true },
+          select: { id: true, type: true, originalName: true, mimeType: true, size: true, thumbnail: true, width: true, height: true },
         },
       },
     });
@@ -41,7 +38,6 @@ router.get('/:chatId/messages', authMiddleware, async (req: Request, res: Respon
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
 
-    // Обновляем lastRead
     await prisma.chatMember.update({
       where: { chatId_userId: { chatId, userId: req.user!.userId } },
       data: { lastRead: new Date() },
@@ -58,28 +54,25 @@ router.get('/:chatId/messages', authMiddleware, async (req: Request, res: Respon
   } catch (err) { next(err); }
 });
 
-// ── POST /chats/:chatId/messages — Отправить сообщение ──
 const sendSchema = z.object({
   text: z.string().max(4096).optional(),
   replyToId: z.string().uuid().optional(),
   forwardedFromId: z.string().uuid().optional(),
   encrypted: z.boolean().optional(),
+  mediaIds: z.array(z.string().uuid()).max(10).optional(),
 });
 
-router.post('/:chatId/messages', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chatId } = req.params;
     const data = sendSchema.parse(req.body);
 
-    if (!data.text && !data.forwardedFromId) throw new ValidationError('Сообщение пустое');
+    if (!data.text && !data.forwardedFromId && (!data.mediaIds || data.mediaIds.length === 0)) {
+      throw new ValidationError('Сообщение пустое');
+    }
 
-    // Проверяем членство
-    const membership = await prisma.chatMember.findUnique({
-      where: { chatId_userId: { chatId, userId: req.user!.userId } },
-    });
-    if (!membership) throw new ForbiddenError();
+    await requireChatMembership(prisma, chatId, req.user!.userId);
 
-    // Если пересылка — достаём оригинал
     let forwardedFromName: string | null = null;
     let forwardText = data.text;
     if (data.forwardedFromId) {
@@ -87,35 +80,61 @@ router.post('/:chatId/messages', authMiddleware, async (req: Request, res: Respo
         where: { id: data.forwardedFromId },
         include: { from: { select: { name: true } } },
       });
-      if (original) {
-        forwardedFromName = original.from.name;
-        forwardText = forwardText || original.text || undefined;
-      }
+      if (!original || original.deleted) throw new NotFoundError('Пересылаемое сообщение');
+      await requireChatMembership(prisma, original.chatId, req.user!.userId);
+      forwardedFromName = original.from.name;
+      forwardText = forwardText || original.text || undefined;
     }
 
-    const message = await prisma.message.create({
-      data: {
-        chatId,
-        fromId: req.user!.userId,
-        text: forwardText || null,
-        replyToId: data.replyToId || undefined,
-        forwardedFromId: data.forwardedFromId || undefined,
-        forwardedFromName,
-        encrypted: data.encrypted || false,
-      },
-      include: {
-        from: { select: { id: true, name: true, tag: true, avatar: true } },
-        replyTo: {
-          select: {
-            id: true, text: true, fromId: true,
-            from: { select: { id: true, name: true } },
-          },
+    if (data.replyToId) {
+      await requireMessageInChat(prisma, data.replyToId, chatId);
+    }
+
+    const inputMediaIds = ensureUuidArray(data.mediaIds || [], 'mediaIds');
+
+    const message = await prisma.$transaction(async (tx) => {
+      const created = await tx.message.create({
+        data: {
+          chatId,
+          fromId: req.user!.userId,
+          text: forwardText || null,
+          replyToId: data.replyToId || undefined,
+          forwardedFromId: data.forwardedFromId || undefined,
+          forwardedFromName,
+          encrypted: data.encrypted || false,
         },
-        media: true,
-      },
+      });
+
+      if (inputMediaIds.length > 0) {
+        const ownedMedia = await tx.mediaFile.findMany({
+          where: { id: { in: inputMediaIds }, uploaderId: req.user!.userId, messageId: null },
+          select: { id: true },
+        });
+        if (ownedMedia.length !== inputMediaIds.length) {
+          throw new ForbiddenError('Есть чужие или уже привязанные файлы');
+        }
+
+        await tx.mediaFile.updateMany({
+          where: { id: { in: inputMediaIds }, uploaderId: req.user!.userId, messageId: null },
+          data: { messageId: created.id },
+        });
+      }
+
+      return tx.message.findUniqueOrThrow({
+        where: { id: created.id },
+        include: {
+          from: { select: { id: true, name: true, tag: true, avatar: true } },
+          replyTo: {
+            select: {
+              id: true, text: true, fromId: true,
+              from: { select: { id: true, name: true } },
+            },
+          },
+          media: true,
+        },
+      });
     });
 
-    // Обновляем updatedAt чата для сортировки
     await prisma.chat.update({ where: { id: chatId }, data: { updatedAt: new Date() } });
 
     res.status(201).json({ ok: true, data: message });
@@ -125,14 +144,15 @@ router.post('/:chatId/messages', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// ── PATCH /chats/:chatId/messages/:id — Редактировать ──
-router.patch('/:chatId/messages/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { id } = req.params;
-    const { text } = req.body;
+const editSchema = z.object({ text: z.string().min(1).max(4096) });
 
-    const message = await prisma.message.findUnique({ where: { id } });
-    if (!message) throw new NotFoundError('Сообщение');
+router.patch('/:chatId/messages/:id', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id, chatId } = req.params;
+    const { text } = editSchema.parse(req.body);
+
+    await requireChatMembership(prisma, chatId, req.user!.userId);
+    const message = await requireMessageInChat(prisma, id, chatId);
     if (message.fromId !== req.user!.userId) throw new ForbiddenError();
 
     const updated = await prisma.message.update({
@@ -149,40 +169,33 @@ router.patch('/:chatId/messages/:id', authMiddleware, async (req: Request, res: 
   } catch (err) { next(err); }
 });
 
-// ── DELETE /chats/:chatId/messages/:id — Удалить ──
-router.delete('/:chatId/messages/:id', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:chatId/messages/:id', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id, chatId } = req.params;
 
-    const message = await prisma.message.findUnique({ where: { id } });
-    if (!message) throw new NotFoundError('Сообщение');
+    const membership = await requireChatMembership(prisma, chatId, req.user!.userId);
+    const message = await requireMessageInChat(prisma, id, chatId, true);
 
-    // Удалить может автор или админ/владелец чата
-    if (message.fromId !== req.user!.userId) {
-      const membership = await prisma.chatMember.findUnique({
-        where: { chatId_userId: { chatId, userId: req.user!.userId } },
-      });
-      if (!membership || membership.role === 'MEMBER') throw new ForbiddenError();
+    if (message.fromId !== req.user!.userId && membership.role === 'MEMBER') {
+      throw new ForbiddenError();
     }
 
-    // Soft delete
-    await prisma.message.update({ where: { id }, data: { deleted: true, text: null } });
+    await prisma.$transaction(async (tx) => {
+      await tx.message.update({ where: { id }, data: { deleted: true, text: null } });
+      await tx.mediaFile.deleteMany({ where: { messageId: id } });
+    });
 
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
-// ── GET /chats/:chatId/messages/search?q=... — Поиск по сообщениям ──
-router.get('/:chatId/messages/search', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:chatId/messages/search', authMiddleware, rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chatId } = req.params;
     const q = (req.query.q as string || '').trim();
     if (q.length < 2) { res.json({ ok: true, data: [] }); return; }
 
-    const membership = await prisma.chatMember.findUnique({
-      where: { chatId_userId: { chatId, userId: req.user!.userId } },
-    });
-    if (!membership) throw new ForbiddenError();
+    await requireChatMembership(prisma, chatId, req.user!.userId);
 
     const messages = await prisma.message.findMany({
       where: {

@@ -1,11 +1,27 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
-import { chatsApi, usersApi, mediaApi } from '../api/client';
+import { chatsApi, usersApi, mediaApi, messagesApi, getAccessToken } from '../api/client';
 import { Icons, typeColors } from './Icons';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 
 const tc = typeColors;
+
+function mediaUrlById(id) {
+  const token = getAccessToken();
+  return token ? `/api/media/${id}/download?token=${encodeURIComponent(token)}` : '';
+}
+
+function resolveAvatarSrc(src) {
+  if (!src) return '';
+  if (src.startsWith('http')) return src;
+  if (src.startsWith('media:')) return mediaUrlById(src.slice(6));
+  if (src.startsWith('/uploads/')) {
+    const token = getAccessToken();
+    return token ? `/api/media/legacy?path=${encodeURIComponent(src)}&token=${encodeURIComponent(token)}` : '';
+  }
+  return src;
+}
 
 // Avatar component — shows image or initials, clickable
 function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: extraStyle }) {
@@ -13,7 +29,7 @@ function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: 
   const bg = src ? 'transparent' : (color || '#4A9EE5');
   return (
     <div onClick={onClick} style={{ width: size, height: size, borderRadius: radius, background: bg, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: onClick ? 'pointer' : 'default', overflow: 'hidden', ...extraStyle }}>
-      {src ? <img src={src.startsWith('http') ? src : `/uploads/${src}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> :
+      {src ? <img src={resolveAvatarSrc(src)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> :
         <span style={{ fontSize: size * 0.34, fontWeight: 600, color: '#fff', fontFamily: "'JetBrains Mono', monospace" }}>{initials}</span>}
       {online && <div style={{ position: 'absolute', bottom: size > 40 ? 1 : 0, right: size > 40 ? 1 : 0, width: size > 40 ? 10 : 8, height: size > 40 ? 10 : 8, background: '#4AE58E', borderRadius: '50%', border: '2px solid #0F1219' }} />}
     </div>
@@ -27,7 +43,7 @@ function MediaAttachment({ media }) {
     if (m.type === 'IMAGE') {
       return (
         <div key={m.id} style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260 }}>
-          <img src={m.url?.startsWith('http') ? m.url : `/uploads/${m.url}`} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
+          <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
           {m.originalName && <div style={{ fontSize: 11, color: '#5A6070', marginTop: 4 }}>{m.originalName}</div>}
         </div>
       );
@@ -51,7 +67,7 @@ function MediaAttachment({ media }) {
 
 export default function ChatApp() {
   const { user, logout, updateUser } = useAuth();
-  const { chats, activeChat, messages, typingUsers, notifications, setNotifications, loadChats, selectChat, sendMessage, editMessage, deleteMessage, startTyping } = useChat();
+  const { chats, activeChat, messages, typingUsers, notifications, setNotifications, loadChats, loadMessages, selectChat, sendMessage, editMessage, deleteMessage, startTyping } = useChat();
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
@@ -122,8 +138,9 @@ export default function ChatApp() {
     if (!file || !activeChat) return;
     try {
       const media = await mediaApi.upload(file);
-      // Send a message referencing this media
-      sendMessage(activeChat, null, null, null);
+      await messagesApi.send(activeChat, { mediaIds: [media.id] });
+      await loadMessages(activeChat);
+      await loadChats();
     } catch (err) { console.error('Upload failed', err); }
     e.target.value = '';
     setAttachMenu(false);
@@ -174,9 +191,10 @@ export default function ChatApp() {
     if (!file) return;
     try {
       const media = await mediaApi.upload(file);
-      await usersApi.update({ avatar: media.url });
-      updateUser({ avatar: media.url });
-      setProfileData(p => ({ ...p, avatar: media.url }));
+      const avatarRef = `media:${media.id}`;
+      await usersApi.update({ avatar: avatarRef });
+      updateUser({ avatar: avatarRef });
+      setProfileData(p => ({ ...p, avatar: avatarRef }));
     } catch (err) { console.error(err); }
   };
 
@@ -557,7 +575,7 @@ export default function ChatApp() {
       {avatarView && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, cursor: 'pointer' }} onClick={() => setAvatarView(null)}>
           {avatarView.url ? (
-            <img src={avatarView.url.startsWith('http') ? avatarView.url : `/uploads/${avatarView.url}`} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 16 }} alt="" />
+            <img src={resolveAvatarSrc(avatarView.url)} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 16 }} alt="" />
           ) : (
             <div style={{ width: 240, height: 240, borderRadius: 32, background: '#4A9EE5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 96, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>
               {avatarView.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
