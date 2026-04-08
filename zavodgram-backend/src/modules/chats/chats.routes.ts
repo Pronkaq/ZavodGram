@@ -93,7 +93,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         const unreadCount = myMembership
           ? await prisma.message.count({ where: { chatId: chat.id, createdAt: { gt: myMembership.lastRead }, fromId: { not: userId }, deleted: false } })
           : 0;
-        return { ...chat, unreadCount, muted: myMembership?.muted || false, myRole: myMembership?.role || 'MEMBER' };
+        return { ...chat, unreadCount, muted: myMembership?.muted || false, myRole: myMembership?.role || 'MEMBER', myCommentsMuted: myMembership?.commentsMuted || false };
       })
     );
     res.json({ ok: true, data: chatsWithUnread });
@@ -349,6 +349,40 @@ router.post('/:id/transfer-ownership', authMiddleware, rateLimiter(5, 60), async
     await cacheInvalidate(`chat:${chatId}`);
     res.json({ ok: true });
   } catch (err) { next(err); }
+});
+
+
+
+// ── PATCH /chats/:id/members/:userId/comments-mute — Mute member comments (OWNER/ADMIN) ──
+router.patch('/:id/members/:userId/comments-mute', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id: chatId, userId: targetId } = req.params;
+    const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
+
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.type !== 'CHANNEL') throw new ForbiddenError('Мут комментариев доступен только в каналах');
+
+    const myMembership = await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
+    const targetMembership = await prisma.chatMember.findUnique({ where: { chatId_userId: { chatId, userId: targetId } } });
+    if (!targetMembership) throw new NotFoundError('Участник');
+
+    if (targetMembership.role === 'OWNER') throw new ForbiddenError('Нельзя выдать мут создателю');
+    if (targetMembership.role === 'ADMIN' && myMembership.role !== 'OWNER') {
+      throw new ForbiddenError('Только создатель может выдать мут администратору');
+    }
+
+    const updated = await prisma.chatMember.update({
+      where: { chatId_userId: { chatId, userId: targetId } },
+      data: { commentsMuted: muted },
+      include: { user: { select: { id: true, name: true, tag: true, avatar: true } } },
+    });
+
+    res.json({ ok: true, data: updated });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
 });
 
 // ── PATCH /chats/:id/mute ──
