@@ -118,6 +118,14 @@ export function ChatProvider({ children }) {
         }));
       }),
 
+      // Message reactions updated
+      onSocket('message:reaction', ({ messageId, chatId, reactions }) => {
+        setMessages((prev) => ({
+          ...prev,
+          [chatId]: (prev[chatId] || []).map((m) => (m.id === messageId ? { ...m, reactions } : m)),
+        }));
+      }),
+
       // Typing indicator
       onSocket('user:typing', ({ chatId, userId, typing }) => {
         if (userId === user.id) return;
@@ -162,6 +170,7 @@ export function ChatProvider({ children }) {
           ...(data.name !== undefined ? { name: data.name } : {}),
           ...(data.description !== undefined ? { description: data.description } : {}),
           ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
+          ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
         } : c));
       }),
 

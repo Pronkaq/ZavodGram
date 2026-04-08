@@ -70,6 +70,7 @@ export const ws = {
   editMessage: (data) => emitSocket('message:edit', data),
   deleteMessage: (data) => emitSocket('message:delete', data),
   markRead: (data) => emitSocket('message:read', data),
+  reactMessage: (data) => emitSocket('message:react', data),
   startTyping: (chatId) => emitSocket('typing:start', { chatId }),
   joinChat: (chatId) => emitSocket('chat:join', { chatId }),
 };
