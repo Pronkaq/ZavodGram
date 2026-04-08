@@ -239,7 +239,19 @@ export function setupWebSocket(httpServer: HttpServer) {
       try {
         if (!enforceSocketRate(userId, 'message:read', 100, 60000)) return;
         await requireChatMembership(prisma, data.chatId, userId);
-        const msg = await requireMessageInChat(prisma, data.messageId, data.chatId);
+
+        let messageToMarkId = data.messageId;
+        if (data.messageId === 'latest') {
+          const latestMessage = await prisma.message.findFirst({
+            where: { chatId: data.chatId, deleted: false },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          });
+          if (!latestMessage) return;
+          messageToMarkId = latestMessage.id;
+        }
+
+        const msg = await requireMessageInChat(prisma, messageToMarkId, data.chatId);
 
         await prisma.chatMember.update({
           where: { chatId_userId: { chatId: data.chatId, userId } },
@@ -247,9 +259,9 @@ export function setupWebSocket(httpServer: HttpServer) {
         });
 
         if (msg.fromId !== userId) {
-          await prisma.message.update({ where: { id: data.messageId }, data: { status: 'READ' } });
+          await prisma.message.update({ where: { id: messageToMarkId }, data: { status: 'READ' } });
           io.to(`user:${msg.fromId}`).emit('message:status', {
-            messageId: data.messageId,
+            messageId: messageToMarkId,
             chatId: data.chatId,
             status: 'READ',
           });
