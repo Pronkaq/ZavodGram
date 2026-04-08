@@ -12,8 +12,9 @@ export default function AuthPage() {
 
   const set = (k, v) => {
     if (k === 'phone') {
-      if (!v.startsWith('+')) v = '+' + v;
       v = v.replace(/[^\d+]/g, '');
+      v = v.replace(/\+/g, '');
+      v = `+${v}`;
     }
     if (k === 'tag') {
       if (!v.startsWith('@')) v = '@' + v;
@@ -50,7 +51,7 @@ export default function AuthPage() {
   const validateRegisterForm = () => {
     if (!form.name.trim()) return 'Введите имя';
     if (form.tag.length < 4) return 'Тег минимум 3 символа после @';
-    if (form.phone.length < 12) return 'Введите номер телефона';
+    if (!/^\+7\d{10}$/.test(form.phone)) return 'Введите номер в формате +7XXXXXXXXXX';
     if (form.password.length < 6) return 'Пароль минимум 6 символов';
     return '';
   };
@@ -103,6 +104,15 @@ export default function AuthPage() {
   };
 
   const telegramConfirmed = pendingRegistration?.status === 'CONFIRMED' || registerStep === 'confirmed';
+  const telegramStartPayload = (() => {
+    if (!pendingRegistration?.telegramDeepLink) return '';
+    try {
+      return new URL(pendingRegistration.telegramDeepLink).searchParams.get('start') || '';
+    } catch {
+      return '';
+    }
+  })();
+  const telegramStartCommand = telegramStartPayload ? `/start ${telegramStartPayload}` : '';
 
   return (
     <div style={s.page}>
@@ -135,9 +145,30 @@ export default function AuthPage() {
               <div style={s.telegramText}>1) Откройте бота по ссылке ниже и нажмите «Подтвердить».</div>
               <div style={s.telegramText}>2) Вернитесь сюда и завершите регистрацию.</div>
               {pendingRegistration.telegramDeepLink ? (
-                <a href={pendingRegistration.telegramDeepLink} target="_blank" rel="noreferrer" style={s.telegramLink}>
-                  Открыть Telegram-бота
-                </a>
+                <>
+                  <a href={pendingRegistration.telegramDeepLink} target="_blank" rel="noreferrer" style={s.telegramLink}>
+                    Открыть Telegram-бота
+                  </a>
+                  <div style={s.telegramHint}>
+                    Если бот пишет, что payload отсутствует — отправьте ему эту команду вручную:
+                  </div>
+                  <div style={s.telegramCommandRow}>
+                    <code style={s.telegramCommand}>{telegramStartCommand}</code>
+                    <button
+                      type="button"
+                      style={s.telegramCopyBtn}
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(telegramStartCommand);
+                        } catch {
+                          // ignore clipboard permission errors
+                        }
+                      }}
+                    >
+                      Копировать
+                    </button>
+                  </div>
+                </>
               ) : (
                 <div style={s.error}>Бот не настроен: отсутствует TELEGRAM_BOT_USERNAME на backend.</div>
               )}
@@ -193,5 +224,9 @@ const s = {
   telegramTitle: { color: '#E8E8ED', fontSize: 14, fontWeight: 700, marginBottom: 8 },
   telegramText: { color: '#B8BDCA', fontSize: 13, marginBottom: 6 },
   telegramLink: { display: 'inline-block', color: '#7CB4FF', textDecoration: 'none', fontWeight: 600, margin: '8px 0' },
+  telegramHint: { color: '#B8BDCA', fontSize: 12, marginTop: 4, marginBottom: 6 },
+  telegramCommandRow: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+  telegramCommand: { background: 'rgba(0,0,0,0.22)', borderRadius: 6, padding: '5px 8px', color: '#E8E8ED', fontSize: 12 },
+  telegramCopyBtn: { border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, padding: '5px 10px', background: 'transparent', color: '#D6DBE8', cursor: 'pointer', fontSize: 12 },
   telegramStatus: { color: '#E8E8ED', fontSize: 13, marginTop: 8 },
 };
