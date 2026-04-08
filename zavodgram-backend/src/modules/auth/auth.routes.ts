@@ -92,6 +92,26 @@ async function assertRegistrationAvailability(phone: string, tag: string) {
   if (tagReserved) throw new ConflictError('Этот тег забронирован другим пользователем');
 }
 
+async function assertTelegramAvailability(telegramId: string, attemptId?: string) {
+  const existingTelegramUser = await prisma.user.findUnique({ where: { telegramId } });
+  if (existingTelegramUser) {
+    throw new ConflictError('Этот Telegram уже привязан к другому аккаунту');
+  }
+
+  const existingAttempt = await prisma.registrationAttempt.findFirst({
+    where: {
+      telegramId,
+      status: { in: ['CONFIRMED', 'COMPLETED'] },
+      ...(attemptId ? { id: { not: attemptId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (existingAttempt) {
+    throw new ConflictError('Этот Telegram уже использован для регистрации');
+  }
+}
+
 async function completeRegistration(
   registrationId: string,
   req: Request,
@@ -115,6 +135,11 @@ async function completeRegistration(
     throw new AuthError('Подтвердите регистрацию в Telegram');
   }
 
+  if (!attempt.telegramId) {
+    throw new AuthError('Telegram-подтверждение не найдено');
+  }
+
+  await assertTelegramAvailability(attempt.telegramId, attempt.id);
   await assertRegistrationAvailability(attempt.phone, attempt.tag);
 
   const result = await prisma.$transaction(async (tx) => {
@@ -122,6 +147,8 @@ async function completeRegistration(
       data: {
         phone: attempt.phone,
         tag: attempt.tag,
+        telegramId: attempt.telegramId,
+        telegramUsername: attempt.telegramUsername,
         name: attempt.name,
         bio: attempt.bio || '',
         password: attempt.passwordHash,
@@ -282,6 +309,8 @@ router.post('/internal/telegram/confirm', rateLimiter(60, 60), async (req: Reque
       });
       throw new AuthError('Время подтверждения истекло');
     }
+
+    await assertTelegramAvailability(String(telegramUser.id), attempt.id);
 
     await prisma.registrationAttempt.update({
       where: { id: attempt.id },
