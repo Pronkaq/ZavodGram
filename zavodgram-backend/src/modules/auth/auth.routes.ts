@@ -30,8 +30,12 @@ const logoutSchema = z.object({ refreshToken: z.string().min(20).optional() });
 
 // ── Helpers ──
 function generateTokens(payload: AuthPayload) {
-  const accessToken = (jwt.sign as any)(payload, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
-  const refreshToken = (jwt.sign as any)({ ...payload, jti: uuid() }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpiresIn });
+  const accessToken = jwt.sign(payload, config.jwt.secret, {
+    expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'],
+  });
+  const refreshToken = jwt.sign({ ...payload, jti: uuid() }, config.jwt.refreshSecret, {
+    expiresIn: config.jwt.refreshExpiresIn as jwt.SignOptions['expiresIn'],
+  });
   return { accessToken, refreshToken };
 }
 
