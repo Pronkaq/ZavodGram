@@ -106,6 +106,7 @@ model Chat {
   type        ChatType
   name        String?          // null для приватных
   description String?
+  channelSlug String?  @unique // Уникальная публичная ссылка для каналов
   avatar      String?
   createdBy   String?
   createdAt   DateTime @default(now())

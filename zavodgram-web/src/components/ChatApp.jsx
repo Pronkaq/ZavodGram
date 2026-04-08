@@ -102,6 +102,14 @@ export default function ChatApp() {
   const [editGroupDesc, setEditGroupDesc] = useState('');
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [addMemberResults, setAddMemberResults] = useState([]);
+  const [channelInfoModal, setChannelInfoModal] = useState(false);
+  const [channelSlugEdit, setChannelSlugEdit] = useState('');
+  const [channelSlugError, setChannelSlugError] = useState('');
+  const [attachmentsModal, setAttachmentsModal] = useState(false);
+  const [reactionPicker, setReactionPicker] = useState(null);
+  const [messageReactions, setMessageReactions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('zg_message_reactions') || '{}'); } catch { return {}; }
+  });
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
@@ -303,10 +311,10 @@ export default function ChatApp() {
   }, [notifications]);
 
   useEffect(() => {
-    if (profilePanel || newChatModal || groupSettingsModal || memberListModal || forwardMsg || avatarView) {
+    if (profilePanel || newChatModal || groupSettingsModal || memberListModal || forwardMsg || avatarView || channelInfoModal || attachmentsModal) {
       setNotifPanel(false);
     }
-  }, [profilePanel, newChatModal, groupSettingsModal, memberListModal, forwardMsg, avatarView]);
+  }, [profilePanel, newChatModal, groupSettingsModal, memberListModal, forwardMsg, avatarView, channelInfoModal, attachmentsModal]);
 
   const openNotificationsPanel = useCallback(() => {
     setSidebarOpen(false);
@@ -314,6 +322,87 @@ export default function ChatApp() {
     setSettingsMode(false);
     setNotifPanel(true);
   }, []);
+
+
+  useEffect(() => {
+    localStorage.setItem('zg_message_reactions', JSON.stringify(messageReactions));
+  }, [messageReactions]);
+
+  const normalizedSlug = (slug) => (slug || '').trim().toLowerCase();
+  const channelPublicLink = useMemo(() => {
+    if (!acd?.channelSlug) return '';
+    return `${window.location.origin}/${acd.channelSlug}`;
+  }, [acd?.channelSlug]);
+
+  const openChannelInfo = useCallback(() => {
+    if (!acd || acd.type !== 'CHANNEL') return;
+    setChannelSlugEdit(acd.channelSlug || '');
+    setChannelSlugError('');
+    setChannelInfoModal(true);
+  }, [acd]);
+
+  const shareChannelLink = async () => {
+    if (!channelPublicLink) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: acd?.name || 'Канал', url: channelPublicLink });
+      } else {
+        await navigator.clipboard?.writeText(channelPublicLink);
+      }
+    } catch {}
+  };
+
+  const saveChannelSlug = async () => {
+    if (!activeChat || !acd || acd.type !== 'CHANNEL') return;
+    const slug = normalizedSlug(channelSlugEdit);
+    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
+      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
+      return;
+    }
+    try {
+      await chatsApi.update(activeChat, { channelSlug: slug });
+      await loadChats();
+      setChannelSlugError('');
+      setChannelInfoModal(false);
+    } catch (err) {
+      setChannelSlugError(err.message || 'Не удалось сохранить ссылку');
+    }
+  };
+
+  const extractLinks = (text) => {
+    if (!text) return [];
+    const matches = text.match(/https?:\/\/[^\s]+/g);
+    return matches || [];
+  };
+
+  const channelAttachments = useMemo(() => {
+    if (!acd || acd.type !== 'CHANNEL') return [];
+    const list = [];
+    cms.forEach((msg) => {
+      (msg.media || []).forEach((m) => list.push({ kind: 'media', msgId: msg.id, createdAt: msg.createdAt, media: m }));
+      extractLinks(msg.text).forEach((url, idx) => list.push({ kind: 'link', msgId: msg.id, createdAt: msg.createdAt, id: `${msg.id}-${idx}`, url }));
+    });
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [acd, cms]);
+
+  const REACTION_SET = ['👍', '❤️', '🔥', '👏', '😂', '😮', '😢', '😡'];
+
+  const addReaction = (msgId, emoji) => {
+    setMessageReactions((prev) => {
+      const current = prev[msgId] || {};
+      const users = new Set(current[emoji] || []);
+      if (users.has(user.id)) users.delete(user.id);
+      else users.add(user.id);
+      const updatedEmoji = Array.from(users);
+      const nextForMsg = { ...current, [emoji]: updatedEmoji };
+      if (updatedEmoji.length === 0) delete nextForMsg[emoji];
+      return { ...prev, [msgId]: nextForMsg };
+    });
+  };
+
+  const openReactionPicker = (x, y, msgId) => {
+    setReactionPicker({ x: Math.min(x, window.innerWidth - 270), y: Math.min(y, window.innerHeight - 80), msgId });
+  };
 
   const openSettingsPanel = useCallback(() => {
     setSidebarOpen(false);
@@ -324,7 +413,7 @@ export default function ChatApp() {
   }, [user]);
 
   return (
-    <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); }}>
+    <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
 
       {/* ── Toasts ── */}
       <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
@@ -410,8 +499,8 @@ export default function ChatApp() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
               <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
               <Av src={other?.avatar || acd.avatar} name={chatName} size={38} color={tc[acd.type]} online={on}
-                onClick={() => isDirectChat && other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null} />
-              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null}>
+                onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
+              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
                 <div style={{ fontSize: 12, color: typingText ? '#4A9EE5' : '#3A4050', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
                   onClick={(e) => { if (isGroupOrChannel) { e.stopPropagation(); setMemberListModal(true); } }}>
@@ -421,6 +510,7 @@ export default function ChatApp() {
               <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
               <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
               {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
+              {acd.type === 'CHANNEL' && <button style={s.ib} onClick={() => setAttachmentsModal(true)}><Icons.Attach /></button>}
             </div>
 
             {/* Message search bar */}
@@ -448,7 +538,15 @@ export default function ChatApp() {
                 const postAuthor = acd.name || chatName;
                 return (
                   <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'stretch' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
-                    onContextMenu={e => ctx(e, { ...msg, mine: isMine })}>
+                    onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
+                    onTouchStart={(e) => {
+                      const t = e.touches?.[0];
+                      if (!t) return;
+                      const timer = setTimeout(() => openReactionPicker(t.clientX, t.clientY - 50, msg.id), 450);
+                      e.currentTarget.__touchTimer = timer;
+                    }}
+                    onTouchEnd={(e) => { clearTimeout(e.currentTarget.__touchTimer); }}
+                    onTouchMove={(e) => { clearTimeout(e.currentTarget.__touchTimer); }}>
                     {!isMine && acd.type === 'GROUP' && (
                       <Av src={sender.avatar} name={sender.name} size={28} radius={8} color={sender.color} onClick={() => openProfile(msg.fromId || sender.id)} />
                     )}
@@ -483,6 +581,15 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment media={msg.media} />
                       {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{msgSearch ? highlightText(msg.text, msgSearch) : msg.text}</span>}
+                      {!!Object.keys(messageReactions[msg.id] || {}).length && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                          {Object.entries(messageReactions[msg.id] || {}).map(([emoji, userIds]) => (
+                            <button key={emoji} onClick={() => addReaction(msg.id, emoji)} style={{ border: '1px solid rgba(255,255,255,0.12)', background: userIds.includes(user.id) ? 'rgba(74,158,229,0.2)' : 'rgba(255,255,255,0.05)', color: '#E8E8ED', borderRadius: 14, padding: '2px 8px', fontSize: 13, cursor: 'pointer' }}>
+                              {emoji} {userIds.length}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#3A4050', marginTop: 8, fontFamily: 'mono' }}>
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
                         {msg.encrypted && <Icons.Lock />}
@@ -614,9 +721,19 @@ export default function ChatApp() {
         <div style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 200, minWidth: 180, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
           <div style={s.mi} onClick={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}><Icons.Reply /> Ответить</div>
           <div style={s.mi} onClick={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}><Icons.Forward /> Переслать</div>
+          <div style={s.mi} onClick={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}><Icons.Smile /> Реакция</div>
           <div style={s.mi} onClick={() => { navigator.clipboard?.writeText(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Copy /> Копировать</div>
           {contextMenu.msg.mine && <div style={s.mi} onClick={() => { setEditingMsg(contextMenu.msg); setReplyTo(null); setInput(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Edit /> Редактировать</div>}
           {contextMenu.msg.mine && <div style={{ ...s.mi, color: '#E55A5A' }} onClick={() => { deleteMessage(activeChat, contextMenu.msg.id); setContextMenu(null); }}><Icons.Trash /> Удалить</div>}
+        </div>
+      )}
+
+
+      {reactionPicker && (
+        <div style={{ position: 'fixed', top: reactionPicker.y, left: reactionPicker.x, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '8px 10px', zIndex: 240, display: 'flex', gap: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
+          {REACTION_SET.map((emoji) => (
+            <button key={emoji} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer' }} onClick={() => { addReaction(reactionPicker.msgId, emoji); setReactionPicker(null); }}>{emoji}</button>
+          ))}
         </div>
       )}
 
@@ -692,6 +809,55 @@ export default function ChatApp() {
                 Создать {newChatMode === 'GROUP' ? 'группу' : 'канал'}
               </button>
             </>)}
+          </div>
+        </div>
+      )}
+
+
+      {channelInfoModal && acd?.type === 'CHANNEL' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setChannelInfoModal(false)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>О канале</h3>
+            <div style={{ fontSize: 12, color: '#7A8090', marginBottom: 6 }}>Публичная ссылка</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input style={s.inp2} value={channelPublicLink || 'Ссылка не настроена'} readOnly />
+              <button style={s.ib} onClick={() => navigator.clipboard?.writeText(channelPublicLink)} disabled={!channelPublicLink}><Icons.Copy /></button>
+              <button style={s.ib} onClick={shareChannelLink} disabled={!channelPublicLink}><Icons.Share /></button>
+            </div>
+            {isOwnerOrAdmin && (
+              <>
+                <label style={s.lbl}>Уникальная ссылка (slug)</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ color: '#6A7090', fontSize: 13 }}>{window.location.origin}/</span>
+                  <input style={s.inp2} value={channelSlugEdit} onChange={e => { setChannelSlugEdit(e.target.value); setChannelSlugError(''); }} placeholder="my-channel" />
+                </div>
+                {channelSlugError && <div style={{ color: '#E55A5A', fontSize: 12, marginTop: 6 }}>{channelSlugError}</div>}
+                <button style={{ ...s.saveBtn, marginTop: 12, width: '100%' }} onClick={saveChannelSlug}>Сохранить ссылку</button>
+              </>
+            )}
+            <button style={{ ...s.ib, marginTop: 14, width: '100%', justifyContent: 'center', padding: 10, border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}>
+              <Icons.Image /> Вложения канала
+            </button>
+          </div>
+        </div>
+      )}
+
+      {attachmentsModal && acd?.type === 'CHANNEL' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setAttachmentsModal(false)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Вложения канала</h3>
+            {channelAttachments.length === 0 && <div style={{ color: '#7A8090', fontSize: 13 }}>Пока нет вложений или ссылок.</div>}
+            {channelAttachments.map((item) => (
+              <div key={`${item.msgId}-${item.kind}-${item.id || item.media?.id}`} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                {item.kind === 'link' ? (
+                  <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5', wordBreak: 'break-all' }}>{item.url}</a>
+                ) : item.media?.type === 'IMAGE' ? (
+                  <img src={mediaUrlById(item.media.id)} alt={item.media.originalName} style={{ maxWidth: '100%', borderRadius: 10 }} />
+                ) : (
+                  <a href={mediaUrlById(item.media.id)} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5' }}>{item.media?.originalName || 'Файл'}</a>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
