@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ── PostgreSQL ──
   postgres:
@@ -51,6 +49,10 @@ services:
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       UPLOAD_DIR: /app/uploads
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_INTERNAL_TOKEN: ${TELEGRAM_INTERNAL_TOKEN:-}
+      TELEGRAM_VERIFICATION_TTL_MINUTES: ${TELEGRAM_VERIFICATION_TTL_MINUTES:-15}
     volumes:
       - uploads:/app/uploads
       - logs:/app/logs

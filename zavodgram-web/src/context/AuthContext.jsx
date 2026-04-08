@@ -40,8 +40,12 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  const register = async (formData) => {
-    const data = await authApi.register(formData);
+  const registerStart = (formData) => authApi.registerStart(formData);
+
+  const registerStatus = (registrationId) => authApi.registerStatus(registrationId);
+
+  const registerComplete = async (registrationId) => {
+    const data = await authApi.registerComplete(registrationId);
     setTokens(data.accessToken, data.refreshToken);
     setUser(data.user);
     connectSocket();
@@ -53,7 +57,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, registerStart, registerStatus, registerComplete, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
