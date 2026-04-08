@@ -34,4 +34,9 @@ export const config = {
   encryption: {
     key: process.env.ENCRYPTION_KEY || 'change-me-32-bytes-key!!!!!!!!!!!',
   },
+
+  adminTags: (process.env.ADMIN_TAGS || '@admin')
+    .split(',')
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean),
 } as const;

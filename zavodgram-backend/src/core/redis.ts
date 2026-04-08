@@ -66,3 +66,30 @@ export async function cacheInvalidate(pattern: string): Promise<void> {
   const keys = await redis.keys(`cache:${pattern}`);
   if (keys.length > 0) await redis.del(...keys);
 }
+
+// ── Admin moderation ──
+export async function setUserBlocked(userId: string, blocked: boolean, reason?: string): Promise<void> {
+  const key = `blocked:${userId}`;
+  if (!blocked) {
+    await redis.del(key);
+    return;
+  }
+
+  await redis.set(key, reason?.trim() || 'blocked');
+}
+
+export async function isUserBlocked(userId: string): Promise<boolean> {
+  return (await redis.exists(`blocked:${userId}`)) === 1;
+}
+
+export async function getBlockedUsers(userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const pipeline = redis.pipeline();
+  userIds.forEach((id) => pipeline.exists(`blocked:${id}`));
+  const results = await pipeline.exec();
+  const blocked = new Set<string>();
+  results?.forEach((r, i) => {
+    if (r[1] === 1) blocked.add(userIds[i]);
+  });
+  return blocked;
+}

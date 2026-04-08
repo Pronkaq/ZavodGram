@@ -136,3 +136,11 @@ export const notificationsApi = {
   markRead: (ids) => api('/notifications/read', { method: 'POST', body: { ids } }),
   clearAll: () => api('/notifications', { method: 'DELETE' }),
 };
+
+// ── Admin API ──
+export const adminApi = {
+  stats: () => api('/admin/stats'),
+  users: (q = '', limit = 30) => api(`/admin/users?q=${encodeURIComponent(q)}&limit=${limit}`),
+  setBlocked: (userId, blocked, reason = '') => api(`/admin/users/${userId}/block`, { method: 'PATCH', body: { blocked, reason } }),
+  removeUser: (userId) => api(`/admin/users/${userId}`, { method: 'DELETE' }),
+};

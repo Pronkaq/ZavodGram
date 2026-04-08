@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
 import AuthPage from './pages/AuthPage';
 import ChatApp from './components/ChatApp';
+import AdminPage from './pages/AdminPage';
 
 function App() {
   const { user, loading } = useAuth();
@@ -21,6 +22,10 @@ function App() {
   }
 
   if (!user) return <AuthPage />;
+
+  if (window.location.pathname.startsWith('/admin')) {
+    return <AdminPage />;
+  }
 
   return (
     <ChatProvider>
