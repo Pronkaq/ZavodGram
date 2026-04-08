@@ -129,7 +129,7 @@ export function setupWebSocket(httpServer: HttpServer) {
           });
           if (!orig || orig.deleted) return socket.emit('error', { message: 'Источник пересылки не найден' });
           await requireChatMembership(prisma, orig.chatId, userId);
-          forwardedFromName = orig.from.name;
+          forwardedFromName = orig.from.name ?? undefined;
           text = text || orig.text || undefined;
         }
 
