@@ -1,8 +1,13 @@
--- CreateEnum
-CREATE TYPE "RegistrationStatus" AS ENUM ('PENDING', 'CONFIRMED', 'COMPLETED', 'EXPIRED', 'CANCELED');
+-- CreateEnum (idempotent for retry/partial-apply scenarios)
+DO $$
+BEGIN
+    CREATE TYPE "RegistrationStatus" AS ENUM ('PENDING', 'CONFIRMED', 'COMPLETED', 'EXPIRED', 'CANCELED');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "RegistrationAttempt" (
+CREATE TABLE IF NOT EXISTS "RegistrationAttempt" (
     "id" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
     "tag" TEXT NOT NULL,
@@ -22,13 +27,13 @@ CREATE TABLE "RegistrationAttempt" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "RegistrationAttempt_verificationTokenHash_key" ON "RegistrationAttempt"("verificationTokenHash");
+CREATE UNIQUE INDEX IF NOT EXISTS "RegistrationAttempt_verificationTokenHash_key" ON "RegistrationAttempt"("verificationTokenHash");
 
 -- CreateIndex
-CREATE INDEX "RegistrationAttempt_phone_status_idx" ON "RegistrationAttempt"("phone", "status");
+CREATE INDEX IF NOT EXISTS "RegistrationAttempt_phone_status_idx" ON "RegistrationAttempt"("phone", "status");
 
 -- CreateIndex
-CREATE INDEX "RegistrationAttempt_tag_status_idx" ON "RegistrationAttempt"("tag", "status");
+CREATE INDEX IF NOT EXISTS "RegistrationAttempt_tag_status_idx" ON "RegistrationAttempt"("tag", "status");
 
 -- CreateIndex
-CREATE INDEX "RegistrationAttempt_expiresAt_idx" ON "RegistrationAttempt"("expiresAt");
+CREATE INDEX IF NOT EXISTS "RegistrationAttempt_expiresAt_idx" ON "RegistrationAttempt"("expiresAt");
