@@ -17,6 +17,7 @@ import chatsRoutes from './modules/chats/chats.routes';
 import messagesRoutes from './modules/messages/messages.routes';
 import mediaRoutes from './modules/media/media.routes';
 import notificationsRoutes from './modules/notifications/notifications.routes';
+import adminRoutes from './modules/admin/admin.routes';
 
 async function bootstrap() {
   const app = express();
@@ -49,6 +50,7 @@ async function bootstrap() {
   app.use('/api/chats', messagesRoutes);   // /api/chats/:chatId/messages
   app.use('/api/media', mediaRoutes);
   app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/admin', adminRoutes);
 
   // ── Error handler (must be last) ──
   app.use(errorHandler);

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { AuthError } from '../core/errors';
-import { setUserOnline } from '../core/redis';
+import { isUserBlocked, setUserOnline } from '../core/redis';
 
 export interface AuthPayload {
   userId: string;
@@ -17,13 +17,15 @@ declare global {
   }
 }
 
-export function authMiddleware(req: Request, _res: Response, next: NextFunction) {
+export async function authMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) throw new AuthError();
 
     const token = header.slice(7);
     const payload = jwt.verify(token, config.jwt.secret) as AuthPayload;
+    const blocked = await isUserBlocked(payload.userId);
+    if (blocked) throw new AuthError('Аккаунт заблокирован');
 
     req.user = payload;
 
