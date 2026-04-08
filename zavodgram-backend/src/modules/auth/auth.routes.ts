@@ -29,12 +29,17 @@ const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const logoutSchema = z.object({ refreshToken: z.string().min(20).optional() });
 
 // ── Helpers ──
+function getJwtExpiresIn(value: string | number): jwt.SignOptions['expiresIn'] {
+  if (typeof value === 'number') return value;
+  return value as jwt.SignOptions['expiresIn'];
+}
+
 function generateTokens(payload: AuthPayload) {
   const accessToken = jwt.sign(payload, config.jwt.secret, {
-    expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'],
+    expiresIn: getJwtExpiresIn(config.jwt.expiresIn),
   });
   const refreshToken = jwt.sign({ ...payload, jti: uuid() }, config.jwt.refreshSecret, {
-    expiresIn: config.jwt.refreshExpiresIn as jwt.SignOptions['expiresIn'],
+    expiresIn: getJwtExpiresIn(config.jwt.refreshExpiresIn),
   });
   return { accessToken, refreshToken };
 }

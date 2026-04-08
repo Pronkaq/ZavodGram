@@ -73,7 +73,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
 
     await requireChatMembership(prisma, chatId, req.user!.userId);
 
-    let forwardedFromName: string | null = null;
+    let forwardedFromName: string | undefined;
     let forwardText = data.text;
     if (data.forwardedFromId) {
       const original = await prisma.message.findUnique({
@@ -100,7 +100,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
           text: forwardText || null,
           replyToId: data.replyToId || undefined,
           forwardedFromId: data.forwardedFromId || undefined,
-          forwardedFromName: forwardedFromName || undefined,
+          forwardedFromName,
           encrypted: data.encrypted || false,
         },
       });
