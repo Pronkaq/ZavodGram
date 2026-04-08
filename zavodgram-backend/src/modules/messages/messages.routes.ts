@@ -8,6 +8,15 @@ import { ensureUuidArray, requireChatMembership, requireMessageInChat } from '..
 
 const router = Router();
 
+async function resolveRootPost(chatId: string, messageId: string) {
+  let current = await requireMessageInChat(prisma, messageId, chatId);
+  while (current.replyToId) {
+    current = await requireMessageInChat(prisma, current.replyToId, chatId);
+  }
+  return current;
+}
+
+
 router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chatId } = req.params;
@@ -63,6 +72,7 @@ const sendSchema = z.object({
   forwardedFromId: z.string().uuid().optional(),
   encrypted: z.boolean().optional(),
   mediaIds: z.array(z.string().uuid()).max(10).optional(),
+  commentsEnabled: z.boolean().optional(),
 });
 
 router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req: Request, res: Response, next: NextFunction) => {
@@ -80,13 +90,19 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
       select: { type: true },
     });
     if (!chat) throw new NotFoundError('Чат');
-    if (chat.type === 'CHANNEL' && membership.role === 'MEMBER') {
-      if (!data.replyToId) {
+    if (chat.type === 'CHANNEL') {
+      if (!data.replyToId && membership.role === 'MEMBER') {
         throw new ForbiddenError('В канале публиковать посты могут только администраторы и модераторы');
       }
-      const parentMessage = await requireMessageInChat(prisma, data.replyToId, chatId);
-      if (parentMessage.replyToId) {
-        throw new ForbiddenError('Комментарии доступны только к постам первого уровня');
+
+      if (data.replyToId) {
+        const rootPost = await resolveRootPost(chatId, data.replyToId);
+        if (!rootPost.commentsEnabled) {
+          throw new ForbiddenError('Комментарии для этого поста отключены');
+        }
+        if (membership.commentsMuted) {
+          throw new ForbiddenError('Вам запрещено оставлять комментарии в этом канале');
+        }
       }
     }
 
@@ -119,6 +135,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
           forwardedFromId: data.forwardedFromId || undefined,
           forwardedFromName,
           encrypted: data.encrypted || false,
+          commentsEnabled: chat.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
         },
       });
 

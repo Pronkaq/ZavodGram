@@ -110,6 +110,7 @@ export const chatsApi = {
   setMemberRole: (chatId, userId, role) => api(`/chats/${chatId}/members/${userId}/role`, { method: 'PATCH', body: { role } }),
   transferOwnership: (chatId, userId) => api(`/chats/${chatId}/transfer-ownership`, { method: 'POST', body: { userId } }),
   mute: (chatId, muted) => api(`/chats/${chatId}/mute`, { method: 'PATCH', body: { muted } }),
+  muteComments: (chatId, userId, muted) => api(`/chats/${chatId}/members/${userId}/comments-mute`, { method: 'PATCH', body: { muted } }),
 };
 
 // ── Messages API ──

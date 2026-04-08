@@ -203,8 +203,8 @@ export function ChatProvider({ children }) {
   }, [user, loadChats, loadMessages]);
 
   // ── Actions ──
-  const sendMessage = useCallback((chatId, text, replyToId, forwardedFromId) => {
-    ws.sendMessage({ chatId, text, replyToId, forwardedFromId });
+  const sendMessage = useCallback((chatId, text, replyToId, forwardedFromId, options = {}) => {
+    ws.sendMessage({ chatId, text, replyToId, forwardedFromId, ...options });
   }, []);
 
   const editMessage = useCallback((chatId, messageId, text) => {

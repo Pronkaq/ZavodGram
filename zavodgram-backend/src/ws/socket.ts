@@ -30,6 +30,14 @@ function enforceSocketRate(userId: string, action: string, limit: number, window
   return true;
 }
 
+async function resolveRootPost(chatId: string, messageId: string) {
+  let current = await requireMessageInChat(prisma, messageId, chatId);
+  while (current.replyToId) {
+    current = await requireMessageInChat(prisma, current.replyToId, chatId);
+  }
+  return current;
+}
+
 export function setupWebSocket(httpServer: HttpServer) {
   const io = new Server(httpServer, {
     cors: {
@@ -118,6 +126,7 @@ export function setupWebSocket(httpServer: HttpServer) {
       replyToId?: string;
       forwardedFromId?: string;
       encrypted?: boolean;
+      commentsEnabled?: boolean;
     }) => {
       try {
         if (!enforceSocketRate(userId, 'message:send', 40, 60000)) return;
@@ -127,8 +136,20 @@ export function setupWebSocket(httpServer: HttpServer) {
           select: { type: true },
         });
         if (!chatMeta) return socket.emit('error', { message: 'Чат не найден' });
-        if (chatMeta.type === 'CHANNEL' && membership.role === 'MEMBER') {
-          return socket.emit('error', { message: 'В канале могут публиковать только администраторы и модераторы' });
+        if (chatMeta.type === 'CHANNEL') {
+          if (!data.replyToId && membership.role === 'MEMBER') {
+            return socket.emit('error', { message: 'В канале могут публиковать только администраторы и модераторы' });
+          }
+
+          if (data.replyToId) {
+            const rootPost = await resolveRootPost(data.chatId, data.replyToId);
+            if (!rootPost.commentsEnabled) {
+              return socket.emit('error', { message: 'Комментарии для этого поста отключены' });
+            }
+            if (membership.commentsMuted) {
+              return socket.emit('error', { message: 'Вам запрещено оставлять комментарии в этом канале' });
+            }
+          }
         }
 
         let forwardedFromName: string | undefined;
@@ -157,6 +178,7 @@ export function setupWebSocket(httpServer: HttpServer) {
             forwardedFromId: data.forwardedFromId || undefined,
             forwardedFromName,
             encrypted: data.encrypted || false,
+            commentsEnabled: chatMeta.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
           },
           include: {
             from: { select: { id: true, name: true, tag: true, avatar: true } },

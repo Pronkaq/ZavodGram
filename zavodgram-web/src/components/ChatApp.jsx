@@ -110,6 +110,8 @@ export default function ChatApp() {
   const [reactionPicker, setReactionPicker] = useState(null);
   const [postCommentsModal, setPostCommentsModal] = useState(null);
   const [postCommentDraft, setPostCommentDraft] = useState('');
+  const [postCommentReplyTo, setPostCommentReplyTo] = useState(null);
+  const [channelPostCommentsEnabled, setChannelPostCommentsEnabled] = useState(true);
   const [inviteChannel, setInviteChannel] = useState(null);
   const [joiningInvite, setJoiningInvite] = useState(false);
   const endRef = useRef(null);
@@ -153,7 +155,12 @@ export default function ChatApp() {
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
     if (editingMsg) { editMessage(activeChat, editingMsg.id, text); setEditingMsg(null); }
-    else { sendMessage(activeChat, text, replyTo?.id, null); setReplyTo(null); }
+    else {
+      const options = (acd?.type === 'CHANNEL' && !replyTo) ? { commentsEnabled: channelPostCommentsEnabled } : {};
+      sendMessage(activeChat, text, replyTo?.id, null, options);
+      setReplyTo(null);
+      if (acd?.type === 'CHANNEL') setChannelPostCommentsEnabled(true);
+    }
     setInput('');
   };
 
@@ -474,23 +481,60 @@ export default function ChatApp() {
 
   const getPostComments = useCallback((msg) => {
     if (!msg?.id) return [];
-    return cms
-      .filter((m) => !m.deleted && m.replyToId === msg.id)
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const children = new Map();
+    cms.forEach((m) => {
+      if (m.deleted || !m.replyToId) return;
+      if (!children.has(m.replyToId)) children.set(m.replyToId, []);
+      children.get(m.replyToId).push(m);
+    });
+
+    const result = [];
+    const walk = (parentId, depth = 0) => {
+      const list = (children.get(parentId) || []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      list.forEach((item) => {
+        result.push({ ...item, depth });
+        walk(item.id, depth + 1);
+      });
+    };
+
+    walk(msg.id, 0);
+    return result;
   }, [cms]);
 
   const openPostComments = useCallback((msg) => {
     setPostCommentsModal(msg);
     setPostCommentDraft('');
+    setPostCommentReplyTo(null);
   }, []);
 
   const sendPostComment = useCallback(async () => {
     if (!postCommentsModal) return;
     const text = postCommentDraft.trim();
     if (!text) return;
-    sendMessage(activeChat, text, postCommentsModal.id, null);
+    sendMessage(activeChat, text, postCommentReplyTo?.id || postCommentsModal.id, null);
     setPostCommentDraft('');
-  }, [activeChat, postCommentDraft, postCommentsModal, sendMessage]);
+    setPostCommentReplyTo(null);
+  }, [activeChat, postCommentDraft, postCommentReplyTo, postCommentsModal, sendMessage]);
+
+
+  const handleModerateComment = useCallback(async (comment, action) => {
+    if (!activeChat || !comment) return;
+    try {
+      if (action === 'delete') {
+        deleteMessage(activeChat, comment.id);
+      }
+      if (action === 'mute') {
+        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, true);
+        await loadChats();
+      }
+      if (action === 'unmute') {
+        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, false);
+        await loadChats();
+      }
+    } catch (err) {
+      alert(err.message || 'Не удалось выполнить действие');
+    }
+  }, [activeChat, deleteMessage, loadChats]);
 
   return (
     <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
@@ -705,28 +749,36 @@ export default function ChatApp() {
             )}
 
             {/* Input */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)' }}>
-              {canPublishInChannel ? (
-                <>
-                  <div style={{ position: 'relative' }}>
-                    <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
-                    {attachMenu && (
-                      <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-                        <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
-                        <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
-                      </div>
-                    )}
-                  </div>
-                  <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : 'Сообщение...'} value={input}
-                    onChange={e => { setInput(e.target.value); handleTyping(); }}
-                    onKeyDown={e => e.key === 'Enter' && handleSend()} />
-                  <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
-                </>
-              ) : (
-                <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#6A7090', fontSize: 13 }}>
-                  Только администраторы и модераторы могут публиковать посты в этом канале.
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)' }}>
+              {isChannel && canPublishInChannel && !editingMsg && !replyTo && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#B7BDCB' }}>
+                  <input type="checkbox" checked={channelPostCommentsEnabled} onChange={(e) => setChannelPostCommentsEnabled(e.target.checked)} />
+                  Разрешить комментарии к этому посту
+                </label>
               )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {canPublishInChannel ? (
+                  <>
+                    <div style={{ position: 'relative' }}>
+                      <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
+                      {attachMenu && (
+                        <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
+                          <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                          <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                        </div>
+                      )}
+                    </div>
+                    <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : 'Сообщение...'} value={input}
+                      onChange={e => { setInput(e.target.value); handleTyping(); }}
+                      onKeyDown={e => e.key === 'Enter' && handleSend()} />
+                    <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
+                  </>
+                ) : (
+                  <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#6A7090', fontSize: 13 }}>
+                    Посты публикуют только администраторы и модераторы. Для комментариев откройте пост.
+                  </div>
+                )}
+              </div>
             </div>
           </>);
         })() : (
@@ -963,7 +1015,7 @@ export default function ChatApp() {
       )}
 
       {postCommentsModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => setPostCommentsModal(null)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}>
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
             <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#B7BDCB', marginBottom: 12, maxHeight: 120, overflow: 'auto' }}>
@@ -972,21 +1024,39 @@ export default function ChatApp() {
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 12 }}>
               {getPostComments(postCommentsModal).length === 0 ? (
                 <div style={{ color: '#7A8090', fontSize: 13 }}>Пока комментариев нет. Будьте первым.</div>
-              ) : getPostComments(postCommentsModal).map((comment) => (
-                <div key={comment.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ fontSize: 12, color: '#7CB4FF', marginBottom: 4 }}>
-                    {comment.from?.name || 'Пользователь'} <span style={{ color: '#4A5060', fontFamily: 'mono' }}>{formatTimeShort(comment.createdAt)}</span>
+              ) : getPostComments(postCommentsModal).map((comment) => {
+                const canModerate = isOwnerOrAdmin && (comment.fromId || comment.from?.id) !== user.id;
+                const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
+                return (
+                <div key={comment.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginLeft: Math.min((comment.depth || 0) * 18, 72) }}>
+                  <div style={{ fontSize: 12, color: '#7CB4FF', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span>{comment.from?.name || 'Пользователь'} <span style={{ color: '#4A5060', fontFamily: 'mono' }}>{formatTimeShort(comment.createdAt)}</span></span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button style={{ ...s.ib, fontSize: 12 }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
+                      {canModerate && (
+                        <>
+                          <button style={{ ...s.ib, fontSize: 12 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
+                          <button style={{ ...s.ib, fontSize: 12, color: '#E55A5A' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div style={{ fontSize: 14, color: '#E8E8ED', lineHeight: 1.45 }}>{comment.text}</div>
                 </div>
-              ))}
+              )})}
             </div>
+            {postCommentReplyTo && (
+              <div style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 10, background: 'rgba(74,158,229,0.08)', borderLeft: '3px solid #4A9EE5', fontSize: 12, color: '#B7BDCB', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span>Ответ для {postCommentReplyTo.from?.name || 'пользователя'}: {(postCommentReplyTo.text || '').slice(0, 90)}</span>
+                <button style={s.ib} onClick={() => setPostCommentReplyTo(null)}><Icons.Close /></button>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 style={s.inp2}
                 value={postCommentDraft}
                 onChange={(e) => setPostCommentDraft(e.target.value)}
-                placeholder="Написать комментарий..."
+                placeholder={postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...'}
                 onKeyDown={(e) => e.key === 'Enter' && sendPostComment()}
               />
               <button style={s.saveBtn} onClick={sendPostComment} disabled={!postCommentDraft.trim()}>Отправить</button>
