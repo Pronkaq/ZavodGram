@@ -8,6 +8,7 @@ if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN is required');
 if (!internalToken) throw new Error('TELEGRAM_INTERNAL_TOKEN is required');
 
 const bot = new Telegraf(botToken);
+const pendingConfirmations = new Map<number, string>();
 
 function extractToken(startPayload?: string) {
   if (!startPayload) return null;
@@ -44,16 +45,24 @@ bot.start(async (ctx) => {
     return;
   }
 
+  pendingConfirmations.set(ctx.from.id, token);
+
   await ctx.reply(
     'Нажмите кнопку ниже, чтобы подтвердить регистрацию в ZavodGram.',
     Markup.inlineKeyboard([
-      Markup.button.callback('✅ Подтвердить регистрацию', `confirm:${token}`),
+      Markup.button.callback('✅ Подтвердить регистрацию', 'confirm_registration'),
     ]),
   );
 });
 
-bot.action(/^confirm:(.+)$/, async (ctx) => {
-  const token = ctx.match[1];
+bot.action('confirm_registration', async (ctx) => {
+  const token = pendingConfirmations.get(ctx.from.id);
+
+  if (!token) {
+    await ctx.answerCbQuery('Ссылка устарела');
+    await ctx.reply('Токен не найден. Вернитесь в приложение и получите новую ссылку.');
+    return;
+  }
 
   try {
     const res = await fetch(`${backendBaseUrl}/internal/telegram/confirm`, {
@@ -78,6 +87,7 @@ bot.action(/^confirm:(.+)$/, async (ctx) => {
       return;
     }
 
+    pendingConfirmations.delete(ctx.from.id);
     await ctx.answerCbQuery('Подтверждено');
     await ctx.reply('Готово ✅ Вернитесь в приложение и нажмите «Завершить регистрацию».');
   } catch {
