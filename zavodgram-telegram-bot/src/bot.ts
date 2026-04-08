@@ -38,9 +38,14 @@ function resolveStartPayload(ctx: any) {
 }
 
 async function handleStart(ctx: any) {
-  const token = extractToken(resolveStartPayload(ctx));
+  const startPayload = resolveStartPayload(ctx);
+  const token = extractToken(startPayload);
 
   if (!token) {
+    console.warn('[telegram-bot] start without verification payload', {
+      userId: ctx.from?.id,
+      payload: startPayload || null,
+    });
     await ctx.reply('Привет! Для подтверждения регистрации откройте ссылку из приложения ZavodGram.');
     return;
   }
