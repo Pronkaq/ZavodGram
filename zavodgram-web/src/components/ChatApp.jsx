@@ -108,6 +108,9 @@ export default function ChatApp() {
   const [channelSlugError, setChannelSlugError] = useState('');
   const [attachmentsModal, setAttachmentsModal] = useState(false);
   const [reactionPicker, setReactionPicker] = useState(null);
+  const [postCommentsModal, setPostCommentsModal] = useState(null);
+  const [postCommentDraft, setPostCommentDraft] = useState('');
+  const [localPostComments, setLocalPostComments] = useState({});
   const [inviteChannel, setInviteChannel] = useState(null);
   const [joiningInvite, setJoiningInvite] = useState(false);
   const endRef = useRef(null);
@@ -123,6 +126,13 @@ export default function ChatApp() {
     if (!search) return true;
     return getChatName(c, user.id).toLowerCase().includes(search.toLowerCase());
   }), [chats, search, user]);
+
+  const getAvatarSourceForChat = useCallback((chat) => {
+    const isDirect = chat?.type === 'PRIVATE' || chat?.type === 'SECRET';
+    if (!isDirect) return chat?.avatar;
+    const other = getOtherUser(chat, user.id);
+    return other?.avatar || chat?.avatar;
+  }, [user.id]);
 
   const searchResults = useMemo(() => {
     if (!msgSearch.trim()) return [];
@@ -463,6 +473,37 @@ export default function ChatApp() {
     ));
   };
 
+  const getPostComments = useCallback((msg) => {
+    const serverComments = Array.isArray(msg?.comments) ? msg.comments : [];
+    const localComments = localPostComments[msg?.id] || [];
+    return [...serverComments, ...localComments];
+  }, [localPostComments]);
+
+  const openPostComments = useCallback((msg) => {
+    setPostCommentsModal(msg);
+    setPostCommentDraft('');
+  }, []);
+
+  const addLocalPostComment = useCallback(() => {
+    if (!postCommentsModal) return;
+    const text = postCommentDraft.trim();
+    if (!text) return;
+    setLocalPostComments((prev) => ({
+      ...prev,
+      [postCommentsModal.id]: [
+        ...(prev[postCommentsModal.id] || []),
+        {
+          id: `local-${Date.now()}`,
+          text,
+          from: { id: user.id, name: user.name, avatar: user.avatar, tag: user.tag },
+          createdAt: new Date().toISOString(),
+          local: true,
+        },
+      ],
+    }));
+    setPostCommentDraft('');
+  }, [postCommentDraft, postCommentsModal, user.avatar, user.id, user.name, user.tag]);
+
   return (
     <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
 
@@ -514,7 +555,7 @@ export default function ChatApp() {
             return (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(74,158,229,0.1)', borderLeft: '3px solid #4A9EE5' } : {}) }}
                 onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
-                <Av src={other?.avatar || c.avatar} name={name} color={tc[c.type]} online={on} />
+                <Av src={getAvatarSourceForChat(c)} name={name} color={tc[c.type]} online={on} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -549,7 +590,7 @@ export default function ChatApp() {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
               <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
-              <Av src={other?.avatar || acd.avatar} name={chatName} size={38} color={tc[acd.type]} online={on}
+              <Av src={getAvatarSourceForChat(acd)} name={chatName} size={38} color={tc[acd.type]} online={on}
                 onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
               <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
@@ -588,7 +629,7 @@ export default function ChatApp() {
                 const isHL = searchResults[msgSearchIdx] === msg.id;
                 const postAuthor = acd.name || chatName;
                 return (
-                  <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'stretch' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
+                  <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'flex-start' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
                     onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
                     onTouchStart={(e) => {
                       const t = e.touches?.[0];
@@ -602,8 +643,8 @@ export default function ChatApp() {
                       <Av src={sender.avatar} name={sender.name} size={28} radius={8} color={sender.color} onClick={() => openProfile(msg.fromId || sender.id)} />
                     )}
                     <div style={{
-                      maxWidth: isChannel ? '100%' : '72%',
-                      width: isChannel ? '100%' : 'auto',
+                      maxWidth: isChannel ? 'min(100%, 620px)' : '72%',
+                      width: isChannel ? 'min(100%, 620px)' : 'auto',
                       padding: isChannel ? '14px 16px' : '8px 12px',
                       borderRadius: 14,
                       lineHeight: 1.45,
@@ -640,6 +681,15 @@ export default function ChatApp() {
                             </button>
                           ))}
                         </div>
+                      )}
+                      {isChannel && (
+                        <button
+                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: '#7CB4FF', cursor: 'pointer', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          onClick={() => openPostComments(msg)}
+                        >
+                          <Icons.Reply size={13} />
+                          Комментарии ({getPostComments(msg).length})
+                        </button>
                       )}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#3A4050', marginTop: 8, fontFamily: 'mono' }}>
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
@@ -869,6 +919,17 @@ export default function ChatApp() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setChannelInfoModal(false)}>
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>О канале</h3>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <div style={{ position: 'relative' }}>
+                <Av src={acd.avatar} name={acd.name} size={78} radius={20} color={tc[acd.type]} />
+                {isOwnerOrAdmin && (
+                  <label style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                    <Icons.Edit />
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
+                  </label>
+                )}
+              </div>
+            </div>
             <div style={{ fontSize: 12, color: '#7A8090', marginBottom: 6 }}>Публичная ссылка</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <input style={s.inp2} value={channelPublicLink || 'Ссылка не настроена'} readOnly />
@@ -909,6 +970,38 @@ export default function ChatApp() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {postCommentsModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => setPostCommentsModal(null)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
+            <div style={{ fontSize: 12, color: '#7A8090', marginBottom: 12 }}>Базовая версия комментариев (этап 1). Синхронизация с сервером будет добавлена следующим шагом.</div>
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#B7BDCB', marginBottom: 12, maxHeight: 120, overflow: 'auto' }}>
+              {postCommentsModal.text || '[медиа-пост]'}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 12 }}>
+              {getPostComments(postCommentsModal).length === 0 ? (
+                <div style={{ color: '#7A8090', fontSize: 13 }}>Пока комментариев нет. Будьте первым.</div>
+              ) : getPostComments(postCommentsModal).map((comment) => (
+                <div key={comment.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: 12, color: '#7CB4FF', marginBottom: 4 }}>{comment.from?.name || 'Пользователь'} {comment.local && <span style={{ color: '#4A5060' }}>(локально)</span>}</div>
+                  <div style={{ fontSize: 14, color: '#E8E8ED', lineHeight: 1.45 }}>{comment.text}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                style={s.inp2}
+                value={postCommentDraft}
+                onChange={(e) => setPostCommentDraft(e.target.value)}
+                placeholder="Написать комментарий..."
+                onKeyDown={(e) => e.key === 'Enter' && addLocalPostComment()}
+              />
+              <button style={s.saveBtn} onClick={addLocalPostComment} disabled={!postCommentDraft.trim()}>Отправить</button>
+            </div>
           </div>
         </div>
       )}
