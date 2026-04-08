@@ -15,6 +15,7 @@ const createChatSchema = z.object({
   type: z.enum(['PRIVATE', 'GROUP', 'CHANNEL', 'SECRET']),
   name: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
+  channelSlug: z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Ссылка канала: 3-64 символа (буквы, цифры, ., _, -)').optional(),
   memberIds: z.array(z.string().uuid()).max(100).optional(),
 });
 
@@ -52,9 +53,14 @@ router.post('/', authMiddleware, rateLimiter(20, 60), async (req: Request, res: 
       if (existingUsers !== memberIds.length) throw new ValidationError('Список участников содержит несуществующих пользователей');
     }
 
+    if (data.type === 'CHANNEL' && data.channelSlug) {
+      const existingSlug = await prisma.chat.findUnique({ where: { channelSlug: data.channelSlug } });
+      if (existingSlug) throw new ValidationError('Эта ссылка канала уже занята');
+    }
+
     const chat = await prisma.chat.create({
       data: {
-        type: data.type, name: data.name, description: data.description, createdBy: userId,
+        type: data.type, name: data.name, description: data.description, channelSlug: data.type === 'CHANNEL' ? (data.channelSlug || null) : null, createdBy: userId,
         members: { createMany: { data: [{ userId, role: 'OWNER' }, ...memberIds.map((id) => ({ userId: id, role: 'MEMBER' as const }))] } },
       },
       include: { members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } } },
@@ -117,6 +123,7 @@ const updateChatSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   avatar: z.string().max(500).optional(),
+  channelSlug: z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Ссылка канала: 3-64 символа (буквы, цифры, ., _, -)').optional(),
 });
 
 router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
@@ -130,12 +137,19 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
 
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
 
+    if (data.channelSlug !== undefined && chat.type !== 'CHANNEL') throw new ForbiddenError('Публичная ссылка доступна только для каналов');
+    if (data.channelSlug !== undefined) {
+      const existingSlug = await prisma.chat.findUnique({ where: { channelSlug: data.channelSlug }, select: { id: true } });
+      if (existingSlug && existingSlug.id !== chatId) throw new ValidationError('Эта ссылка канала уже занята');
+    }
+
     const updated = await prisma.chat.update({
       where: { id: chatId },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
         ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
+        ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
       },
       include: {
         members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
@@ -149,6 +163,7 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       name: updated.name,
       description: updated.description,
       avatar: updated.avatar,
+      channelSlug: updated.channelSlug,
     }));
 
     await cacheInvalidate(`chat:${chatId}`);

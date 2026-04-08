@@ -33,6 +33,8 @@ export const Icons = {
   Bell: makeSvg(<React.Fragment><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></React.Fragment>),
   BellOff: makeSvg(<React.Fragment><path d="M8.7 3A6 6 0 0 1 18 8c0 2.3.5 4.1 1.1 5.5"/><path d="M3 3l18 18"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M4 17h12.4"/></React.Fragment>),
   Copy: makeSvg(<React.Fragment><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></React.Fragment>, 14),
+  Share: makeSvg(<React.Fragment><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></React.Fragment>, 16),
+  Smile: makeSvg(<React.Fragment><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></React.Fragment>, 16),
   ArrowDown: makeSvg(<path d="m6 9 6 6 6-6"/>, 16),
   Video: makeSvg(<React.Fragment><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></React.Fragment>),
   Logout: makeSvg(<React.Fragment><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></React.Fragment>),

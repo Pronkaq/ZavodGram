@@ -162,6 +162,7 @@ export function ChatProvider({ children }) {
           ...(data.name !== undefined ? { name: data.name } : {}),
           ...(data.description !== undefined ? { description: data.description } : {}),
           ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
+          ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
         } : c));
       }),
 
