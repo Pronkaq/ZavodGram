@@ -23,6 +23,14 @@ export const config = {
     allowedImageTypes: (process.env.ALLOWED_IMAGE_TYPES || 'image/jpeg,image/png,image/webp,image/gif').split(','),
   },
 
+
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+    botUsername: process.env.TELEGRAM_BOT_USERNAME || '',
+    internalToken: process.env.TELEGRAM_INTERNAL_TOKEN || '',
+    verificationTtlMinutes: parseInt(process.env.TELEGRAM_VERIFICATION_TTL_MINUTES || '15'),
+  },
+
   encryption: {
     key: process.env.ENCRYPTION_KEY || 'change-me-32-bytes-key!!!!!!!!!!!',
   },
