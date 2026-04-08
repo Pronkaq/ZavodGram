@@ -118,7 +118,15 @@ export function setupWebSocket(httpServer: HttpServer) {
     }) => {
       try {
         if (!enforceSocketRate(userId, 'message:send', 40, 60000)) return;
-        await requireChatMembership(prisma, data.chatId, userId);
+        const membership = await requireChatMembership(prisma, data.chatId, userId);
+        const chatMeta = await prisma.chat.findUnique({
+          where: { id: data.chatId },
+          select: { type: true },
+        });
+        if (!chatMeta) return socket.emit('error', { message: 'Чат не найден' });
+        if (chatMeta.type === 'CHANNEL' && membership.role === 'MEMBER') {
+          return socket.emit('error', { message: 'В канале могут публиковать только администраторы и модераторы' });
+        }
 
         let forwardedFromName: string | undefined;
         let text = data.text;
