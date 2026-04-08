@@ -175,7 +175,9 @@ router.post('/register/start', rateLimiter(5, 60), async (req: Request, res: Res
     const data = registerSchema.parse(req.body);
     await assertRegistrationAvailability(data.phone, data.tag);
 
-    const rawVerificationToken = randomBytes(32).toString('hex');
+    // Telegram deep-link payload (start=...) is limited to 64 chars.
+    // Use a compact URL-safe token so `verify_<token>` always fits.
+    const rawVerificationToken = randomBytes(24).toString('base64url');
     const verificationTokenHash = hashVerificationToken(rawVerificationToken);
     const passwordHash = await bcrypt.hash(data.password, 12);
     const ttlMs = config.telegram.verificationTtlMinutes * 60 * 1000;
