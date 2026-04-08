@@ -65,6 +65,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+
+  # ── Telegram bot ──
+  telegram-bot:
+    build:
+      context: ./zavodgram-telegram-bot
+      dockerfile: Dockerfile
+    container_name: zavodgram-telegram-bot
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_INTERNAL_TOKEN: ${TELEGRAM_INTERNAL_TOKEN:-}
+      BACKEND_BASE_URL: http://backend:4000/api/auth
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   # ── Frontend ──
   frontend:
     build:
