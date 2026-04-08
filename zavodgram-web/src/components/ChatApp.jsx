@@ -124,6 +124,13 @@ export default function ChatApp() {
     return getChatName(c, user.id).toLowerCase().includes(search.toLowerCase());
   }), [chats, search, user]);
 
+  const getAvatarSourceForChat = useCallback((chat) => {
+    const isDirect = chat?.type === 'PRIVATE' || chat?.type === 'SECRET';
+    if (!isDirect) return chat?.avatar;
+    const other = getOtherUser(chat, user.id);
+    return other?.avatar || chat?.avatar;
+  }, [user.id]);
+
   const searchResults = useMemo(() => {
     if (!msgSearch.trim()) return [];
     return cms.filter((m) => m.text?.toLowerCase().includes(msgSearch.toLowerCase())).map((m) => m.id);
@@ -514,7 +521,7 @@ export default function ChatApp() {
             return (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(74,158,229,0.1)', borderLeft: '3px solid #4A9EE5' } : {}) }}
                 onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
-                <Av src={other?.avatar || c.avatar} name={name} color={tc[c.type]} online={on} />
+                <Av src={getAvatarSourceForChat(c)} name={name} color={tc[c.type]} online={on} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -549,7 +556,7 @@ export default function ChatApp() {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
               <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
-              <Av src={other?.avatar || acd.avatar} name={chatName} size={38} color={tc[acd.type]} online={on}
+              <Av src={getAvatarSourceForChat(acd)} name={chatName} size={38} color={tc[acd.type]} online={on}
                 onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
               <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
