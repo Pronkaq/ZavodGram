@@ -79,6 +79,9 @@ export async function api(path, options = {}) {
 
 // ── Auth API ──
 export const authApi = {
+  registerStart: (data) => api('/auth/register/start', { method: 'POST', body: data }),
+  registerStatus: (registrationId) => api('/auth/register/status', { method: 'POST', body: { registrationId } }),
+  registerComplete: (registrationId) => api('/auth/register/complete', { method: 'POST', body: { registrationId } }),
   register: (data) => api('/auth/register', { method: 'POST', body: data }),
   login: (phone, password) => api('/auth/login', { method: 'POST', body: { phone, password } }),
   logout: () => api('/auth/logout', { method: 'POST', body: { refreshToken } }),

@@ -60,6 +60,37 @@ model TagHistory {
   @@index([tag])
 }
 
+
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  EXPIRED
+  CANCELED
+}
+
+model RegistrationAttempt {
+  id                    String             @id @default(uuid())
+  phone                 String
+  tag                   String
+  name                  String
+  bio                   String?
+  passwordHash          String
+  verificationTokenHash String             @unique
+  status                RegistrationStatus @default(PENDING)
+  telegramId            String?
+  telegramUsername      String?
+  expiresAt             DateTime
+  confirmedAt           DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@index([phone, status])
+  @@index([tag, status])
+  @@index([expiresAt])
+}
+
 // ── Чат ──
 enum ChatType {
   PRIVATE
