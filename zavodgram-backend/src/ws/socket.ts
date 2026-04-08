@@ -120,7 +120,7 @@ export function setupWebSocket(httpServer: HttpServer) {
         if (!enforceSocketRate(userId, 'message:send', 40, 60000)) return;
         await requireChatMembership(prisma, data.chatId, userId);
 
-        let forwardedFromName: string | null = null;
+        let forwardedFromName: string | undefined;
         let text = data.text;
         if (data.forwardedFromId) {
           const orig = await prisma.message.findUnique({
@@ -144,7 +144,7 @@ export function setupWebSocket(httpServer: HttpServer) {
             text: text || null,
             replyToId: data.replyToId || undefined,
             forwardedFromId: data.forwardedFromId || undefined,
-            forwardedFromName: forwardedFromName || undefined,
+            forwardedFromName,
             encrypted: data.encrypted || false,
           },
           include: {
