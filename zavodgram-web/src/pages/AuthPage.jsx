@@ -12,8 +12,9 @@ export default function AuthPage() {
 
   const set = (k, v) => {
     if (k === 'phone') {
-      if (!v.startsWith('+')) v = '+' + v;
       v = v.replace(/[^\d+]/g, '');
+      v = v.replace(/\+/g, '');
+      v = `+${v}`;
     }
     if (k === 'tag') {
       if (!v.startsWith('@')) v = '@' + v;
@@ -50,7 +51,7 @@ export default function AuthPage() {
   const validateRegisterForm = () => {
     if (!form.name.trim()) return 'Введите имя';
     if (form.tag.length < 4) return 'Тег минимум 3 символа после @';
-    if (form.phone.length < 12) return 'Введите номер телефона';
+    if (!/^\+7\d{10}$/.test(form.phone)) return 'Введите номер в формате +7XXXXXXXXXX';
     if (form.password.length < 6) return 'Пароль минимум 6 символов';
     return '';
   };

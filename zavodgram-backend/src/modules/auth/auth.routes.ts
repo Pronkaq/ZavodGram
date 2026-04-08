@@ -67,6 +67,20 @@ function hashVerificationToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+function normalizeTelegramBotUsername(rawValue: string) {
+  const value = rawValue.trim();
+  if (!value) return '';
+
+  let normalized = value
+    .replace(/^https?:\/\/t\.me\//i, '')
+    .replace(/^t\.me\//i, '')
+    .replace(/^@+/, '')
+    .trim();
+
+  normalized = normalized.split(/[/?#]/, 1)[0] || '';
+  return normalized;
+}
+
 async function assertRegistrationAvailability(phone: string, tag: string) {
   const existingPhone = await prisma.user.findUnique({ where: { phone } });
   if (existingPhone) throw new ConflictError('Этот номер уже зарегистрирован');
@@ -179,7 +193,7 @@ router.post('/register/start', rateLimiter(5, 60), async (req: Request, res: Res
       },
     });
 
-    const botUsername = config.telegram.botUsername;
+    const botUsername = normalizeTelegramBotUsername(config.telegram.botUsername);
     const telegramDeepLink = botUsername
       ? `https://t.me/${botUsername}?start=verify_${rawVerificationToken}`
       : '';
