@@ -71,7 +71,15 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
       throw new ValidationError('Сообщение пустое');
     }
 
-    await requireChatMembership(prisma, chatId, req.user!.userId);
+    const membership = await requireChatMembership(prisma, chatId, req.user!.userId);
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { type: true },
+    });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.type === 'CHANNEL' && membership.role === 'MEMBER') {
+      throw new ForbiddenError('В канале публиковать могут только администраторы и модераторы');
+    }
 
     let forwardedFromName: string | undefined;
     let forwardText = data.text;

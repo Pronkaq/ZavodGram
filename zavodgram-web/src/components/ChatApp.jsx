@@ -132,16 +132,27 @@ export default function ChatApp() {
   const handleSend = () => {
     const text = input.trim();
     if (!text || !activeChat) return;
+    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
+    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
     if (editingMsg) { editMessage(activeChat, editingMsg.id, text); setEditingMsg(null); }
     else { sendMessage(activeChat, text, replyTo?.id, null); setReplyTo(null); }
     setInput('');
   };
 
-  const handleTyping = () => { if (!activeChat) return; clearTimeout(typingTimer.current); startTyping(activeChat); typingTimer.current = setTimeout(() => {}, 3000); };
+  const handleTyping = () => {
+    if (!activeChat) return;
+    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
+    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
+    clearTimeout(typingTimer.current);
+    startTyping(activeChat);
+    typingTimer.current = setTimeout(() => {}, 3000);
+  };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !activeChat) return;
+    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
+    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
     try {
       const media = await mediaApi.upload(file);
       await messagesApi.send(activeChat, { mediaIds: [media.id] });
@@ -390,6 +401,8 @@ export default function ChatApp() {
           const chatName = getChatName(acd, user.id);
           const other = getOtherUser(acd, user.id);
           const isDirectChat = acd.type === 'PRIVATE' || acd.type === 'SECRET';
+          const isChannel = acd.type === 'CHANNEL';
+          const canPublishInChannel = !isChannel || ['OWNER', 'ADMIN'].includes(myRole);
           const on = isOnline(acd, user.id);
           const memberCount = acd._count?.members || acd.members?.length || 0;
           return (<>
@@ -427,18 +440,34 @@ export default function ChatApp() {
             {acd.type === 'SECRET' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 5, background: 'rgba(74,229,142,0.06)', color: '#4AE58E', fontSize: 12, fontFamily: 'mono' }}><Icons.Lock /> Сквозное шифрование</div>}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
               {cms.map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
+                const postAuthor = acd.name || chatName;
                 return (
-                  <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
+                  <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'stretch' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
                     onContextMenu={e => ctx(e, { ...msg, mine: isMine })}>
                     {!isMine && acd.type === 'GROUP' && (
                       <Av src={sender.avatar} name={sender.name} size={28} radius={8} color={sender.color} onClick={() => openProfile(msg.fromId || sender.id)} />
                     )}
-                    <div style={{ maxWidth: '72%', padding: '8px 12px', borderRadius: 14, lineHeight: 1.45, ...(isMine ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.15), rgba(124,107,222,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(74,158,229,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }) }}>
+                    <div style={{
+                      maxWidth: isChannel ? '100%' : '72%',
+                      width: isChannel ? '100%' : 'auto',
+                      padding: isChannel ? '14px 16px' : '8px 12px',
+                      borderRadius: 14,
+                      lineHeight: 1.45,
+                      ...(isChannel
+                        ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.12), rgba(124,107,222,0.09))', border: '1px solid rgba(74,158,229,0.2)' }
+                        : (isMine ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.15), rgba(124,107,222,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(74,158,229,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
+                    }}>
+                      {isChannel && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <Icons.Channel />
+                          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.2, color: '#E8EDF8' }}>{postAuthor}</span>
+                        </div>
+                      )}
                       {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#4A9EE5', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
                       {msg.replyTo && (
                         <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #4A9EE5', background: 'rgba(74,158,229,0.08)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
@@ -454,7 +483,7 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment media={msg.media} />
                       {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{msgSearch ? highlightText(msg.text, msgSearch) : msg.text}</span>}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#3A4050', marginTop: 4, fontFamily: 'mono' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#3A4050', marginTop: 8, fontFamily: 'mono' }}>
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
                         {msg.encrypted && <Icons.Lock />}
                         {formatTimeShort(msg.createdAt)}
@@ -481,19 +510,27 @@ export default function ChatApp() {
 
             {/* Input */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)' }}>
-              <div style={{ position: 'relative' }}>
-                <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
-                {attachMenu && (
-                  <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-                    <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
-                    <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+              {canPublishInChannel ? (
+                <>
+                  <div style={{ position: 'relative' }}>
+                    <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
+                    {attachMenu && (
+                      <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1A1D26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
+                        <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                        <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <input ref={inpRef} style={s.inp2} placeholder="Сообщение..." value={input}
-                onChange={e => { setInput(e.target.value); handleTyping(); }}
-                onKeyDown={e => e.key === 'Enter' && handleSend()} />
-              <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
+                  <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : 'Сообщение...'} value={input}
+                    onChange={e => { setInput(e.target.value); handleTyping(); }}
+                    onKeyDown={e => e.key === 'Enter' && handleSend()} />
+                  <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
+                </>
+              ) : (
+                <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#6A7090', fontSize: 13 }}>
+                  Только администраторы и модераторы могут публиковать посты в этом канале.
+                </div>
+              )}
             </div>
           </>);
         })() : (
