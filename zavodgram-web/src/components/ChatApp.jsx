@@ -291,6 +291,12 @@ export default function ChatApp() {
     }
   }, [notifications]);
 
+  useEffect(() => {
+    if (profilePanel || newChatModal || groupSettingsModal || memberListModal || forwardMsg || avatarView) {
+      setNotifPanel(false);
+    }
+  }, [profilePanel, newChatModal, groupSettingsModal, memberListModal, forwardMsg, avatarView]);
+
   return (
     <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); }}>
 
@@ -368,6 +374,7 @@ export default function ChatApp() {
         {activeChat && acd ? (() => {
           const chatName = getChatName(acd, user.id);
           const other = getOtherUser(acd, user.id);
+          const isDirectChat = acd.type === 'PRIVATE' || acd.type === 'SECRET';
           const on = isOnline(acd, user.id);
           const memberCount = acd._count?.members || acd.members?.length || 0;
           return (<>
@@ -375,8 +382,8 @@ export default function ChatApp() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
               <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
               <Av src={other?.avatar || acd.avatar} name={chatName} size={38} color={tc[acd.type]} online={on}
-                onClick={() => other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null} />
-              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null}>
+                onClick={() => isDirectChat && other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null} />
+              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
                 <div style={{ fontSize: 12, color: typingText ? '#4A9EE5' : '#3A4050', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
                   onClick={(e) => { if (isGroupOrChannel) { e.stopPropagation(); setMemberListModal(true); } }}>
@@ -385,7 +392,7 @@ export default function ChatApp() {
               </div>
               <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
               <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
-              {other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
+              {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
             </div>
 
             {/* Message search bar */}
