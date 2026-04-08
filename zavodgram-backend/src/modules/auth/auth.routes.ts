@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
+import type { StringValue } from 'ms';
 import { prisma } from '../../core/database';
 import { config } from '../../config';
 import { AuthError, ConflictError, ValidationError } from '../../core/errors';
@@ -29,9 +30,9 @@ const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const logoutSchema = z.object({ refreshToken: z.string().min(20).optional() });
 
 // ── Helpers ──
-function getJwtExpiresIn(value: string | number): jwt.SignOptions['expiresIn'] {
+function getJwtExpiresIn(value: string | number): number | StringValue {
   if (typeof value === 'number') return value;
-  return value as jwt.SignOptions['expiresIn'];
+  return value as StringValue;
 }
 
 function generateTokens(payload: AuthPayload) {

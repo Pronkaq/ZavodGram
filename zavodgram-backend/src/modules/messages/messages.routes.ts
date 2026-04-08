@@ -82,7 +82,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
       });
       if (!original || original.deleted) throw new NotFoundError('Пересылаемое сообщение');
       await requireChatMembership(prisma, original.chatId, req.user!.userId);
-      forwardedFromName = original.from.name;
+      forwardedFromName = original.from.name ?? undefined;
       forwardText = forwardText || original.text || undefined;
     }
 
