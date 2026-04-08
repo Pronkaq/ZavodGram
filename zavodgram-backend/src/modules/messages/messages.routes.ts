@@ -32,6 +32,9 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
         media: {
           select: { id: true, type: true, originalName: true, mimeType: true, size: true, thumbnail: true, width: true, height: true },
         },
+        reactions: {
+          select: { emoji: true, userId: true },
+        },
       },
     });
 
@@ -139,6 +142,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
             },
           },
           media: true,
+          reactions: { select: { emoji: true, userId: true } },
         },
       });
     });
@@ -170,6 +174,7 @@ router.patch('/:chatId/messages/:id', authMiddleware, rateLimiter(30, 60), async
         from: { select: { id: true, name: true, tag: true, avatar: true } },
         replyTo: { select: { id: true, text: true, fromId: true, from: { select: { name: true } } } },
         media: true,
+        reactions: { select: { emoji: true, userId: true } },
       },
     });
 
@@ -220,6 +225,43 @@ router.get('/:chatId/messages/search', authMiddleware, rateLimiter(60, 60), asyn
 
     res.json({ ok: true, data: messages });
   } catch (err) { next(err); }
+});
+
+const reactionSchema = z.object({
+  emoji: z.string().min(1).max(16),
+});
+
+router.post('/:chatId/messages/:id/reactions', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { chatId, id: messageId } = req.params;
+    const { emoji } = reactionSchema.parse(req.body);
+
+    await requireChatMembership(prisma, chatId, req.user!.userId);
+    await requireMessageInChat(prisma, messageId, chatId);
+
+    const existing = await prisma.messageReaction.findUnique({
+      where: { messageId_userId_emoji: { messageId, userId: req.user!.userId, emoji } },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.messageReaction.delete({ where: { messageId_userId_emoji: { messageId, userId: req.user!.userId, emoji } } });
+    } else {
+      await prisma.messageReaction.create({
+        data: { messageId, userId: req.user!.userId, emoji },
+      });
+    }
+
+    const reactions = await prisma.messageReaction.findMany({
+      where: { messageId },
+      select: { emoji: true, userId: true },
+    });
+
+    res.json({ ok: true, data: { messageId, reactions } });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
 });
 
 export default router;

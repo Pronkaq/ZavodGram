@@ -30,6 +30,7 @@ model User {
   notifications  Notification[]
   mediaFiles     MediaFile[]
   tagHistory     TagHistory[]
+  reactions      MessageReaction[]
 
   @@index([tag])
   @@index([phone])
@@ -174,6 +175,7 @@ model Message {
 
   // Медиа
   media MediaFile[]
+  reactions MessageReaction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -181,6 +183,20 @@ model Message {
   @@index([chatId, createdAt])
   @@index([fromId])
   @@index([chatId, fromId])
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
 }
 
 // ── Медиа-файлы ──

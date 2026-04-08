@@ -118,6 +118,14 @@ export function ChatProvider({ children }) {
         }));
       }),
 
+      // Message reactions updated
+      onSocket('message:reaction', ({ messageId, chatId, reactions }) => {
+        setMessages((prev) => ({
+          ...prev,
+          [chatId]: (prev[chatId] || []).map((m) => (m.id === messageId ? { ...m, reactions } : m)),
+        }));
+      }),
+
       // Typing indicator
       onSocket('user:typing', ({ chatId, userId, typing }) => {
         if (userId === user.id) return;

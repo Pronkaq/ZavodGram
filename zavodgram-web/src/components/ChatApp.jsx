@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { chatsApi, usersApi, mediaApi, messagesApi, getAccessToken } from '../api/client';
+import { ws } from '../api/socket';
 import { Icons, typeColors } from './Icons';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 
@@ -107,9 +108,6 @@ export default function ChatApp() {
   const [channelSlugError, setChannelSlugError] = useState('');
   const [attachmentsModal, setAttachmentsModal] = useState(false);
   const [reactionPicker, setReactionPicker] = useState(null);
-  const [messageReactions, setMessageReactions] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('zg_message_reactions') || '{}'); } catch { return {}; }
-  });
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
@@ -324,10 +322,6 @@ export default function ChatApp() {
   }, []);
 
 
-  useEffect(() => {
-    localStorage.setItem('zg_message_reactions', JSON.stringify(messageReactions));
-  }, [messageReactions]);
-
   const normalizedSlug = (slug) => (slug || '').trim().toLowerCase();
   const channelPublicLink = useMemo(() => {
     if (!acd?.channelSlug) return '';
@@ -388,16 +382,17 @@ export default function ChatApp() {
   const REACTION_SET = ['👍', '❤️', '🔥', '👏', '😂', '😮', '😢', '😡'];
 
   const addReaction = (msgId, emoji) => {
-    setMessageReactions((prev) => {
-      const current = prev[msgId] || {};
-      const users = new Set(current[emoji] || []);
-      if (users.has(user.id)) users.delete(user.id);
-      else users.add(user.id);
-      const updatedEmoji = Array.from(users);
-      const nextForMsg = { ...current, [emoji]: updatedEmoji };
-      if (updatedEmoji.length === 0) delete nextForMsg[emoji];
-      return { ...prev, [msgId]: nextForMsg };
+    if (!activeChat) return;
+    ws.reactMessage({ chatId: activeChat, messageId: msgId, emoji });
+  };
+
+  const groupReactions = (msg) => {
+    const grouped = {};
+    (msg.reactions || []).forEach((r) => {
+      if (!grouped[r.emoji]) grouped[r.emoji] = [];
+      grouped[r.emoji].push(r.userId);
     });
+    return grouped;
   };
 
   const openReactionPicker = (x, y, msgId) => {
@@ -581,9 +576,9 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment media={msg.media} />
                       {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{msgSearch ? highlightText(msg.text, msgSearch) : msg.text}</span>}
-                      {!!Object.keys(messageReactions[msg.id] || {}).length && (
+                      {!!Object.keys(groupReactions(msg)).length && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                          {Object.entries(messageReactions[msg.id] || {}).map(([emoji, userIds]) => (
+                          {Object.entries(groupReactions(msg)).map(([emoji, userIds]) => (
                             <button key={emoji} onClick={() => addReaction(msg.id, emoji)} style={{ border: '1px solid rgba(255,255,255,0.12)', background: userIds.includes(user.id) ? 'rgba(74,158,229,0.2)' : 'rgba(255,255,255,0.05)', color: '#E8E8ED', borderRadius: 14, padding: '2px 8px', fontSize: 13, cursor: 'pointer' }}>
                               {emoji} {userIds.length}
                             </button>

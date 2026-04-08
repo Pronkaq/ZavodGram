@@ -53,7 +53,7 @@ export function setupWebSocket(httpServer: HttpServer) {
     }
   });
 
-  redisSub.subscribe('chat:message', 'chat:typing', 'chat:status', 'chat:edit', 'chat:delete', 'chat:updated', 'chat:member_added', 'chat:member_removed', 'chat:member_updated');
+  redisSub.subscribe('chat:message', 'chat:typing', 'chat:status', 'chat:edit', 'chat:delete', 'chat:updated', 'chat:member_added', 'chat:member_removed', 'chat:member_updated', 'chat:reaction');
 
   redisSub.on('message', (channel, data) => {
     const parsed = JSON.parse(data);
@@ -90,6 +90,9 @@ export function setupWebSocket(httpServer: HttpServer) {
         break;
       case 'chat:member_updated':
         io.to(`chat:${parsed.chatId}`).emit('chat:member_updated', parsed);
+        break;
+      case 'chat:reaction':
+        io.to(`chat:${parsed.chatId}`).emit('message:reaction', parsed);
         break;
     }
   });
@@ -159,6 +162,7 @@ export function setupWebSocket(httpServer: HttpServer) {
             from: { select: { id: true, name: true, tag: true, avatar: true } },
             replyTo: { select: { id: true, text: true, fromId: true, from: { select: { name: true } } } },
             media: true,
+            reactions: { select: { emoji: true, userId: true } },
           },
         });
 
@@ -240,6 +244,43 @@ export function setupWebSocket(httpServer: HttpServer) {
         redisPub.publish('chat:typing', JSON.stringify({ chatId: data.chatId, userId, typing: true }));
       } catch {
         return;
+      }
+    });
+
+    socket.on('message:react', async (data: { chatId: string; messageId: string; emoji: string }) => {
+      try {
+        if (!enforceSocketRate(userId, 'message:react', 120, 60000)) return;
+        if (!data.emoji || data.emoji.length > 16) return;
+        await requireChatMembership(prisma, data.chatId, userId);
+        await requireMessageInChat(prisma, data.messageId, data.chatId);
+
+        const existing = await prisma.messageReaction.findUnique({
+          where: { messageId_userId_emoji: { messageId: data.messageId, userId, emoji: data.emoji } },
+          select: { id: true },
+        });
+
+        if (existing) {
+          await prisma.messageReaction.delete({
+            where: { messageId_userId_emoji: { messageId: data.messageId, userId, emoji: data.emoji } },
+          });
+        } else {
+          await prisma.messageReaction.create({
+            data: { messageId: data.messageId, userId, emoji: data.emoji },
+          });
+        }
+
+        const reactions = await prisma.messageReaction.findMany({
+          where: { messageId: data.messageId },
+          select: { emoji: true, userId: true },
+        });
+
+        redisPub.publish('chat:reaction', JSON.stringify({
+          chatId: data.chatId,
+          messageId: data.messageId,
+          reactions,
+        }));
+      } catch (err) {
+        logger.error('WS message:react error', { error: (err as Error).message });
       }
     });
 
