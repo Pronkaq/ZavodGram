@@ -99,8 +99,11 @@ export const chatsApi = {
   list: () => api('/chats'),
   get: (id) => api(`/chats/${id}`),
   create: (data) => api('/chats', { method: 'POST', body: data }),
+  update: (chatId, data) => api(`/chats/${chatId}`, { method: 'PATCH', body: data }),
   addMember: (chatId, userId) => api(`/chats/${chatId}/members`, { method: 'POST', body: { userId } }),
   removeMember: (chatId, userId) => api(`/chats/${chatId}/members/${userId}`, { method: 'DELETE' }),
+  setMemberRole: (chatId, userId, role) => api(`/chats/${chatId}/members/${userId}/role`, { method: 'PATCH', body: { role } }),
+  transferOwnership: (chatId, userId) => api(`/chats/${chatId}/transfer-ownership`, { method: 'POST', body: { userId } }),
   mute: (chatId, muted) => api(`/chats/${chatId}/mute`, { method: 'PATCH', body: { muted } }),
 };
 

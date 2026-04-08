@@ -96,6 +96,12 @@ export default function ChatApp() {
   const [groupDesc, setGroupDesc] = useState('');
   const [groupMembers, setGroupMembers] = useState([]);
   const [avatarView, setAvatarView] = useState(null);
+  const [groupSettingsModal, setGroupSettingsModal] = useState(false);
+  const [memberListModal, setMemberListModal] = useState(false);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupDesc, setEditGroupDesc] = useState('');
+  const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [addMemberResults, setAddMemberResults] = useState([]);
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
@@ -199,6 +205,65 @@ export default function ChatApp() {
   };
 
   const doForward = (chatId) => { if (!forwardMsg) return; sendMessage(chatId, forwardMsg.text, null, forwardMsg.id); setForwardMsg(null); selectChat(chatId); setShowMobileChat(true); };
+
+  // ── Group management ──
+  const myRole = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
+  const isOwnerOrAdmin = myRole === 'OWNER' || myRole === 'ADMIN';
+  const isOwner = myRole === 'OWNER';
+  const isGroupOrChannel = acd?.type === 'GROUP' || acd?.type === 'CHANNEL';
+
+  const openGroupSettings = () => {
+    if (!acd || !isGroupOrChannel) return;
+    setEditGroupName(acd.name || '');
+    setEditGroupDesc(acd.description || '');
+    setGroupSettingsModal(true);
+  };
+
+  const saveGroupSettings = async () => {
+    if (!activeChat) return;
+    try {
+      await chatsApi.update(activeChat, { name: editGroupName, description: editGroupDesc });
+      await loadChats();
+      setGroupSettingsModal(false);
+    } catch (err) { console.error(err); }
+  };
+
+  const handleGroupAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeChat) return;
+    try {
+      const media = await mediaApi.upload(file);
+      const avatarRef = `media:${media.id}`;
+      await chatsApi.update(activeChat, { avatar: avatarRef });
+      await loadChats();
+    } catch (err) { console.error(err); }
+  };
+
+  const handleSetRole = async (targetId, role) => {
+    if (!activeChat) return;
+    try { await chatsApi.setMemberRole(activeChat, targetId, role); await loadChats(); } catch (err) { console.error(err); }
+  };
+
+  const handleKickMember = async (targetId) => {
+    if (!activeChat) return;
+    try { await chatsApi.removeMember(activeChat, targetId); await loadChats(); } catch (err) { console.error(err); }
+  };
+
+  const handleTransferOwnership = async (targetId) => {
+    if (!activeChat || !confirm('Передать права создателя? Это действие нельзя отменить.')) return;
+    try { await chatsApi.transferOwnership(activeChat, targetId); await loadChats(); } catch (err) { console.error(err); }
+  };
+
+  const handleAddMember = async (targetId) => {
+    if (!activeChat) return;
+    try { await chatsApi.addMember(activeChat, targetId); await loadChats(); setAddMemberSearch(''); setAddMemberResults([]); } catch (err) { console.error(err); }
+  };
+
+  const searchAddMember = async (q) => {
+    setAddMemberSearch(q);
+    if (q.length < 2) { setAddMemberResults([]); return; }
+    try { setAddMemberResults(await usersApi.search(q)); } catch {}
+  };
 
   const scrollToMsg = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
@@ -310,10 +375,11 @@ export default function ChatApp() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
               <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
               <Av src={other?.avatar || acd.avatar} name={chatName} size={38} color={tc[acd.type]} online={on}
-                onClick={() => other ? openProfile(other.id) : null} />
-              <div style={{ flex: 1, cursor: other ? 'pointer' : 'default' }} onClick={() => other && openProfile(other.id)}>
+                onClick={() => other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null} />
+              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => other ? openProfile(other.id) : isGroupOrChannel ? openGroupSettings() : null}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
-                <div style={{ fontSize: 12, color: typingText ? '#4A9EE5' : '#3A4050' }}>
+                <div style={{ fontSize: 12, color: typingText ? '#4A9EE5' : '#3A4050', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
+                  onClick={(e) => { if (isGroupOrChannel) { e.stopPropagation(); setMemberListModal(true); } }}>
                   {typingText || (acd.type === 'SECRET' ? '🔐 End-to-end' : acd.type === 'GROUP' ? `${memberCount} участников` : acd.type === 'CHANNEL' ? `${memberCount} подписчиков` : on ? 'в сети' : 'был(а) недавно')}
                 </div>
               </div>
@@ -581,6 +647,139 @@ export default function ChatApp() {
               {avatarView.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Group Settings Modal ── */}
+      {groupSettingsModal && acd && isGroupOrChannel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => setGroupSettingsModal(false)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 400, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <button style={s.ib} onClick={() => setGroupSettingsModal(false)}><Icons.Close /></button>
+              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono' }}>{acd.type === 'GROUP' ? 'Настройки группы' : 'Настройки канала'}</h3>
+            </div>
+
+            {/* Group avatar */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+              <div style={{ position: 'relative' }}>
+                <Av src={acd.avatar} name={acd.name} size={90} radius={22} color={tc[acd.type]} />
+                {isOwnerOrAdmin && (
+                  <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                    <Icons.Edit />
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {isOwnerOrAdmin ? (<>
+              <label style={s.lbl}>Название</label>
+              <input style={s.inp2} value={editGroupName} onChange={e => setEditGroupName(e.target.value)} />
+
+              <label style={{ ...s.lbl, marginTop: 12 }}>Описание</label>
+              <textarea style={{ ...s.inp2, minHeight: 60, resize: 'vertical' }} value={editGroupDesc} onChange={e => setEditGroupDesc(e.target.value)} />
+
+              <button style={{ ...s.saveBtn, width: '100%', marginTop: 16 }} onClick={saveGroupSettings}>Сохранить</button>
+            </>) : (<>
+              <h2 style={{ fontSize: 20, fontWeight: 700, textAlign: 'center', marginBottom: 6 }}>{acd.name}</h2>
+              {acd.description && <p style={{ fontSize: 14, color: '#7A8090', textAlign: 'center', lineHeight: 1.5 }}>{acd.description}</p>}
+            </>)}
+
+            {/* Quick member count */}
+            <div style={{ marginTop: 20, padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              onClick={() => { setGroupSettingsModal(false); setMemberListModal(true); }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icons.Group />
+                <span style={{ fontSize: 14 }}>{acd._count?.members || acd.members?.length} участников</span>
+              </div>
+              <span style={{ color: '#4A9EE5', fontSize: 13 }}>Показать →</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Member List Modal ── */}
+      {memberListModal && acd && isGroupOrChannel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <button style={s.ib} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}><Icons.Close /></button>
+              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Участники ({acd.members?.length || 0})</h3>
+              {isOwnerOrAdmin && <button style={{ ...s.ib, color: '#4A9EE5', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
+                onClick={() => { setGroupSettingsModal(true); setMemberListModal(false); }}><Icons.Edit /> Управление</button>}
+            </div>
+
+            {/* Add member (owner/admin) */}
+            {isOwnerOrAdmin && (
+              <div style={{ marginBottom: 12 }}>
+                <input style={s.inp2} placeholder="Добавить участника..." value={addMemberSearch} onChange={e => searchAddMember(e.target.value)} />
+                {addMemberResults.length > 0 && (
+                  <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6, background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 4 }}>
+                    {addMemberResults.filter(u => !acd.members?.some(m => m.userId === u.id)).map(u => (
+                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', borderRadius: 6 }} onClick={() => handleAddMember(u.id)}>
+                        <Av src={u.avatar} name={u.name} size={28} radius={7} />
+                        <span style={{ fontSize: 13 }}>{u.name}</span>
+                        <span style={{ fontSize: 11, color: '#4A9EE5', fontFamily: 'mono' }}>{u.tag}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4AE58E' }}>+ Добавить</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Member list */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {(acd.members || [])
+                .sort((a, b) => { const order = { OWNER: 0, ADMIN: 1, MEMBER: 2 }; return (order[a.role] || 2) - (order[b.role] || 2); })
+                .map(member => {
+                  const u = member.user;
+                  const isMe = member.userId === user.id;
+                  const roleLabel = member.role === 'OWNER' ? 'Создатель' : member.role === 'ADMIN' ? 'Модератор' : null;
+                  const roleColor = member.role === 'OWNER' ? '#E5884A' : member.role === 'ADMIN' ? '#7C6BDE' : null;
+                  const canManage = isOwner && !isMe && member.role !== 'OWNER';
+                  const canAdminManage = isOwnerOrAdmin && !isMe && member.role === 'MEMBER';
+
+                  return (
+                    <div key={member.userId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <Av src={u?.avatar} name={u?.name} size={38} radius={10} onClick={() => { setMemberListModal(false); openProfile(member.userId); }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {u?.name}
+                          {roleLabel && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: roleColor + '22', color: roleColor, fontFamily: 'mono', fontWeight: 600 }}>{roleLabel}</span>}
+                          {isMe && <span style={{ fontSize: 10, color: '#4A5060' }}>(вы)</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#4A9EE5', fontFamily: 'mono' }}>{u?.tag}</div>
+                      </div>
+
+                      {/* Actions dropdown */}
+                      {(canManage || canAdminManage) && (
+                        <div style={{ position: 'relative' }}>
+                          <select
+                            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#8A8FA0', fontSize: 11, padding: '4px 6px', cursor: 'pointer', fontFamily: 'mono' }}
+                            value=""
+                            onChange={e => {
+                              const action = e.target.value;
+                              if (action === 'make_admin') handleSetRole(member.userId, 'ADMIN');
+                              if (action === 'remove_admin') handleSetRole(member.userId, 'MEMBER');
+                              if (action === 'kick') handleKickMember(member.userId);
+                              if (action === 'transfer') handleTransferOwnership(member.userId);
+                              e.target.value = '';
+                            }}
+                          >
+                            <option value="" disabled>···</option>
+                            {isOwner && member.role === 'MEMBER' && <option value="make_admin">Назначить модератором</option>}
+                            {isOwner && member.role === 'ADMIN' && <option value="remove_admin">Снять модератора</option>}
+                            {(canManage || canAdminManage) && <option value="kick">Удалить из группы</option>}
+                            {isOwner && <option value="transfer">Передать права создателя</option>}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
         </div>
       )}
 

@@ -66,17 +66,32 @@ function resolveAuthPayload(req: Request): AuthPayload {
   }
 }
 
-async function assertMediaReadableByUser(media: { uploaderId: string; messageId: string | null }, userId: string) {
+async function assertMediaReadableByUser(
+  media: { id: string; uploaderId: string; messageId: string | null },
+  userId: string
+) {
+  // Непривязанный файл:
+  // - владелец всегда может читать
+  // - чужой пользователь может читать только если это чей-то avatar (media:<id>)
   if (!media.messageId) {
-    if (media.uploaderId !== userId) throw new ForbiddenError('РќРµС‚ РґРѕСЃС‚СѓРїР° Рє С„Р°Р№Р»Сѓ');
+    if (media.uploaderId === userId) return;
+
+    const avatarRef = `media:${media.id}`;
+    const avatarOwner = await prisma.user.findFirst({
+      where: { avatar: avatarRef },
+      select: { id: true },
+    });
+
+    if (!avatarOwner) throw new ForbiddenError('Нет доступа к файлу');
     return;
   }
 
+  // Привязанный к сообщению файл — только через membership чата
   const message = await prisma.message.findUnique({ where: { id: media.messageId } });
-  if (!message || message.deleted) throw new NotFoundError('РЎРѕРѕР±С‰РµРЅРёРµ');
+  if (!message || message.deleted) throw new NotFoundError('Сообщение');
+
   await requireChatMembership(prisma, message.chatId, userId);
 }
-
 
 async function persistFile(file: Express.Multer.File, userId: string) {
   const mediaType = getMediaType(file.mimetype);
@@ -156,12 +171,7 @@ router.post('/upload-multiple', authMiddleware, rateLimiter(10, 60), upload.arra
       results.push(media);
     }
 
-    const relative = media.url.replace('/api/media/file/', '');
-    const filePath = path.resolve(config.upload.dir, relative);
-
-    res.setHeader('Content-Type', media.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
-    createReadStream(filePath).pipe(res);
+    res.status(201).json({ ok: true, data: results });
   } catch (err) { next(err); }
 });
 

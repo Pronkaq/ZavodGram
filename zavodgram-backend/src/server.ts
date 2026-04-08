@@ -39,7 +39,7 @@ async function bootstrap() {
 
   // ── Health check ──
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, version: '0.3.0', uptime: process.uptime() });
+    res.json({ ok: true, version: '0.3.1', uptime: process.uptime() });
   });
 
   // ── API Routes ──

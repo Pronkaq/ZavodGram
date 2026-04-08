@@ -53,7 +53,7 @@ export function setupWebSocket(httpServer: HttpServer) {
     }
   });
 
-  redisSub.subscribe('chat:message', 'chat:typing', 'chat:status', 'chat:edit', 'chat:delete');
+  redisSub.subscribe('chat:message', 'chat:typing', 'chat:status', 'chat:edit', 'chat:delete', 'chat:updated', 'chat:member_added', 'chat:member_removed', 'chat:member_updated');
 
   redisSub.on('message', (channel, data) => {
     const parsed = JSON.parse(data);
@@ -72,6 +72,24 @@ export function setupWebSocket(httpServer: HttpServer) {
         break;
       case 'chat:delete':
         io.to(`chat:${parsed.chatId}`).emit('message:deleted', parsed);
+        break;
+      case 'chat:updated':
+        io.to(`chat:${parsed.chatId}`).emit('chat:updated', parsed);
+        break;
+      case 'chat:member_added':
+        io.to(`chat:${parsed.chatId}`).emit('chat:member_added', parsed);
+        // Make the new member join the room
+        const addedUserId = parsed.member?.userId || parsed.member?.user?.id;
+        if (addedUserId) {
+          const sockets = io.sockets.sockets;
+          sockets.forEach((s: any) => { if (s.user?.userId === addedUserId) s.join(`chat:${parsed.chatId}`); });
+        }
+        break;
+      case 'chat:member_removed':
+        io.to(`chat:${parsed.chatId}`).emit('chat:member_removed', parsed);
+        break;
+      case 'chat:member_updated':
+        io.to(`chat:${parsed.chatId}`).emit('chat:member_updated', parsed);
         break;
     }
   });

@@ -154,6 +154,40 @@ export function ChatProvider({ children }) {
       onSocket('notification', (notif) => {
         setNotifications((prev) => [{ ...notif, id: Date.now(), time: new Date() }, ...prev].slice(0, 50));
       }),
+
+      // Chat info updated (name, avatar, description)
+      onSocket('chat:updated', (data) => {
+        setChats((prev) => prev.map((c) => c.id === data.chatId ? {
+          ...c,
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
+        } : c));
+      }),
+
+      // Member added to chat
+      onSocket('chat:member_added', (data) => {
+        loadChats(); // Reload to get fresh member list
+      }),
+
+      // Member removed from chat
+      onSocket('chat:member_removed', ({ chatId, userId: removedId }) => {
+        if (removedId === user.id) {
+          // We were removed — remove chat from list
+          setChats((prev) => prev.filter((c) => c.id !== chatId));
+          if (activeChat === chatId) setActiveChat(null);
+        } else {
+          loadChats();
+        }
+      }),
+
+      // Member role changed
+      onSocket('chat:member_updated', ({ chatId, userId: updatedId, role }) => {
+        setChats((prev) => prev.map((c) => c.id === chatId ? {
+          ...c,
+          members: c.members?.map((m) => m.userId === updatedId ? { ...m, role } : m),
+        } : c));
+      }),
     ];
 
     return () => cleanups.forEach((c) => c());
