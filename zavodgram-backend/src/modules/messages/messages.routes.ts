@@ -81,7 +81,13 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type === 'CHANNEL' && membership.role === 'MEMBER') {
-      throw new ForbiddenError('В канале публиковать могут только администраторы и модераторы');
+      if (!data.replyToId) {
+        throw new ForbiddenError('В канале публиковать посты могут только администраторы и модераторы');
+      }
+      const parentMessage = await requireMessageInChat(prisma, data.replyToId, chatId);
+      if (parentMessage.replyToId) {
+        throw new ForbiddenError('Комментарии доступны только к постам первого уровня');
+      }
     }
 
     let forwardedFromName: string | undefined;

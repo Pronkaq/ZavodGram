@@ -110,7 +110,6 @@ export default function ChatApp() {
   const [reactionPicker, setReactionPicker] = useState(null);
   const [postCommentsModal, setPostCommentsModal] = useState(null);
   const [postCommentDraft, setPostCommentDraft] = useState('');
-  const [localPostComments, setLocalPostComments] = useState({});
   const [inviteChannel, setInviteChannel] = useState(null);
   const [joiningInvite, setJoiningInvite] = useState(false);
   const endRef = useRef(null);
@@ -474,35 +473,24 @@ export default function ChatApp() {
   };
 
   const getPostComments = useCallback((msg) => {
-    const serverComments = Array.isArray(msg?.comments) ? msg.comments : [];
-    const localComments = localPostComments[msg?.id] || [];
-    return [...serverComments, ...localComments];
-  }, [localPostComments]);
+    if (!msg?.id) return [];
+    return cms
+      .filter((m) => !m.deleted && m.replyToId === msg.id)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  }, [cms]);
 
   const openPostComments = useCallback((msg) => {
     setPostCommentsModal(msg);
     setPostCommentDraft('');
   }, []);
 
-  const addLocalPostComment = useCallback(() => {
+  const sendPostComment = useCallback(async () => {
     if (!postCommentsModal) return;
     const text = postCommentDraft.trim();
     if (!text) return;
-    setLocalPostComments((prev) => ({
-      ...prev,
-      [postCommentsModal.id]: [
-        ...(prev[postCommentsModal.id] || []),
-        {
-          id: `local-${Date.now()}`,
-          text,
-          from: { id: user.id, name: user.name, avatar: user.avatar, tag: user.tag },
-          createdAt: new Date().toISOString(),
-          local: true,
-        },
-      ],
-    }));
+    sendMessage(activeChat, text, postCommentsModal.id, null);
     setPostCommentDraft('');
-  }, [postCommentDraft, postCommentsModal, user.avatar, user.id, user.name, user.tag]);
+  }, [activeChat, postCommentDraft, postCommentsModal, sendMessage]);
 
   return (
     <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
@@ -623,7 +611,7 @@ export default function ChatApp() {
 
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
-              {cms.map(msg => {
+              {(isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
@@ -978,7 +966,6 @@ export default function ChatApp() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => setPostCommentsModal(null)}>
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
-            <div style={{ fontSize: 12, color: '#7A8090', marginBottom: 12 }}>Базовая версия комментариев (этап 1). Синхронизация с сервером будет добавлена следующим шагом.</div>
             <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#B7BDCB', marginBottom: 12, maxHeight: 120, overflow: 'auto' }}>
               {postCommentsModal.text || '[медиа-пост]'}
             </div>
@@ -987,7 +974,9 @@ export default function ChatApp() {
                 <div style={{ color: '#7A8090', fontSize: 13 }}>Пока комментариев нет. Будьте первым.</div>
               ) : getPostComments(postCommentsModal).map((comment) => (
                 <div key={comment.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ fontSize: 12, color: '#7CB4FF', marginBottom: 4 }}>{comment.from?.name || 'Пользователь'} {comment.local && <span style={{ color: '#4A5060' }}>(локально)</span>}</div>
+                  <div style={{ fontSize: 12, color: '#7CB4FF', marginBottom: 4 }}>
+                    {comment.from?.name || 'Пользователь'} <span style={{ color: '#4A5060', fontFamily: 'mono' }}>{formatTimeShort(comment.createdAt)}</span>
+                  </div>
                   <div style={{ fontSize: 14, color: '#E8E8ED', lineHeight: 1.45 }}>{comment.text}</div>
                 </div>
               ))}
@@ -998,9 +987,9 @@ export default function ChatApp() {
                 value={postCommentDraft}
                 onChange={(e) => setPostCommentDraft(e.target.value)}
                 placeholder="Написать комментарий..."
-                onKeyDown={(e) => e.key === 'Enter' && addLocalPostComment()}
+                onKeyDown={(e) => e.key === 'Enter' && sendPostComment()}
               />
-              <button style={s.saveBtn} onClick={addLocalPostComment} disabled={!postCommentDraft.trim()}>Отправить</button>
+              <button style={s.saveBtn} onClick={sendPostComment} disabled={!postCommentDraft.trim()}>Отправить</button>
             </div>
           </div>
         </div>
