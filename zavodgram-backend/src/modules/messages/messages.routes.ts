@@ -100,7 +100,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
           text: forwardText || null,
           replyToId: data.replyToId || undefined,
           forwardedFromId: data.forwardedFromId || undefined,
-          forwardedFromName,
+          forwardedFromName: forwardedFromName || undefined,
           encrypted: data.encrypted || false,
         },
       });
