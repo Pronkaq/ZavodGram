@@ -919,6 +919,17 @@ export default function ChatApp() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setChannelInfoModal(false)}>
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>О канале</h3>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <div style={{ position: 'relative' }}>
+                <Av src={acd.avatar} name={acd.name} size={78} radius={20} color={tc[acd.type]} />
+                {isOwnerOrAdmin && (
+                  <label style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                    <Icons.Edit />
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
+                  </label>
+                )}
+              </div>
+            </div>
             <div style={{ fontSize: 12, color: '#7A8090', marginBottom: 6 }}>Публичная ссылка</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <input style={s.inp2} value={channelPublicLink || 'Ссылка не настроена'} readOnly />
