@@ -64,7 +64,18 @@ bot.action(/^confirm:(.+)$/, async (ctx) => {
   }
 });
 
-bot.launch();
+async function startBot() {
+  try {
+    await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+    await bot.launch();
+    console.log('[telegram-bot] bot started in polling mode');
+  } catch (error) {
+    console.error('[telegram-bot] failed to start', error);
+    process.exit(1);
+  }
+}
+
+void startBot();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
