@@ -108,10 +108,13 @@ export default function ChatApp() {
   const [channelSlugError, setChannelSlugError] = useState('');
   const [attachmentsModal, setAttachmentsModal] = useState(false);
   const [reactionPicker, setReactionPicker] = useState(null);
+  const [inviteChannel, setInviteChannel] = useState(null);
+  const [joiningInvite, setJoiningInvite] = useState(false);
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
+  const handledSlugRef = useRef(null);
 
   const acd = chats.find((c) => c.id === activeChat);
   const cms = messages[activeChat] || [];
@@ -407,6 +410,59 @@ export default function ChatApp() {
     setProfilePanel(user.id);
   }, [user]);
 
+  useEffect(() => {
+    const slug = window.location.pathname.replace(/^\/+/, '').trim();
+    if (!slug || ['auth', 'login'].includes(slug.toLowerCase())) return;
+    if (slug.includes('/')) return;
+    if (handledSlugRef.current === slug) return;
+    handledSlugRef.current = slug;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const channel = await chatsApi.getBySlug(slug);
+        if (cancelled) return;
+        const existing = chats.find((c) => c.id === channel.id);
+        if (existing) {
+          selectChat(existing.id);
+          setShowMobileChat(true);
+          window.history.replaceState({}, '', '/');
+          return;
+        }
+        setInviteChannel(channel);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [chats, selectChat]);
+
+  const joinInviteChannel = async () => {
+    if (!inviteChannel?.channelSlug) return;
+    setJoiningInvite(true);
+    try {
+      const joined = await chatsApi.joinBySlug(inviteChannel.channelSlug);
+      await loadChats();
+      selectChat(joined.id);
+      setShowMobileChat(true);
+      setInviteChannel(null);
+      window.history.replaceState({}, '', '/');
+    } catch (err) {
+      alert(err.message || 'Не удалось подписаться');
+    } finally {
+      setJoiningInvite(false);
+    }
+  };
+
+  const renderMessageText = (text) => {
+    if (!text) return null;
+    if (msgSearch) return highlightText(text, msgSearch);
+    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    return parts.map((part, idx) => (
+      /^https?:\/\/[^\s]+$/.test(part)
+        ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#7CB4FF', textDecoration: 'underline' }}>{part}</a>
+        : <span key={idx}>{part}</span>
+    ));
+  };
+
   return (
     <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
 
@@ -575,7 +631,7 @@ export default function ChatApp() {
                         </span>
                       )}
                       <MediaAttachment media={msg.media} />
-                      {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{msgSearch ? highlightText(msg.text, msgSearch) : msg.text}</span>}
+                      {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
                       {!!Object.keys(groupReactions(msg)).length && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                           {Object.entries(groupReactions(msg)).map(([emoji, userIds]) => (
@@ -853,6 +909,21 @@ export default function ChatApp() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {inviteChannel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 380 }} onClick={() => setInviteChannel(null)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Канал по ссылке</h3>
+            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>{inviteChannel.name || 'Канал'}</div>
+            <div style={{ fontSize: 13, color: '#7A8090', marginBottom: 10 }}>{inviteChannel._count?.members || 0} подписчиков</div>
+            {inviteChannel.description && <p style={{ fontSize: 14, color: '#A8ADBA', lineHeight: 1.5 }}>{inviteChannel.description}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button style={{ ...s.saveBtn, flex: 1, opacity: joiningInvite ? 0.7 : 1 }} onClick={joinInviteChannel} disabled={joiningInvite}>{joiningInvite ? 'Подписка...' : 'Подписаться'}</button>
+              <button style={{ ...s.ib, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px' }} onClick={() => setInviteChannel(null)}>Позже</button>
+            </div>
           </div>
         </div>
       )}

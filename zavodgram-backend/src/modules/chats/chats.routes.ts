@@ -9,6 +9,7 @@ import { ensureUuidArray, requireChatMembership, requireChatRole } from '../../c
 import { redisPub } from '../../core/redis';
 
 const router = Router();
+const channelSlugSchema = z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Некорректная ссылка канала');
 
 // ── POST /chats — Create chat ──
 const createChatSchema = z.object({
@@ -99,6 +100,24 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
   } catch (err) { next(err); }
 });
 
+// ── GET /chats/public/:slug — Public channel by slug ──
+router.get('/public/:slug', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const slug = channelSlugSchema.parse(req.params.slug);
+    const channel = await prisma.chat.findFirst({
+      where: { type: 'CHANNEL', channelSlug: slug },
+      include: {
+        _count: { select: { members: true, messages: true } },
+      },
+    });
+    if (!channel) throw new NotFoundError('Канал');
+    res.json({ ok: true, data: channel });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
+});
+
 // ── GET /chats/:id ──
 router.get('/:id', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -116,6 +135,41 @@ router.get('/:id', authMiddleware, rateLimiter(120, 60), async (req: Request, re
     const myMembership = chat.members.find((m) => m.userId === req.user!.userId);
     res.json({ ok: true, data: { ...chat, myRole: myMembership?.role || 'MEMBER' } });
   } catch (err) { next(err); }
+});
+
+// ── POST /chats/public/:slug/join — Join channel by slug ──
+router.post('/public/:slug/join', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const slug = channelSlugSchema.parse(req.params.slug);
+    const channel = await prisma.chat.findFirst({
+      where: { type: 'CHANNEL', channelSlug: slug },
+      select: { id: true },
+    });
+    if (!channel) throw new NotFoundError('Канал');
+
+    await prisma.chatMember.upsert({
+      where: { chatId_userId: { chatId: channel.id, userId: req.user!.userId } },
+      create: { chatId: channel.id, userId: req.user!.userId, role: 'MEMBER' },
+      update: {},
+    });
+
+    const joinedChannel = await prisma.chat.findUnique({
+      where: { id: channel.id },
+      include: {
+        members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
+        _count: { select: { members: true } },
+      },
+    });
+
+    redisPub.publish('chat:member_added', JSON.stringify({
+      chatId: channel.id,
+      member: { userId: req.user!.userId },
+    }));
+    res.json({ ok: true, data: joinedChannel });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
 });
 
 // ── PATCH /chats/:id — Update group/channel info (OWNER/ADMIN only) ──
