@@ -37,7 +37,7 @@ function resolveStartPayload(ctx: any) {
   return rawPayload?.trim();
 }
 
-bot.start(async (ctx) => {
+async function handleStart(ctx: any) {
   const token = extractToken(resolveStartPayload(ctx));
 
   if (!token) {
@@ -53,6 +53,19 @@ bot.start(async (ctx) => {
       Markup.button.callback('✅ Подтвердить регистрацию', 'confirm_registration'),
     ]),
   );
+}
+
+bot.start(async (ctx) => {
+  await handleStart(ctx);
+});
+
+// Some clients/proxies deliver /start as plain command updates without startPayload.
+bot.command('start', async (ctx) => {
+  await handleStart(ctx);
+});
+
+bot.hears(/^\/start(?:\s+(.+))?$/i, async (ctx) => {
+  await handleStart(ctx);
 });
 
 bot.action('confirm_registration', async (ctx) => {
@@ -93,6 +106,15 @@ bot.action('confirm_registration', async (ctx) => {
   } catch {
     await ctx.answerCbQuery('Ошибка сети');
     await ctx.reply('Ошибка сети. Попробуйте позже.');
+  }
+});
+
+bot.catch(async (error, ctx) => {
+  console.error('[telegram-bot] update handling failed', error);
+  try {
+    await ctx.reply('Произошла ошибка обработки команды. Попробуйте снова через пару секунд.');
+  } catch {
+    // no-op
   }
 });
 
