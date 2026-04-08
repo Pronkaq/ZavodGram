@@ -297,6 +297,21 @@ export default function ChatApp() {
     }
   }, [profilePanel, newChatModal, groupSettingsModal, memberListModal, forwardMsg, avatarView]);
 
+  const openNotificationsPanel = useCallback(() => {
+    setSidebarOpen(false);
+    setProfilePanel(null);
+    setSettingsMode(false);
+    setNotifPanel(true);
+  }, []);
+
+  const openSettingsPanel = useCallback(() => {
+    setSidebarOpen(false);
+    setNotifPanel(false);
+    setSettingsMode(true);
+    setProfileData({ ...user, online: true });
+    setProfilePanel(user.id);
+  }, [user]);
+
   return (
     <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); }}>
 
@@ -321,8 +336,8 @@ export default function ChatApp() {
         <div style={{ flex: 1, padding: '6px 0' }}>
           {[
             { l: 'Мой профиль', a: () => { setSidebarOpen(false); openProfile(user.id); } },
-            { l: 'Настройки', a: () => { setSidebarOpen(false); setSettingsMode(true); setProfileData({ ...user, online: true }); setProfilePanel(user.id); } },
-            { l: 'Уведомления', a: () => { setSidebarOpen(false); setNotifPanel(true); } },
+            { l: 'Настройки', a: openSettingsPanel },
+            { l: 'Уведомления', a: openNotificationsPanel },
           ].map((it, i) => <div key={i} style={s.mi} onClick={it.a}>{it.l}</div>)}
           <div style={{ ...s.mi, color: '#E55A5A' }} onClick={() => { setSidebarOpen(false); logout(); }}>Выйти</div>
         </div>
@@ -332,9 +347,9 @@ export default function ChatApp() {
       {/* ── Chat List ── */}
       <div style={s.cl} className="zg-chatlist">
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 12px', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <button style={s.ib} onClick={e => { e.stopPropagation(); setSidebarOpen(true); }}><Icons.Menu /></button>
+          <button style={s.ib} onClick={e => { e.stopPropagation(); setNotifPanel(false); setSidebarOpen(true); }}><Icons.Menu /></button>
           <h1 style={s.title}>ZavodGram</h1>
-          <button style={s.ib} onClick={e => { e.stopPropagation(); setNotifPanel(!notifPanel); }}><Icons.Bell /></button>
+          <button style={s.ib} onClick={e => { e.stopPropagation(); notifPanel ? setNotifPanel(false) : openNotificationsPanel(); }}><Icons.Bell /></button>
           <button style={s.ib} onClick={() => setNewChatModal(true)}><Icons.Plus /></button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 10, color: '#3A4050' }}>
