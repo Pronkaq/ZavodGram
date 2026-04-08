@@ -118,14 +118,28 @@ bot.catch(async (error, ctx) => {
   }
 });
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function startBot() {
-  try {
-    await bot.telegram.deleteWebhook({ drop_pending_updates: false });
-    await bot.launch();
-    console.log('[telegram-bot] bot started in polling mode');
-  } catch (error) {
-    console.error('[telegram-bot] failed to start', error);
-    process.exit(1);
+  const retryDelayMs = Number(process.env.TELEGRAM_START_RETRY_MS || 10000);
+
+  while (true) {
+    try {
+      try {
+        await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+      } catch (error) {
+        console.warn('[telegram-bot] deleteWebhook failed, continuing with launch retry', error);
+      }
+
+      await bot.launch();
+      console.log('[telegram-bot] bot started in polling mode');
+      return;
+    } catch (error) {
+      console.error(`[telegram-bot] failed to start, retrying in ${retryDelayMs}ms`, error);
+      await sleep(retryDelayMs);
+    }
   }
 }
 
