@@ -31,6 +31,15 @@ function formatAudioTime(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function parseChannelPostText(text = '') {
+  const cleaned = (text || '').trim();
+  if (!cleaned) return { title: '', paragraphs: [] };
+  const parts = cleaned.split(/\n{2,}/).map((chunk) => chunk.trim()).filter(Boolean);
+  if (parts.length === 0) return { title: '', paragraphs: [] };
+  const [title, ...rest] = parts;
+  return { title, paragraphs: rest };
+}
+
 // Avatar component — shows image or initials, clickable
 function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: extraStyle }) {
   const initials = name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
@@ -1065,6 +1074,8 @@ export default function ChatApp() {
                 const postAuthor = acd.name || chatName;
                 const postComments = getPostComments(msg);
                 const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin;
+                const { title: postTitle, paragraphs: postParagraphs } = parseChannelPostText(msg.text || '');
+                const postImage = (msg.media || []).find((m) => m.type === 'IMAGE');
                 return (
                   <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'flex-start' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(255,255,255,0.12)' } : {}) }}
                     onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
@@ -1082,19 +1093,25 @@ export default function ChatApp() {
                     <div style={{
                       maxWidth: isChannel ? 'min(100%, 620px)' : '72%',
                       width: isChannel ? 'min(100%, 620px)' : 'auto',
-                      padding: isChannel ? '14px 16px' : '8px 12px',
+                      padding: isChannel ? '0' : '8px 12px',
                       borderRadius: 14,
                       lineHeight: 1.45,
                       ...(isChannel
-                        ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(231,234,240,0.09))', border: '1px solid rgba(255,255,255,0.2)' }
+                        ? { background: 'linear-gradient(180deg, rgba(34,38,49,0.95), rgba(25,28,37,0.98))', border: '1px solid rgba(220,224,235,0.16)', boxShadow: '0 18px 40px rgba(0,0,0,0.35)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
-                      {isChannel && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                          <Icons.Channel />
-                          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.2, color: '#F6F8FB' }}>{postAuthor}</span>
+                      {isChannel && postImage && (
+                        <div style={{ maxHeight: 285, overflow: 'hidden', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
+                          <img src={mediaUrlById(postImage.id)} alt={postImage.originalName || 'Пост'} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
                         </div>
                       )}
+                      <div style={{ padding: isChannel ? '14px 16px 12px' : 0 }}>
+                        {isChannel && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <Icons.Channel />
+                            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.2, color: '#F6F8FB' }}>{postAuthor}</span>
+                          </div>
+                        )}
                       {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E9EBEF', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
                       {msg.replyTo && (
                         <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #E9EBEF', background: 'rgba(255,255,255,0.08)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
@@ -1109,13 +1126,27 @@ export default function ChatApp() {
                         </span>
                       )}
                       <MediaAttachment
-                        media={msg.media}
+                        media={isChannel ? (msg.media || []).filter((m) => m.id !== postImage?.id) : msg.media}
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
                         transcriptionAvailable={transcriptionAvailable}
                       />
-                      {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
+                      {isChannel ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {postTitle && <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.3, color: '#F7F8FB' }}>{renderMessageText(postTitle)}</div>}
+                          {postParagraphs.length > 0 ? postParagraphs.map((paragraph, idx) => (
+                            <div key={`${msg.id}-p-${idx}`} style={{ fontSize: 15, color: '#DCE1EA', lineHeight: 1.45, wordBreak: 'break-word' }}>
+                              {renderMessageText(paragraph)}
+                            </div>
+                          )) : (!postTitle && msg.text ? <span style={{ fontSize: 15, color: '#DCE1EA', wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span> : null)}
+                          <div style={{ fontSize: 15, color: '#E9EDF5', fontStyle: 'italic', marginTop: 2 }}>
+                            Автор: {sender.name || 'Редакция'}
+                          </div>
+                        </div>
+                      ) : (
+                        msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>
+                      )}
                       {!!Object.keys(groupReactions(msg)).length && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                           {Object.entries(groupReactions(msg)).map(([emoji, userIds]) => (
@@ -1126,15 +1157,22 @@ export default function ChatApp() {
                         </div>
                       )}
                       {isChannel && (
-                        <button
-                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: commentsButtonActive ? '#F5F6F8' : '#959CAA', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: commentsButtonActive ? 1 : 0.7 }}
-                          onClick={() => commentsButtonActive && openPostComments(msg)}
-                          disabled={!commentsButtonActive}
-                          title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
-                        >
-                          <Icons.Reply size={13} />
-                          Комментарии ({postComments.length})
-                        </button>
+                        <>
+                          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, color: '#B1B8C8', fontSize: 13 }}>
+                            <span style={{ color: '#9AA2B4' }}>•</span>
+                            <span style={{ color: '#8E96A9', textDecoration: 'underline' }}>{postAuthor}</span>
+                          </div>
+                          <button
+                            style={{ marginTop: 8, border: 'none', background: 'transparent', color: commentsButtonActive ? '#B4A4FF' : '#959CAA', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', fontSize: 20, fontWeight: 700, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 8, opacity: commentsButtonActive ? 1 : 0.7 }}
+                            onClick={() => commentsButtonActive && openPostComments(msg)}
+                            disabled={!commentsButtonActive}
+                            title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
+                          >
+                            <span style={{ fontSize: 24, lineHeight: 1 }}>💬</span>
+                            <span style={{ fontSize: 28, lineHeight: 1, color: '#8877FF' }}>{postComments.length}</span>
+                            <span style={{ fontSize: 16, color: '#9A90E6' }}>Comments</span>
+                          </button>
+                        </>
                       )}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#686F7F', marginTop: 8, fontFamily: 'mono' }}>
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
@@ -1142,6 +1180,7 @@ export default function ChatApp() {
                         {formatTimeShort(msg.createdAt)}
                         {isMine && <span style={{ display: 'flex', alignItems: 'center', color: '#E9EBEF' }}><Icons.Check double={msg.status === 'READ'} /></span>}
                       </span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1494,24 +1533,49 @@ export default function ChatApp() {
 
       {postCommentsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'linear-gradient(180deg, rgba(31,35,46,0.98), rgba(24,27,36,0.98))', borderRadius: 18, padding: 20, width: 560, maxWidth: '96vw', maxHeight: '84vh', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px rgba(0,0,0,0.45)' }} onClick={e => e.stopPropagation()}>
             {(() => {
               const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
+              const modalComments = getPostComments(postCommentsModal);
+              const uniqParticipants = Array.from(new Map(modalComments.map((comment) => [comment.fromId || comment.from?.id, comment.from]).filter(([id]) => !!id)).values()).slice(0, 4);
               return (
                 <>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
             {!commentsAllowed && (
               <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 10, background: 'rgba(238,240,244,0.12)', border: '1px solid rgba(238,240,244,0.4)', color: '#F0F1F4', fontSize: 12 }}>
                 Комментарии отключены для этого поста.
               </div>
             )}
-            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#D6DAE2', marginBottom: 12, maxHeight: 120, overflow: 'auto' }}>
+            <div style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#D6DAE2', marginBottom: 12, maxHeight: 120, overflow: 'auto', border: '1px solid rgba(255,255,255,0.08)' }}>
               {postCommentsModal.text || '[медиа-пост]'}
             </div>
+            {uniqParticipants.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  {uniqParticipants.map((participant, idx) => (
+                    <Av
+                      key={`${participant?.id || participant?.name}-${idx}`}
+                      src={participant?.avatar}
+                      name={participant?.name}
+                      size={28}
+                      radius={999}
+                      style={{ marginLeft: idx === 0 ? 0 : -8, border: '2px solid #1C202B' }}
+                    />
+                  ))}
+                </div>
+                <button
+                  style={{ ...s.ib, color: commentsAllowed ? '#9A8FFF' : '#959CAA', fontSize: 18, fontWeight: 700, padding: 0, height: 'auto', opacity: commentsAllowed ? 1 : 0.7 }}
+                  onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
+                  disabled={!commentsAllowed}
+                >
+                  {modalComments.length} Comments
+                </button>
+              </div>
+            )}
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 12 }}>
-              {getPostComments(postCommentsModal).length === 0 ? (
+              {modalComments.length === 0 ? (
                 <div style={{ color: '#A2A8B6', fontSize: 13 }}>Пока комментариев нет. Будьте первым.</div>
-              ) : getPostComments(postCommentsModal).map((comment) => {
+              ) : modalComments.map((comment) => {
                 const canModerate = isOwnerOrAdmin && (comment.fromId || comment.from?.id) !== user.id;
                 const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
                 return (
@@ -1540,6 +1604,7 @@ export default function ChatApp() {
             )}
             <div style={{ display: 'flex', gap: 8 }}>
               <input
+                id="channel-comment-input"
                 style={s.inp2}
                 value={postCommentDraft}
                 onChange={(e) => setPostCommentDraft(e.target.value)}
