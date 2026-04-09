@@ -1691,6 +1691,7 @@ export default function ChatApp() {
                         {commentBody || '…'}
                       </div>
                     </div>
+                    <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.45 }}>{comment.text}</div>
                   </div>
                 </div>
               )})}
