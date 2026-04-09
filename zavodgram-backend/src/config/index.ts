@@ -35,6 +35,15 @@ export const config = {
     key: process.env.ENCRYPTION_KEY || 'change-me-32-bytes-key!!!!!!!!!!!',
   },
 
+  transcription: {
+    provider: (process.env.TRANSCRIPTION_PROVIDER || 'none').toLowerCase(),
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    openaiModel: process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe',
+    openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+    maxAudioBytes: parseInt(process.env.TRANSCRIPTION_MAX_AUDIO_BYTES || '26214400'),
+    timeoutMs: parseInt(process.env.TRANSCRIPTION_TIMEOUT_MS || '30000'),
+  },
+
   adminTags: (process.env.ADMIN_TAGS || '@admin')
     .split(',')
     .map((tag) => tag.trim().toLowerCase())

@@ -165,6 +165,44 @@ async function persistFile(file: Express.Multer.File, userId: string) {
   });
 }
 
+async function transcribeWithOpenAI(filePath: string, originalName: string, mimeType: string) {
+  if (!config.transcription.openaiApiKey) {
+    throw new ValidationError('Сервис расшифровки не настроен');
+  }
+
+  const audioBuffer = await fs.readFile(filePath);
+  if (audioBuffer.length > config.transcription.maxAudioBytes) {
+    throw new ValidationError('Аудио слишком большое для расшифровки');
+  }
+
+  const form = new FormData();
+  const blob = new Blob([audioBuffer], { type: mimeType || 'application/octet-stream' });
+  form.append('file', blob, originalName || path.basename(filePath));
+  form.append('model', config.transcription.openaiModel);
+
+  const endpoint = `${config.transcription.openaiBaseUrl.replace(/\/+$/, '')}/audio/transcriptions`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.transcription.openaiApiKey}`,
+    },
+    body: form,
+    signal: AbortSignal.timeout(config.transcription.timeoutMs),
+  });
+
+  if (!response.ok) {
+    throw new ValidationError('Не удалось получить расшифровку');
+  }
+
+  const payload = await response.json() as { text?: string };
+  const text = payload?.text?.trim();
+  if (!text) {
+    throw new ValidationError('Расшифровка пуста');
+  }
+
+  return text;
+}
+
 router.post('/upload', authMiddleware, rateLimiter(20, 60), upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.file) throw new ValidationError('Ð¤Ð°Ð¹Ð» Ð½Ðµ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð»Ñ‘Ð½');
@@ -236,6 +274,27 @@ router.get('/:id/download', rateLimiter(120, 60), async (req: Request, res: Resp
     res.setHeader('Content-Type', media.mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
     createReadStream(filePath).pipe(res);
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/transcribe', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const media = await prisma.mediaFile.findUnique({ where: { id: req.params.id } });
+    if (!media) throw new NotFoundError('Медиафайл');
+    if (media.type !== 'AUDIO') throw new ValidationError('Расшифровка доступна только для голосовых сообщений');
+    if (!media.messageId) throw new ForbiddenError('Файл ещё не привязан к сообщению');
+
+    await assertMediaReadableByUser(media, req.user!.userId);
+
+    if (config.transcription.provider !== 'openai') {
+      throw new ValidationError('Расшифровка недоступна: не настроен провайдер');
+    }
+
+    const relative = media.url.replace('/internal/', '');
+    const filePath = path.resolve(config.upload.dir, relative);
+    const text = await transcribeWithOpenAI(filePath, media.originalName, media.mimeType);
+
+    res.json({ ok: true, data: { mediaId: media.id, text } });
   } catch (err) { next(err); }
 });
 
