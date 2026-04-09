@@ -910,64 +910,71 @@ export default function ChatApp() {
           const memberCount = acd._count?.members || acd.members?.length || 0;
           return (<>
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
-              <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
-              <Av src={getAvatarSourceForChat(acd)} name={chatName} size={38} color={tc[acd.type]} online={on}
-                onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
-              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
-                <div style={{ fontSize: 12, color: typingText ? '#E9EBEF' : '#686F7F', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
-                  onClick={(e) => { if (isGroupOrChannel) { e.stopPropagation(); setMemberListModal(true); } }}>
-                  {typingText || (acd.type === 'SECRET' ? '🔐 End-to-end' : acd.type === 'GROUP' ? `${memberCount} участников` : acd.type === 'CHANNEL' ? `${memberCount} подписчиков` : on ? 'в сети' : 'был(а) недавно')}
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
+              <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
+                <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
+                <Av src={getAvatarSourceForChat(acd)} name={chatName} size={38} color={tc[acd.type]} online={on}
+                  onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
+                <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
+                  <div style={{ fontSize: 12, color: typingText ? '#E9EBEF' : '#686F7F', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
+                    onClick={(e) => { if (isGroupOrChannel) { e.stopPropagation(); setMemberListModal(true); } }}>
+                    {typingText || (acd.type === 'SECRET' ? '🔐 End-to-end' : acd.type === 'GROUP' ? `${memberCount} участников` : acd.type === 'CHANNEL' ? `${memberCount} подписчиков` : on ? 'в сети' : 'был(а) недавно')}
+                  </div>
                 </div>
+                <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
+                <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
+                {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
+                {acd.type === 'CHANNEL' && <button style={s.ib} onClick={() => setAttachmentsModal(true)}><Icons.Attach /></button>}
               </div>
-              <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
-              <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
-              {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
-              {acd.type === 'CHANNEL' && <button style={s.ib} onClick={() => setAttachmentsModal(true)}><Icons.Attach /></button>}
             </div>
 
             {/* Message search bar */}
             {msgSearchOpen && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.95)' }}>
-                <Icons.Search size={16} />
-                <input style={{ ...s.si, fontSize: 13 }} placeholder="Поиск..." value={msgSearch} onChange={e => { setMsgSearch(e.target.value); setMsgSearchIdx(0); }} autoFocus />
-                <span style={{ fontSize: 12, color: '#7C8392', fontFamily: 'mono', whiteSpace: 'nowrap' }}>{searchResults.length > 0 ? `${msgSearchIdx+1}/${searchResults.length}` : msgSearch ? '0' : ''}</span>
-                {searchResults.length > 1 && <>
-                  <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.max(0, i-1))}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><Icons.ArrowDown /></span></button>
-                  <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.min(searchResults.length-1, i+1))}><Icons.ArrowDown /></button>
-                </>}
-                <button style={s.ib} onClick={() => { setMsgSearchOpen(false); setMsgSearch(''); }}><Icons.Close /></button>
+              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.95)' }}>
+                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px' }}>
+                  <Icons.Search size={16} />
+                  <input style={{ ...s.si, fontSize: 13 }} placeholder="Поиск..." value={msgSearch} onChange={e => { setMsgSearch(e.target.value); setMsgSearchIdx(0); }} autoFocus />
+                  <span style={{ fontSize: 12, color: '#7C8392', fontFamily: 'mono', whiteSpace: 'nowrap' }}>{searchResults.length > 0 ? `${msgSearchIdx+1}/${searchResults.length}` : msgSearch ? '0' : ''}</span>
+                  {searchResults.length > 1 && <>
+                    <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.max(0, i-1))}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><Icons.ArrowDown /></span></button>
+                    <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.min(searchResults.length-1, i+1))}><Icons.ArrowDown /></button>
+                  </>}
+                  <button style={s.ib} onClick={() => { setMsgSearchOpen(false); setMsgSearch(''); }}><Icons.Close /></button>
+                </div>
               </div>
             )}
 
             {acd.type === 'SECRET' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 5, background: 'rgba(245,247,250,0.06)', color: '#EDEFF3', fontSize: 12, fontFamily: 'mono' }}><Icons.Lock /> Сквозное шифрование</div>}
 
             {isTopicGroup && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.7)', overflowX: 'auto' }}>
-                {topicsLoading && <span style={{ fontSize: 12, color: '#A3A8B4' }}>Загрузка тем...</span>}
-                {!topicsLoading && chatTopics.map((topic) => (
-                  <button
-                    key={topic.id}
-                    style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(255,255,255,0.2)', color: '#F5F6F8' } : {}) }}
-                    onClick={() => setActiveTopicId(topic.id)}
-                  >
-                    #{topic.title}
-                  </button>
-                ))}
-                {isOwnerOrAdmin && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                    <input value={newTopicTitle} onChange={(e) => { setNewTopicTitle(e.target.value); setTopicError(''); }} placeholder="Новая тема" style={{ ...s.inp2, height: 30, minWidth: 130 }} />
-                    <button style={{ ...s.ib, color: '#EDEFF3' }} onClick={createTopic}><Icons.Plus /></button>
-                  </div>
-                )}
+              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.7)', overflowX: 'auto' }}>
+                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
+                  {topicsLoading && <span style={{ fontSize: 12, color: '#A3A8B4' }}>Загрузка тем...</span>}
+                  {!topicsLoading && chatTopics.map((topic) => (
+                    <button
+                      key={topic.id}
+                      style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(255,255,255,0.2)', color: '#F5F6F8' } : {}) }}
+                      onClick={() => setActiveTopicId(topic.id)}
+                    >
+                      #{topic.title}
+                    </button>
+                  ))}
+                  {isOwnerOrAdmin && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                      <input value={newTopicTitle} onChange={(e) => { setNewTopicTitle(e.target.value); setTopicError(''); }} placeholder="Новая тема" style={{ ...s.inp2, height: 30, minWidth: 130 }} />
+                      <button style={{ ...s.ib, color: '#EDEFF3' }} onClick={createTopic}><Icons.Plus /></button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             {topicError && <div style={{ padding: '0 14px 8px', color: '#D5D8DE', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
-              {(isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
+            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+              <div style={{ ...s.chatInner, display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
+                {(isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
@@ -1054,64 +1061,74 @@ export default function ChatApp() {
                     </div>
                   </div>
                 );
-              })}
-              <div ref={endRef} />
+                })}
+                <div ref={endRef} />
+              </div>
             </div>
 
             {/* Reply / Edit bar */}
             {(editingMsg || replyTo) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#E9EBEF' }}>
-                {editingMsg ? <Icons.Edit /> : <Icons.Reply />}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{editingMsg ? 'Редактирование' : `Ответ для ${replyTo?.from?.name}`}</div>
-                  <div style={{ fontSize: 13, color: '#7C8392', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editingMsg?.text || replyTo?.text}</div>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#E9EBEF' }}>
+                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px' }}>
+                  {editingMsg ? <Icons.Edit /> : <Icons.Reply />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{editingMsg ? 'Редактирование' : `Ответ для ${replyTo?.from?.name}`}</div>
+                    <div style={{ fontSize: 13, color: '#7C8392', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editingMsg?.text || replyTo?.text}</div>
+                  </div>
+                  <button style={s.ib} onClick={() => { setEditingMsg(null); setReplyTo(null); setInput(''); }}><Icons.Close /></button>
                 </div>
-                <button style={s.ib} onClick={() => { setEditingMsg(null); setReplyTo(null); setInput(''); }}><Icons.Close /></button>
               </div>
             )}
 
             {/* Input */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)' }}>
-              {isChannel && canPublishInChannel && !editingMsg && !replyTo && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#D6DAE2' }}>
-                  <input type="checkbox" checked={channelPostCommentsEnabled} onChange={(e) => setChannelPostCommentsEnabled(e.target.checked)} />
-                  Разрешить комментарии к этому посту
-                </label>
-              )}
-              {(voiceRecording || voiceRecorderState.error) && (
-                <div style={{ fontSize: 12, color: voiceRecorderState.error ? '#D5D8DE' : '#EDEFF3', fontFamily: 'mono' }}>
-                  {voiceRecorderState.error || `Идёт запись голосового${voiceRecorderState.startedAt ? ` · ${Math.floor((recordingNowTs - voiceRecorderState.startedAt) / 1000)}с` : ''}`}
-                </div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {canPublishInChannel && canSendInTopicGroup ? (
-                  <>
-                    <div style={{ position: 'relative' }}>
-                      <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
-                      {attachMenu && (
-                        <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-                          <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
-                          <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
-                        </div>
-                      )}
-                    </div>
-                    <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : isTopicGroup ? 'Сообщение в тему...' : 'Сообщение...'} value={input}
-                      onChange={e => { setInput(e.target.value); handleTyping(); }}
-                      onKeyDown={e => e.key === 'Enter' && handleSend()} />
-                    <button
-                      style={{ ...s.ib, color: voiceRecording ? '#D5D8DE' : '#EDEFF3' }}
-                      onClick={handleVoiceRecordToggle}
-                      title={voiceRecording ? 'Остановить запись' : 'Записать голосовое'}
-                    >
-                      <Icons.Mic />
-                    </button>
-                    <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
-                  </>
-                ) : (
-                  <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#9CA3B1', fontSize: 13 }}>
-                    {isChannel ? 'Посты публикуют только администраторы и модераторы. Для комментариев откройте пост.' : 'Выберите тему, чтобы отправлять сообщения.'}
+            <div style={{ background: 'transparent' }}>
+              <div style={{ ...s.chatInner, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px 14px' }}>
+                {isChannel && canPublishInChannel && !editingMsg && !replyTo && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#D6DAE2' }}>
+                    <input type="checkbox" checked={channelPostCommentsEnabled} onChange={(e) => setChannelPostCommentsEnabled(e.target.checked)} />
+                    Разрешить комментарии к этому посту
+                  </label>
+                )}
+                {(voiceRecording || voiceRecorderState.error) && (
+                  <div style={{ fontSize: 12, color: voiceRecorderState.error ? '#D5D8DE' : '#EDEFF3', fontFamily: 'mono' }}>
+                    {voiceRecorderState.error || `Идёт запись голосового${voiceRecorderState.startedAt ? ` · ${Math.floor((recordingNowTs - voiceRecorderState.startedAt) / 1000)}с` : ''}`}
                   </div>
                 )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderRadius: 16, background: 'rgba(15,18,25,0.84)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)' }}>
+                  {canPublishInChannel && canSendInTopicGroup ? (
+                    <>
+                      <div style={{ position: 'relative' }}>
+                        <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
+                        {attachMenu && (
+                          <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
+                            <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                            <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        ref={inpRef}
+                        style={{ ...s.inp2, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: 'none', padding: '10px 12px' }}
+                        placeholder={isChannel ? 'Опубликовать новость...' : isTopicGroup ? 'Сообщение в тему...' : 'Сообщение...'}
+                        value={input}
+                        onChange={e => { setInput(e.target.value); handleTyping(); }}
+                        onKeyDown={e => e.key === 'Enter' && handleSend()}
+                      />
+                      <button
+                        style={{ ...s.ib, color: voiceRecording ? '#D5D8DE' : '#EDEFF3' }}
+                        onClick={handleVoiceRecordToggle}
+                        title={voiceRecording ? 'Остановить запись' : 'Записать голосовое'}
+                      >
+                        <Icons.Mic />
+                      </button>
+                      <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
+                    </>
+                  ) : (
+                    <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#9CA3B1', fontSize: 13 }}>
+                      {isChannel ? 'Посты публикуют только администраторы и модераторы. Для комментариев откройте пост.' : 'Выберите тему, чтобы отправлять сообщения.'}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>);
@@ -1665,6 +1682,7 @@ const s = {
   root: { display: 'flex', width: '100%', height: '100vh', background: '#101319', fontFamily: "'Manrope', sans-serif", color: '#F2F4F7', position: 'relative', overflow: 'hidden' },
   sb: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 280, background: 'rgba(0,0,0,0.62)', borderRight: '1px solid rgba(255,255,255,0.3)', zIndex: 100, display: 'flex', flexDirection: 'column', transition: 'transform .25s cubic-bezier(.4,0,.2,1)', backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -10px 35px rgba(255,255,255,0.04), 16px 0 45px rgba(0,0,0,0.45)' },
   cl: { width: 360, minWidth: 280, maxWidth: 400, borderRight: '1px solid rgba(255,255,255,0.3)', display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -14px 30px rgba(255,255,255,0.04)' },
+  chatInner: { width: '100%', maxWidth: 1060, margin: '0 auto' },
   title: { flex: 1, fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#F6F7FA', letterSpacing: 0.4 },
   ib: { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.22)', color: '#DCE0E8', cursor: 'pointer', padding: 6, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', backdropFilter: 'blur(20px)' },
   si: { flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F2F4F7', fontSize: 13, fontFamily: "'Manrope', sans-serif" },
