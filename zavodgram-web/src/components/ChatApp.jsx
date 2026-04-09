@@ -825,7 +825,7 @@ export default function ChatApp() {
   }, [activeChat, deleteMessage, loadChats]);
 
   return (
-    <div style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
+    <div className="zg-shell" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
 
       {/* ── Toasts ── */}
       <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
@@ -858,22 +858,22 @@ export default function ChatApp() {
 
       {/* ── Chat List ── */}
       <div style={s.cl} className="zg-chatlist">
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 12px', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 14px', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'rgba(10,12,18,0.85)', backdropFilter: 'blur(16px)' }}>
           <button style={s.ib} onClick={e => { e.stopPropagation(); setNotifPanel(false); setSidebarOpen(true); }}><Icons.Menu /></button>
           <h1 style={s.title}>ZavodGram</h1>
           <button style={s.ib} onClick={e => { e.stopPropagation(); notifPanel ? setNotifPanel(false) : openNotificationsPanel(); }}><Icons.Bell /></button>
           <button style={s.ib} onClick={() => setNewChatModal(true)}><Icons.Plus /></button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 10, color: '#3A4050' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 12px', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', borderRadius: 16, color: '#70788A', border: '1px solid rgba(255,255,255,0.05)' }}>
           <Icons.Search /><input style={s.si} placeholder="Поиск чатов..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }} className="zg-scroll">
           {filteredChats.map(c => {
             const name = getChatName(c, user.id);
             const other = getOtherUser(c, user.id);
             const on = isOnline(c, user.id);
             return (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(74,158,229,0.1)', borderLeft: '3px solid #4A9EE5' } : {}) }}
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', cursor: 'pointer', margin: '4px 8px', borderRadius: 16, border: '1px solid transparent', ...(activeChat === c.id ? { background: 'linear-gradient(135deg, rgba(95,122,255,0.2), rgba(74,158,229,0.14))', border: '1px solid rgba(124,173,255,0.34)', boxShadow: '0 10px 24px rgba(44,77,145,0.25)' } : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.03)' }) }}
                 onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
                 <Av src={getAvatarSourceForChat(c)} name={name} color={tc[c.type]} online={on} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -897,7 +897,7 @@ export default function ChatApp() {
       </div>
 
       {/* ── Chat Area ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0C0E13' }} className="zg-chatarea">
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'radial-gradient(circle at top, #141a29 0%, #090b10 55%)' }} className="zg-chatarea">
         {activeChat && acd ? (() => {
           const chatName = getChatName(acd, user.id);
           const other = getOtherUser(acd, user.id);
@@ -910,7 +910,7 @@ export default function ChatApp() {
           const memberCount = acd._count?.members || acd.members?.length || 0;
           return (<>
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'rgba(9,12,18,0.8)', backdropFilter: 'blur(16px)' }}>
               <button style={{ ...s.ib, display: 'none' }} className="zg-back" onClick={() => setShowMobileChat(false)}><Icons.Back /></button>
               <Av src={getAvatarSourceForChat(acd)} name={chatName} size={38} color={tc[acd.type]} online={on}
                 onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
@@ -966,7 +966,7 @@ export default function ChatApp() {
             {topicError && <div style={{ padding: '0 14px 8px', color: '#E55A5A', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: isChannel ? 12 : 6 }} className="zg-scroll">
               {(isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
@@ -992,11 +992,11 @@ export default function ChatApp() {
                       maxWidth: isChannel ? 'min(100%, 620px)' : '72%',
                       width: isChannel ? 'min(100%, 620px)' : 'auto',
                       padding: isChannel ? '14px 16px' : '8px 12px',
-                      borderRadius: 14,
+                      borderRadius: 20,
                       lineHeight: 1.45,
                       ...(isChannel
-                        ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.12), rgba(124,107,222,0.09))', border: '1px solid rgba(74,158,229,0.2)' }
-                        : (isMine ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.15), rgba(124,107,222,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(74,158,229,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
+                        ? { background: 'linear-gradient(135deg, rgba(84,139,255,0.15), rgba(105,85,205,0.12))', border: '1px solid rgba(95,147,255,0.3)', boxShadow: '0 10px 30px rgba(25,33,57,0.35)' }
+                        : (isMine ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.22), rgba(124,107,222,0.22))', borderBottomRightRadius: 8, border: '1px solid rgba(120,172,255,0.24)', boxShadow: '0 10px 26px rgba(39,55,100,0.3)' } : { background: 'rgba(255,255,255,0.08)', borderBottomLeftRadius: 8, border: '1px solid rgba(255,255,255,0.07)' }))
                     }}>
                       {isChannel && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -1071,7 +1071,7 @@ export default function ChatApp() {
             )}
 
             {/* Input */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(9,12,18,0.8)', backdropFilter: 'blur(16px)' }}>
               {isChannel && canPublishInChannel && !editingMsg && !replyTo && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#B7BDCB' }}>
                   <input type="checkbox" checked={channelPostCommentsEnabled} onChange={(e) => setChannelPostCommentsEnabled(e.target.checked)} />
@@ -1126,55 +1126,95 @@ export default function ChatApp() {
 
       {/* ── Profile Panel ── */}
       {profilePanel && profileData && (
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#11141B', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 90, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <button style={s.ib} onClick={() => setProfilePanel(null)}><Icons.Close /></button>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>{settingsMode ? 'Настройки' : 'Профиль'}</span>
-          </div>
-          <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ position: 'relative', marginBottom: 14 }}>
-              <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
-                onClick={() => !settingsMode && setAvatarView({ url: profileData.avatar, name: profileData.name })} />
-              {settingsMode && (
-                <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #11141B' }}>
-                  <Icons.Edit />
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-                </label>
-              )}
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(74,158,229,0.1)', borderRadius: 20, color: '#4A9EE5', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
+        <div style={{ position: 'absolute', top: settingsMode ? 0 : 8, right: settingsMode ? 0 : 8, bottom: settingsMode ? 0 : 8, width: settingsMode ? 'min(460px, 100vw)' : 340, maxWidth: '100vw', background: settingsMode ? '#06080D' : 'rgba(12,15,22,0.94)', borderLeft: '1px solid rgba(255,255,255,0.06)', borderRadius: settingsMode ? 0 : 20, zIndex: 90, display: 'flex', flexDirection: 'column', overflowY: 'auto', backdropFilter: settingsMode ? 'none' : 'blur(16px)' }} onClick={e => e.stopPropagation()}>
+          {settingsMode ? (
+            <div style={{ padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <button style={{ ...s.ib, width: 52, height: 52, borderRadius: 26 }} onClick={() => setSidebarOpen(true)}><Icons.Menu /></button>
+                <div style={{ fontSize: 43, fontWeight: 700, color: '#9A7B3A', lineHeight: 1, padding: '22px 0 18px', textAlign: 'center', flex: 1, margin: '0 14px', borderRadius: 20, background: 'radial-gradient(circle at top, rgba(189,148,66,0.9), rgba(129,96,38,0.9))' }}>
+                  <Av src={profileData.avatar} name={profileData.name} size={84} radius={42} style={{ margin: '0 auto 12px' }} />
+                  {profileData.name}
+                  <div style={{ marginTop: 6, fontSize: 14, color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>{profileData.phone} · {profileData.tag}</div>
+                </div>
+                <button style={{ ...s.ib, width: 88, height: 52, borderRadius: 26 }} onClick={() => setSettingsMode(false)}>Изм.</button>
+              </div>
 
-            {settingsMode ? (
-              <div style={{ width: '100%' }}>
+              <div style={{ background: '#171A22', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 26, padding: '8px 0', marginBottom: 12 }}>
+                {[
+                  ['Сменить эмодзи-статус', Icons.Smile],
+                  ['Изменить цвет профиля', Icons.Shield],
+                  ['Изменить фотографию', Icons.Image],
+                ].map(([label, Icon], idx, arr) => (
+                  <button key={label} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, border: 'none', background: 'transparent', color: '#4F84F8', padding: '14px 18px', fontSize: 16, cursor: 'pointer', borderBottom: idx === arr.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+                    <Icon size={20} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ background: '#171A22', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 26, marginBottom: 12 }}>
+                {[
+                  ['Мой профиль', Icons.User],
+                  ['Прокси', Icons.Forward, 'Отключён'],
+                  ['Избранное', Icons.Tag],
+                  ['Недавние звонки', Icons.Video],
+                  ['Устройства', Icons.Shield, '6'],
+                  ['Папки с чатами', Icons.File],
+                  ['Уведомления и звуки', Icons.Bell],
+                  ['Конфиденциальность', Icons.Lock],
+                  ['Данные и память', Icons.Channel],
+                  ['Оформление', Icons.Smile],
+                  ['Энергосбережение', Icons.Wave, 'Выкл.'],
+                ].map(([label, Icon, tail], idx, arr) => (
+                  <button key={label} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, border: 'none', background: 'transparent', color: '#E7EBF7', padding: '16px 18px', fontSize: 17, cursor: 'pointer', borderBottom: idx === arr.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+                    <span style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}><Icon size={16} /></span>
+                    <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>
+                    {tail && <span style={{ fontSize: 16, color: '#8890A4' }}>{tail}</span>}
+                    <Icons.ArrowDown size={14} />
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ background: '#171A22', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 26, padding: 14 }}>
                 <label style={s.lbl}>Персональный тег</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit || user.tag} onChange={e => { setTagEdit(e.target.value); setTagError(''); }} />
                   <button onClick={saveTag} style={s.saveBtn}>Сохранить</button>
                 </div>
                 {tagError && <span style={{ color: '#E55A5A', fontSize: 12, fontFamily: 'mono', marginTop: 4, display: 'block' }}>{tagError}</span>}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 18, padding: '12px 14px', background: 'rgba(74,229,142,0.06)', borderRadius: 10, color: '#4AE58E', fontSize: 12, lineHeight: 1.5 }}>
-                  <Icons.Shield /><span>Тег бронируется за вами навсегда.</span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <button style={s.ib} onClick={() => setProfilePanel(null)}><Icons.Close /></button>
+                <span style={{ fontSize: 15, fontWeight: 600 }}>Профиль</span>
+              </div>
+              <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ position: 'relative', marginBottom: 14 }}>
+                  <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
+                    onClick={() => setAvatarView({ url: profileData.avatar, name: profileData.name })} />
+                </div>
+                <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(74,158,229,0.1)', borderRadius: 20, color: '#4A9EE5', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
+                <p style={{ fontSize: 14, color: '#7A8090', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
+                <div style={{ width: '100%' }}>
+                  {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#4A9EE5']].map(([l, v, c], i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <span style={{ fontSize: 13, color: '#4A5060' }}>{l}</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, fontFamily: 'mono', color: c || '#E8E8ED' }}>{v}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ) : (<>
-              <p style={{ fontSize: 14, color: '#7A8090', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
-              <div style={{ width: '100%' }}>
-                {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#4A9EE5']].map(([l, v, c], i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    <span style={{ fontSize: 13, color: '#4A5060' }}>{l}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, fontFamily: 'mono', color: c || '#E8E8ED' }}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </>)}
-          </div>
+            </>
+          )}
         </div>
       )}
 
       {/* ── Notification Panel ── */}
       {notifPanel && (
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#11141B', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 95, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'absolute', top: 8, right: 8, bottom: 8, width: 340, maxWidth: '100vw', background: 'rgba(12,15,22,0.94)', borderLeft: '1px solid rgba(255,255,255,0.06)', borderRadius: 20, zIndex: 95, display: 'flex', flexDirection: 'column', overflowY: 'auto', backdropFilter: 'blur(16px)' }} onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <button style={s.ib} onClick={() => setNotifPanel(false)}><Icons.Close /></button>
             <span style={{ fontSize: 15, fontWeight: 600 }}>Уведомления</span>
@@ -1642,15 +1682,15 @@ export default function ChatApp() {
 }
 
 const s = {
-  root: { display: 'flex', width: '100%', height: '100vh', background: '#0C0E13', fontFamily: "'Manrope', sans-serif", color: '#E8E8ED', position: 'relative', overflow: 'hidden' },
-  sb: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 280, background: '#11141B', borderRight: '1px solid rgba(255,255,255,0.06)', zIndex: 100, display: 'flex', flexDirection: 'column', transition: 'transform .25s cubic-bezier(.4,0,.2,1)' },
-  cl: { width: 360, minWidth: 280, maxWidth: 400, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', background: '#0F1219' },
-  title: { flex: 1, fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
-  ib: { background: 'none', border: 'none', color: '#5A6070', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  root: { display: 'flex', width: '100%', height: '100vh', background: 'radial-gradient(circle at 15% 0, #1a2133 0%, #0a0d13 35%, #080a10 100%)', fontFamily: "'Manrope', sans-serif", color: '#E8E8ED', position: 'relative', overflow: 'hidden' },
+  sb: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 300, background: 'rgba(12,15,22,0.94)', borderRight: '1px solid rgba(255,255,255,0.06)', zIndex: 100, display: 'flex', flexDirection: 'column', transition: 'transform .25s cubic-bezier(.4,0,.2,1)', backdropFilter: 'blur(16px)' },
+  cl: { width: 390, minWidth: 300, maxWidth: 430, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', background: 'linear-gradient(180deg, #0e121b 0%, #090c13 100%)' },
+  title: { flex: 1, fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#E8EDF9', letterSpacing: 0.2 },
+  ib: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: '#8E96AA', cursor: 'pointer', padding: 6, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' },
   si: { flex: 1, background: 'none', border: 'none', outline: 'none', color: '#E8E8ED', fontSize: 13, fontFamily: "'Manrope', sans-serif" },
   mi: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', borderRadius: 8 },
   lbl: { fontSize: 11, color: '#4A5060', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: "'JetBrains Mono', monospace", display: 'block', marginTop: 14, marginBottom: 4 },
-  inp2: { flex: 1, width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '10px 14px', color: '#E8E8ED', fontSize: 14, fontFamily: "'Manrope', sans-serif", outline: 'none' },
+  inp2: { flex: 1, width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: '10px 14px', color: '#E8E8ED', fontSize: 14, fontFamily: "'Manrope', sans-serif", outline: 'none' },
   saveBtn: { padding: '10px 16px', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
-  sendBtn: { width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  sendBtn: { width: 42, height: 42, borderRadius: 14, background: 'linear-gradient(135deg, #5f7cff, #4A9EE5)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 10px 24px rgba(53,95,190,0.35)' },
 };

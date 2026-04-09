@@ -1,0 +1,103 @@
+:root {
+  --bg-main: #07090f;
+  --bg-elev: #111624;
+  --bg-elev-soft: rgba(255, 255, 255, 0.04);
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --text-main: #ecf1ff;
+  --text-soft: #98a3bd;
+  --accent-a: #4a9ee5;
+  --accent-b: #7c6bde;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: radial-gradient(circle at 15% -10%, #1d2740 0%, #0a0d16 40%, #05070c 100%);
+  color: var(--text-main);
+  font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: -20% auto auto -10%;
+  width: 55vw;
+  height: 55vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(74, 158, 229, 0.18) 0%, rgba(74, 158, 229, 0) 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: auto -15% -35% auto;
+  width: 45vw;
+  height: 45vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 107, 222, 0.16) 0%, rgba(124, 107, 222, 0) 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.zg-shell {
+  position: relative;
+  z-index: 1;
+}
+
+.zg-glass-card {
+  background: linear-gradient(180deg, rgba(19, 24, 36, 0.95) 0%, rgba(13, 18, 30, 0.95) 100%);
+  border: 1px solid var(--line-soft);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+}
+
+.zg-pill-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.zg-grad-btn {
+  border: 0;
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 14px 32px rgba(86, 120, 210, 0.35);
+}
+
+.zg-input {
+  width: 100%;
+  background: var(--bg-elev-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  color: var(--text-main);
+  padding: 11px 14px;
+  outline: none;
+}
+
+.zg-input:focus {
+  border-color: rgba(124, 173, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(92, 144, 255, 0.18);
+}
+
+.zg-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.zg-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+}
