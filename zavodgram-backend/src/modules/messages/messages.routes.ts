@@ -21,12 +21,22 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
   try {
     const { chatId } = req.params;
     const cursor = req.query.cursor as string | undefined;
+    const topicId = req.query.topicId as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
     await requireChatMembership(prisma, chatId, req.user!.userId);
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
+    if (!chat) throw new NotFoundError('Чат');
+
+    if (chat.type === 'GROUP' && chat.topicsEnabled && !topicId) throw new ValidationError('Для группы с темами укажите topicId');
+    if ((!chat.topicsEnabled || chat.type !== 'GROUP') && topicId) throw new ValidationError('topicId доступен только для групп с темами');
+    if (topicId) {
+      const topic = await prisma.chatTopic.findFirst({ where: { id: topicId, chatId }, select: { id: true } });
+      if (!topic) throw new NotFoundError('Тема');
+    }
 
     const messages = await prisma.message.findMany({
-      where: { chatId, deleted: false },
+      where: { chatId, deleted: false, ...(topicId ? { topicId } : {}) },
       orderBy: { createdAt: 'desc' },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -73,6 +83,7 @@ const sendSchema = z.object({
   encrypted: z.boolean().optional(),
   mediaIds: z.array(z.string().uuid()).max(10).optional(),
   commentsEnabled: z.boolean().optional(),
+  topicId: z.string().uuid().optional(),
 });
 
 router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req: Request, res: Response, next: NextFunction) => {
@@ -87,9 +98,17 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     const membership = await requireChatMembership(prisma, chatId, req.user!.userId);
     const chat = await prisma.chat.findUnique({
       where: { id: chatId },
-      select: { type: true },
+      select: { type: true, topicsEnabled: true },
     });
     if (!chat) throw new NotFoundError('Чат');
+    if (chat.type === 'GROUP' && chat.topicsEnabled) {
+      if (!data.topicId) throw new ValidationError('Выберите тему для сообщения');
+      const topic = await prisma.chatTopic.findFirst({ where: { id: data.topicId, chatId }, select: { id: true } });
+      if (!topic) throw new NotFoundError('Тема');
+    } else if (data.topicId) {
+      throw new ValidationError('topicId доступен только для групп с темами');
+    }
+
     if (chat.type === 'CHANNEL') {
       if (!data.replyToId && membership.role === 'MEMBER') {
         throw new ForbiddenError('В канале публиковать посты могут только администраторы и модераторы');
@@ -136,6 +155,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
           forwardedFromName,
           encrypted: data.encrypted || false,
           commentsEnabled: chat.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
+          topicId: data.topicId || null,
         },
       });
 

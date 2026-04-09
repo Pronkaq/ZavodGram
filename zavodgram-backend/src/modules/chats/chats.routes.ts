@@ -180,6 +180,7 @@ const updateChatSchema = z.object({
   description: z.string().max(500).optional(),
   avatar: z.string().max(500).optional(),
   channelSlug: z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Ссылка канала: 3-64 символа (буквы, цифры, ., _, -)').optional(),
+  topicsEnabled: z.boolean().optional(),
 });
 
 router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
@@ -187,16 +188,23 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
     const chatId = req.params.id;
     const data = updateChatSchema.parse(req.body);
 
-    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type === 'PRIVATE' || chat.type === 'SECRET') throw new ForbiddenError('Нельзя редактировать личные чаты');
 
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
 
     if (data.channelSlug !== undefined && chat.type !== 'CHANNEL') throw new ForbiddenError('Публичная ссылка доступна только для каналов');
+    if (data.topicsEnabled !== undefined && chat.type !== 'GROUP') throw new ForbiddenError('Темы доступны только в группах');
     if (data.channelSlug !== undefined) {
       const existingSlug = await prisma.chat.findUnique({ where: { channelSlug: data.channelSlug }, select: { id: true } });
       if (existingSlug && existingSlug.id !== chatId) throw new ValidationError('Эта ссылка канала уже занята');
+    }
+
+    if (data.topicsEnabled === true && !chat.topicsEnabled) {
+      await prisma.chatTopic.create({
+        data: { chatId, title: 'Общая', createdBy: req.user!.userId },
+      });
     }
 
     const updated = await prisma.chat.update({
@@ -206,6 +214,7 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
         ...(data.description !== undefined ? { description: data.description } : {}),
         ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
         ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
+        ...(data.topicsEnabled !== undefined ? { topicsEnabled: data.topicsEnabled } : {}),
       },
       include: {
         members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
@@ -220,10 +229,66 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       description: updated.description,
       avatar: updated.avatar,
       channelSlug: updated.channelSlug,
+      topicsEnabled: updated.topicsEnabled,
     }));
 
     await cacheInvalidate(`chat:${chatId}`);
     res.json({ ok: true, data: updated });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
+});
+
+
+const createTopicSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+});
+
+router.get('/:id/topics', authMiddleware, rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const chatId = req.params.id;
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { id: true, type: true, topicsEnabled: true } });
+    if (!chat) throw new NotFoundError('Чат');
+
+    await requireChatMembership(prisma, chatId, req.user!.userId);
+
+    if (chat.type !== 'GROUP' || !chat.topicsEnabled) {
+      res.json({ ok: true, data: [] });
+      return;
+    }
+
+    const topics = await prisma.chatTopic.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'asc' },
+      include: { _count: { select: { messages: { where: { deleted: false } } } } },
+    });
+
+    res.json({ ok: true, data: topics });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/topics', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const chatId = req.params.id;
+    const data = createTopicSchema.parse(req.body);
+
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { id: true, type: true, topicsEnabled: true } });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.type !== 'GROUP' || !chat.topicsEnabled) throw new ForbiddenError('Темы не включены для этой группы');
+
+    await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
+
+    const topic = await prisma.chatTopic.create({
+      data: {
+        chatId,
+        title: data.title,
+        createdBy: req.user!.userId,
+      },
+      include: { _count: { select: { messages: true } } },
+    });
+
+    res.status(201).json({ ok: true, data: topic });
   } catch (err) {
     if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
     else next(err);
@@ -287,7 +352,7 @@ router.delete('/:id/members/:userId', authMiddleware, rateLimiter(30, 60), async
 router.get('/:id/bans', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const chatId = req.params.id;
-    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type !== 'CHANNEL') throw new ForbiddenError('Список заблокированных доступен только в каналах');
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
@@ -309,7 +374,7 @@ router.post('/:id/bans/:userId', authMiddleware, rateLimiter(20, 60), async (req
   try {
     const { id: chatId, userId: targetId } = req.params;
     const { reason } = z.object({ reason: z.string().max(280).optional() }).parse(req.body || {});
-    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type !== 'CHANNEL') throw new ForbiddenError('Блокировка доступна только в каналах');
     if (targetId === req.user!.userId) throw new ForbiddenError('Нельзя заблокировать себя');
@@ -344,7 +409,7 @@ router.post('/:id/bans/:userId', authMiddleware, rateLimiter(20, 60), async (req
 router.delete('/:id/bans/:userId', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id: chatId, userId: targetId } = req.params;
-    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type !== 'CHANNEL') throw new ForbiddenError('Разблокировка доступна только в каналах');
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
@@ -434,7 +499,7 @@ router.patch('/:id/members/:userId/comments-mute', authMiddleware, rateLimiter(2
     const { id: chatId, userId: targetId } = req.params;
     const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
 
-    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type !== 'CHANNEL') throw new ForbiddenError('Мут комментариев доступен только в каналах');
 

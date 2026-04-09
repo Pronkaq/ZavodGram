@@ -114,11 +114,19 @@ export const chatsApi = {
   listBans: (chatId) => api(`/chats/${chatId}/bans`),
   banMember: (chatId, userId, reason = '') => api(`/chats/${chatId}/bans/${userId}`, { method: 'POST', body: { reason } }),
   unbanMember: (chatId, userId) => api(`/chats/${chatId}/bans/${userId}`, { method: 'DELETE' }),
+  listTopics: (chatId) => api(`/chats/${chatId}/topics`),
+  createTopic: (chatId, title) => api(`/chats/${chatId}/topics`, { method: 'POST', body: { title } }),
 };
 
 // ── Messages API ──
 export const messagesApi = {
-  list: (chatId, cursor) => api(`/chats/${chatId}/messages${cursor ? `?cursor=${cursor}` : ''}`),
+  list: (chatId, cursor, topicId) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    if (topicId) params.set('topicId', topicId);
+    const q = params.toString();
+    return api(`/chats/${chatId}/messages${q ? `?${q}` : ''}`);
+  },
   send: (chatId, data) => api(`/chats/${chatId}/messages`, { method: 'POST', body: data }),
   edit: (chatId, msgId, text) => api(`/chats/${chatId}/messages/${msgId}`, { method: 'PATCH', body: { text } }),
   delete: (chatId, msgId) => api(`/chats/${chatId}/messages/${msgId}`, { method: 'DELETE' }),

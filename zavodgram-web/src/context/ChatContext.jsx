@@ -5,6 +5,8 @@ import { useAuth } from './AuthContext';
 
 const ChatContext = createContext(null);
 
+const topicKey = (chatId, topicId) => (topicId ? `${chatId}::${topicId}` : chatId);
+
 export function ChatProvider({ children }) {
   const { user } = useAuth();
   const [chats, setChats] = useState([]);
@@ -32,10 +34,10 @@ export function ChatProvider({ children }) {
   useEffect(() => { loadChats(); }, [loadChats]);
 
   // ── Load messages for a chat ──
-  const loadMessages = useCallback(async (chatId) => {
+  const loadMessages = useCallback(async (chatId, topicId) => {
     try {
-      const data = await messagesApi.list(chatId);
-      setMessages((prev) => ({ ...prev, [chatId]: data.messages }));
+      const data = await messagesApi.list(chatId, undefined, topicId);
+      setMessages((prev) => ({ ...prev, [topicKey(chatId, topicId)]: data.messages }));
       return data;
     } catch (e) {
       console.error('Failed to load messages', e);
@@ -52,10 +54,16 @@ export function ChatProvider({ children }) {
         const chatId = msg.chatId;
 
         setMessages((prev) => {
-          const existing = prev[chatId] || [];
-          // Don't add duplicates
-          if (existing.some((m) => m.id === msg.id)) return prev;
-          return { ...prev, [chatId]: [...existing, msg] };
+          const baseKey = topicKey(chatId);
+          const specificKey = topicKey(chatId, msg.topicId);
+          const next = { ...prev };
+          const pushUnique = (k) => {
+            const existing = next[k] || [];
+            if (!existing.some((m) => m.id === msg.id)) next[k] = [...existing, msg];
+          };
+          pushUnique(baseKey);
+          if (msg.topicId) pushUnique(specificKey);
+          return next;
         });
 
         // Update chat list
@@ -88,9 +96,16 @@ export function ChatProvider({ children }) {
       // Own message sent confirmation
       onSocket('message:sent', ({ message }) => {
         setMessages((prev) => {
-          const existing = prev[message.chatId] || [];
-          if (existing.some((m) => m.id === message.id)) return prev;
-          return { ...prev, [message.chatId]: [...existing, message] };
+          const baseKey = topicKey(message.chatId);
+          const specificKey = topicKey(message.chatId, message.topicId);
+          const next = { ...prev };
+          const pushUnique = (k) => {
+            const existing = next[k] || [];
+            if (!existing.some((m) => m.id === message.id)) next[k] = [...existing, message];
+          };
+          pushUnique(baseKey);
+          if (message.topicId) pushUnique(specificKey);
+          return next;
         });
       }),
 
@@ -234,7 +249,6 @@ export function ChatProvider({ children }) {
 
   const selectChat = useCallback((chatId) => {
     setActiveChat(chatId);
-    if (chatId && !messages[chatId]) loadMessages(chatId);
     if (chatId) {
       // Mark as read after short delay
       setTimeout(() => {

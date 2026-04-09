@@ -117,10 +117,12 @@ model Chat {
 
   // E2E encryption для секретных чатов
   publicKey   String?  // DH public key
+  topicsEnabled Boolean @default(false)
 
   members  ChatMember[]
   messages Message[]
   bans     ChatBan[]
+  topics   ChatTopic[]
 
   @@index([type])
 }
@@ -176,6 +178,8 @@ model Message {
   id        String        @id @default(uuid())
   chatId    String
   chat      Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  topicId   String?
+  topic     ChatTopic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
   fromId    String
   from      User          @relation(fields: [fromId], references: [id])
   text      String?
@@ -202,8 +206,24 @@ model Message {
   updatedAt DateTime @updatedAt
 
   @@index([chatId, createdAt])
+  @@index([topicId, createdAt])
   @@index([fromId])
   @@index([chatId, fromId])
+}
+
+model ChatTopic {
+  id        String   @id @default(uuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  title     String
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages  Message[]
+
+  @@index([chatId, createdAt])
+  @@unique([chatId, title])
 }
 
 model MessageReaction {

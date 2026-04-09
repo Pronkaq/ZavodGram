@@ -130,6 +130,7 @@ export default function ChatApp() {
   const [memberListModal, setMemberListModal] = useState(false);
   const [editGroupName, setEditGroupName] = useState('');
   const [editGroupDesc, setEditGroupDesc] = useState('');
+  const [editTopicsEnabled, setEditTopicsEnabled] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [addMemberResults, setAddMemberResults] = useState([]);
   const [channelInfoModal, setChannelInfoModal] = useState(false);
@@ -153,6 +154,11 @@ export default function ChatApp() {
   const [transcriptions, setTranscriptions] = useState({});
   const [transcriptionLoading, setTranscriptionLoading] = useState({});
   const [transcriptionAvailable, setTranscriptionAvailable] = useState(true);
+  const [chatTopics, setChatTopics] = useState([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [activeTopicId, setActiveTopicId] = useState(null);
+  const [newTopicTitle, setNewTopicTitle] = useState('');
+  const [topicError, setTopicError] = useState('');
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
@@ -163,7 +169,8 @@ export default function ChatApp() {
   const voiceChunksRef = useRef([]);
 
   const acd = chats.find((c) => c.id === activeChat);
-  const cms = messages[activeChat] || [];
+  const topicMessageKey = activeTopicId ? `${activeChat}::${activeTopicId}` : activeChat;
+  const cms = messages[topicMessageKey] || [];
 
   const filteredChats = useMemo(() => chats.filter((c) => {
     if (!search) return true;
@@ -189,6 +196,23 @@ export default function ChatApp() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [cms.length, activeChat]);
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
+  useEffect(() => {
+    if (!activeChat || acd?.type !== 'GROUP' || !acd?.topicsEnabled) {
+      setChatTopics([]);
+      setActiveTopicId(null);
+      return;
+    }
+    loadTopics(activeChat);
+  }, [activeChat, acd?.type, acd?.topicsEnabled, loadTopics]);
+
+  useEffect(() => {
+    if (!activeChat) return;
+    if (acd?.type === 'GROUP' && acd?.topicsEnabled) {
+      if (activeTopicId) loadMessages(activeChat, activeTopicId);
+      return;
+    }
+    loadMessages(activeChat);
+  }, [activeChat, activeTopicId, acd?.type, acd?.topicsEnabled, loadMessages]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
@@ -204,11 +228,15 @@ export default function ChatApp() {
   const handleSend = () => {
     const text = input.trim();
     if (!text || !activeChat) return;
+    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
     if (editingMsg) { editMessage(activeChat, editingMsg.id, text); setEditingMsg(null); }
     else {
-      const options = (acd?.type === 'CHANNEL' && !replyTo) ? { commentsEnabled: channelPostCommentsEnabled } : {};
+      const options = {
+        ...((acd?.type === 'CHANNEL' && !replyTo) ? { commentsEnabled: channelPostCommentsEnabled } : {}),
+        ...((acd?.type === 'GROUP' && acd?.topicsEnabled) ? { topicId: activeTopicId } : {}),
+      };
       sendMessage(activeChat, text, replyTo?.id, null, options);
       setReplyTo(null);
       if (acd?.type === 'CHANNEL') setChannelPostCommentsEnabled(true);
@@ -218,6 +246,7 @@ export default function ChatApp() {
 
   const handleTyping = () => {
     if (!activeChat) return;
+    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
     clearTimeout(typingTimer.current);
@@ -232,8 +261,8 @@ export default function ChatApp() {
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
     try {
       const media = await mediaApi.upload(file);
-      await messagesApi.send(activeChat, { mediaIds: [media.id] });
-      await loadMessages(activeChat);
+      await messagesApi.send(activeChat, { mediaIds: [media.id], ...(acd?.type === 'GROUP' && acd?.topicsEnabled ? { topicId: activeTopicId } : {}) });
+      await loadMessages(activeChat, acd?.type === 'GROUP' && acd?.topicsEnabled ? activeTopicId : undefined);
       await loadChats();
     } catch (err) { console.error('Upload failed', err); }
     e.target.value = '';
@@ -393,7 +422,14 @@ export default function ChatApp() {
     } catch (err) { console.error(err); }
   };
 
-  const doForward = (chatId) => { if (!forwardMsg) return; sendMessage(chatId, forwardMsg.text, null, forwardMsg.id); setForwardMsg(null); selectChat(chatId); setShowMobileChat(true); };
+  const doForward = (chatId) => {
+    if (!forwardMsg) return;
+    const targetChat = chats.find((c) => c.id === chatId);
+    sendMessage(chatId, forwardMsg.text, null, forwardMsg.id, targetChat?.topicsEnabled && activeTopicId ? { topicId: activeTopicId } : {});
+    setForwardMsg(null);
+    selectChat(chatId);
+    setShowMobileChat(true);
+  };
 
   // ── Group management ──
   const myRole = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
@@ -405,16 +441,50 @@ export default function ChatApp() {
     if (!acd || !isGroupOrChannel) return;
     setEditGroupName(acd.name || '');
     setEditGroupDesc(acd.description || '');
+    setEditTopicsEnabled(!!acd.topicsEnabled);
     setGroupSettingsModal(true);
   };
 
   const saveGroupSettings = async () => {
     if (!activeChat) return;
     try {
-      await chatsApi.update(activeChat, { name: editGroupName, description: editGroupDesc });
+      await chatsApi.update(activeChat, { name: editGroupName, description: editGroupDesc, ...(acd?.type === 'GROUP' ? { topicsEnabled: editTopicsEnabled } : {}) });
       await loadChats();
       setGroupSettingsModal(false);
     } catch (err) { console.error(err); }
+  };
+
+  const loadTopics = useCallback(async (chatId) => {
+    if (!chatId) return;
+    setTopicsLoading(true);
+    try {
+      const data = await chatsApi.listTopics(chatId);
+      setChatTopics(data);
+      if (data.length > 0) {
+        setActiveTopicId((prev) => (prev && data.some((t) => t.id === prev) ? prev : data[0].id));
+      } else {
+        setActiveTopicId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setChatTopics([]);
+      setActiveTopicId(null);
+    } finally {
+      setTopicsLoading(false);
+    }
+  }, []);
+
+  const createTopic = async () => {
+    if (!activeChat || !newTopicTitle.trim()) return;
+    try {
+      const created = await chatsApi.createTopic(activeChat, newTopicTitle.trim());
+      setNewTopicTitle('');
+      setTopicError('');
+      await loadTopics(activeChat);
+      setActiveTopicId(created.id);
+    } catch (err) {
+      setTopicError(err.message || 'Не удалось создать тему');
+    }
   };
 
   const handleGroupAvatarUpload = async (e) => {
@@ -833,7 +903,9 @@ export default function ChatApp() {
           const other = getOtherUser(acd, user.id);
           const isDirectChat = acd.type === 'PRIVATE' || acd.type === 'SECRET';
           const isChannel = acd.type === 'CHANNEL';
+          const isTopicGroup = acd.type === 'GROUP' && acd.topicsEnabled;
           const canPublishInChannel = !isChannel || ['OWNER', 'ADMIN'].includes(myRole);
+          const canSendInTopicGroup = !isTopicGroup || !!activeTopicId;
           const on = isOnline(acd, user.id);
           const memberCount = acd._count?.members || acd.members?.length || 0;
           return (<>
@@ -870,6 +942,28 @@ export default function ChatApp() {
             )}
 
             {acd.type === 'SECRET' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 5, background: 'rgba(74,229,142,0.06)', color: '#4AE58E', fontSize: 12, fontFamily: 'mono' }}><Icons.Lock /> Сквозное шифрование</div>}
+
+            {isTopicGroup && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.7)', overflowX: 'auto' }}>
+                {topicsLoading && <span style={{ fontSize: 12, color: '#778099' }}>Загрузка тем...</span>}
+                {!topicsLoading && chatTopics.map((topic) => (
+                  <button
+                    key={topic.id}
+                    style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(74,158,229,0.2)', color: '#7CB4FF' } : {}) }}
+                    onClick={() => setActiveTopicId(topic.id)}
+                  >
+                    #{topic.title}
+                  </button>
+                ))}
+                {isOwnerOrAdmin && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                    <input value={newTopicTitle} onChange={(e) => { setNewTopicTitle(e.target.value); setTopicError(''); }} placeholder="Новая тема" style={{ ...s.inp2, height: 30, minWidth: 130 }} />
+                    <button style={{ ...s.ib, color: '#4AE58E' }} onClick={createTopic}><Icons.Plus /></button>
+                  </div>
+                )}
+              </div>
+            )}
+            {topicError && <div style={{ padding: '0 14px 8px', color: '#E55A5A', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
@@ -990,7 +1084,7 @@ export default function ChatApp() {
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {canPublishInChannel ? (
+                {canPublishInChannel && canSendInTopicGroup ? (
                   <>
                     <div style={{ position: 'relative' }}>
                       <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
@@ -1001,7 +1095,7 @@ export default function ChatApp() {
                         </div>
                       )}
                     </div>
-                    <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : 'Сообщение...'} value={input}
+                    <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : isTopicGroup ? 'Сообщение в тему...' : 'Сообщение...'} value={input}
                       onChange={e => { setInput(e.target.value); handleTyping(); }}
                       onKeyDown={e => e.key === 'Enter' && handleSend()} />
                     <button
@@ -1015,7 +1109,7 @@ export default function ChatApp() {
                   </>
                 ) : (
                   <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#6A7090', fontSize: 13 }}>
-                    Посты публикуют только администраторы и модераторы. Для комментариев откройте пост.
+                    {isChannel ? 'Посты публикуют только администраторы и модераторы. Для комментариев откройте пост.' : 'Выберите тему, чтобы отправлять сообщения.'}
                   </div>
                 )}
               </div>
@@ -1417,6 +1511,17 @@ export default function ChatApp() {
 
               <label style={{ ...s.lbl, marginTop: 12 }}>Описание</label>
               <textarea style={{ ...s.inp2, minHeight: 60, resize: 'vertical' }} value={editGroupDesc} onChange={e => setEditGroupDesc(e.target.value)} />
+              {acd.type === 'GROUP' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: '#B7BDCB' }}>
+                  <input
+                    type="checkbox"
+                    checked={editTopicsEnabled}
+                    onChange={(e) => setEditTopicsEnabled(e.target.checked)}
+                    disabled={!isOwnerOrAdmin}
+                  />
+                  Группа с темами (отдельные ветки)
+                </label>
+              )}
 
               <button style={{ ...s.saveBtn, width: '100%', marginTop: 16 }} onClick={saveGroupSettings}>Сохранить</button>
             </>) : (<>
