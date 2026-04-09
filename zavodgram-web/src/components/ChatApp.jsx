@@ -8,33 +8,96 @@ import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, 
 
 const tc = typeColors;
 
-function mediaUrlById(id) {
+const secureMediaCache = new Map();
+const secureMediaPending = new Map();
+
+async function loadSecureMedia(endpoint) {
+  if (!endpoint) return '';
+  if (secureMediaCache.has(endpoint)) return secureMediaCache.get(endpoint);
+  if (secureMediaPending.has(endpoint)) return secureMediaPending.get(endpoint);
+
   const token = getAccessToken();
-  return token ? `/api/media/${id}/download?token=${encodeURIComponent(token)}` : '';
+  if (!token) return '';
+
+  const task = fetch(endpoint, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then(async (res) => {
+      if (!res.ok) throw new Error('Media request failed');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      secureMediaCache.set(endpoint, objectUrl);
+      secureMediaPending.delete(endpoint);
+      return objectUrl;
+    })
+    .catch((err) => {
+      secureMediaPending.delete(endpoint);
+      throw err;
+    });
+
+  secureMediaPending.set(endpoint, task);
+  return task;
+}
+
+function useSecureSrc(src) {
+  const [resolved, setResolved] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!src) { setResolved(''); return; }
+    if (src.startsWith('http') || src.startsWith('blob:') || src.startsWith('data:')) {
+      setResolved(src);
+      return;
+    }
+
+    let endpoint = src;
+    if (src.startsWith('media:')) endpoint = `/api/media/${src.slice(6)}/download`;
+    else if (src.startsWith('/uploads/')) endpoint = `/api/media/legacy?path=${encodeURIComponent(src)}`;
+
+    loadSecureMedia(endpoint)
+      .then((url) => {
+        if (!cancelled) setResolved(url || '');
+      })
+      .catch(() => {
+        if (!cancelled) setResolved('');
+      });
+
+    return () => { cancelled = true; };
+  }, [src]);
+
+  return resolved;
 }
 
 function resolveAvatarSrc(src) {
   if (!src) return '';
-  if (src.startsWith('http')) return src;
-  if (src.startsWith('media:')) return mediaUrlById(src.slice(6));
-  if (src.startsWith('/uploads/')) {
-    const token = getAccessToken();
-    return token ? `/api/media/legacy?path=${encodeURIComponent(src)}&token=${encodeURIComponent(token)}` : '';
-  }
   return src;
 }
 
 // Avatar component — shows image or initials, clickable
 function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: extraStyle }) {
+  const secureSrc = useSecureSrc(resolveAvatarSrc(src));
   const initials = name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
-  const bg = src ? 'transparent' : (color || '#4A9EE5');
+  const bg = secureSrc ? 'transparent' : (color || '#4A9EE5');
   return (
     <div onClick={onClick} style={{ width: size, height: size, borderRadius: radius, background: bg, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: onClick ? 'pointer' : 'default', overflow: 'hidden', ...extraStyle }}>
-      {src ? <img src={resolveAvatarSrc(src)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> :
+      {secureSrc ? <img src={secureSrc} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> :
         <span style={{ fontSize: size * 0.34, fontWeight: 600, color: '#fff', fontFamily: "'JetBrains Mono', monospace" }}>{initials}</span>}
       {online && <div style={{ position: 'absolute', bottom: size > 40 ? 1 : 0, right: size > 40 ? 1 : 0, width: size > 40 ? 10 : 8, height: size > 40 ? 10 : 8, background: '#4AE58E', borderRadius: '50%', border: '2px solid #0F1219' }} />}
     </div>
   );
+}
+
+function SecureMedia({ src, type = 'image', alt = '', style, controls = false }) {
+  const secureSrc = useSecureSrc(src);
+  if (!secureSrc) return null;
+  if (type === 'audio') return <audio controls={controls} preload="none" src={secureSrc} style={style} />;
+  return <img src={secureSrc} style={style} alt={alt} />;
+}
+
+function SecureMediaLink({ src, label }) {
+  const secureSrc = useSecureSrc(src);
+  if (!secureSrc) return <span style={{ color: '#7A8090' }}>Файл загружается…</span>;
+  return <a href={secureSrc} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5' }}>{label}</a>;
 }
 
 // Media attachment in message bubble
@@ -48,7 +111,7 @@ function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcripti
             <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(74,229,142,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2e8f5d', flexShrink: 0 }}><Icons.Mic size={14} /></div>
             <div style={{ fontSize: 12, fontWeight: 600 }}>{m.originalName || 'Голосовое сообщение'}</div>
           </div>
-          <audio controls preload="none" src={mediaUrlById(m.id)} style={{ width: '100%' }} />
+          <SecureMedia type="audio" controls src={`media:${m.id}`} style={{ width: '100%' }} />
           {transcriptionAvailable ? (
             <button
               style={{ ...s.ib, alignSelf: 'flex-start', fontSize: 12, padding: '6px 10px', height: 'auto' }}
@@ -73,7 +136,7 @@ function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcripti
     if (m.type === 'IMAGE') {
       return (
         <div key={m.id} style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260 }}>
-          <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
+          <SecureMedia src={`media:${m.id}`} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
           {m.originalName && <div style={{ fontSize: 11, color: '#5A6070', marginTop: 4 }}>{m.originalName}</div>}
         </div>
       );
@@ -459,7 +522,17 @@ export default function ChatApp() {
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.background = 'rgba(74,158,229,0.15)'; setTimeout(() => el.style.background = 'transparent', 1500); }
   };
 
-  const ctx = (e, msg) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 220), msg }); };
+  const ctx = (e, msg) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const selectedText = window.getSelection?.()?.toString()?.trim() || '';
+    setContextMenu({
+      x: Math.min(e.clientX, window.innerWidth - 220),
+      y: Math.min(e.clientY, window.innerHeight - 250),
+      msg,
+      selectedText,
+    });
+  };
 
   const typingText = useMemo(() => {
     if (!activeChat) return null;
@@ -1103,6 +1176,7 @@ export default function ChatApp() {
           <div style={s.mi} onClick={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}><Icons.Reply /> Ответить</div>
           <div style={s.mi} onClick={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}><Icons.Forward /> Переслать</div>
           <div style={s.mi} onClick={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}><Icons.Smile /> Реакция</div>
+          {!!contextMenu.selectedText && <div style={s.mi} onClick={() => { navigator.clipboard?.writeText(contextMenu.selectedText || ''); setContextMenu(null); }}><Icons.Copy /> Копировать фрагмент</div>}
           <div style={s.mi} onClick={() => { navigator.clipboard?.writeText(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Copy /> Копировать</div>
           {contextMenu.msg.mine && <div style={s.mi} onClick={() => { setEditingMsg(contextMenu.msg); setReplyTo(null); setInput(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Edit /> Редактировать</div>}
           {contextMenu.msg.mine && <div style={{ ...s.mi, color: '#E55A5A' }} onClick={() => { deleteMessage(activeChat, contextMenu.msg.id); setContextMenu(null); }}><Icons.Trash /> Удалить</div>}
@@ -1287,9 +1361,9 @@ export default function ChatApp() {
                 {item.kind === 'link' ? (
                   <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5', wordBreak: 'break-all' }}>{item.url}</a>
                 ) : item.media?.type === 'IMAGE' ? (
-                  <img src={mediaUrlById(item.media.id)} alt={item.media.originalName} style={{ maxWidth: '100%', borderRadius: 10 }} />
+                  <SecureMedia src={`media:${item.media.id}`} alt={item.media.originalName} style={{ maxWidth: '100%', borderRadius: 10 }} />
                 ) : (
-                  <a href={mediaUrlById(item.media.id)} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5' }}>{item.media?.originalName || 'Файл'}</a>
+                  <SecureMediaLink src={`media:${item.media.id}`} label={item.media?.originalName || 'Файл'} />
                 )}
               </div>
             ))}
