@@ -132,6 +132,7 @@ export const mediaApi = {
     form.append('file', file);
     return api('/media/upload', { method: 'POST', body: form, upload: true });
   },
+  transcribe: (mediaId) => api(`/media/${mediaId}/transcribe`, { method: 'POST' }),
 };
 
 // ── Notifications API ──
