@@ -3,10 +3,12 @@ import { adminApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const card = {
-  background: '#141923',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: 14,
-  padding: 16,
+  background: 'linear-gradient(180deg, rgba(19,24,36,0.95) 0%, rgba(13,18,30,0.95) 100%)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: 22,
+  padding: 18,
+  boxShadow: '0 18px 42px rgba(0,0,0,0.28)',
+  backdropFilter: 'blur(14px)',
 };
 
 export default function AdminPage() {
@@ -70,14 +72,14 @@ export default function AdminPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0C0E13', color: '#E8E8ED', padding: 24, fontFamily: 'Manrope, sans-serif' }}>
+    <div className="zg-shell" style={{ minHeight: '100vh', color: '#E8E8ED', padding: 24, fontFamily: 'Manrope, sans-serif' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
+        <div className="zg-glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, padding: '18px 20px' }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 30, fontFamily: 'JetBrains Mono, monospace' }}>Админка ZavodGram</h1>
-            <div style={{ color: '#7F869B', marginTop: 6 }}>Вы вошли как {user?.tag}</div>
+            <h1 style={{ margin: 0, fontSize: 30, fontFamily: 'JetBrains Mono, monospace', color: '#edf2ff' }}>Админка ZavodGram</h1>
+            <div style={{ color: '#9aa4be', marginTop: 6 }}>Вы вошли как {user?.tag}</div>
           </div>
-          <button onClick={() => { window.location.href = '/'; }} style={{ background: 'rgba(74,158,229,0.15)', border: '1px solid rgba(74,158,229,0.35)', color: '#9DCAF5', borderRadius: 10, padding: '10px 14px', cursor: 'pointer' }}>
+          <button className="zg-pill-btn" onClick={() => { window.location.href = '/'; }} style={{ color: '#cde3ff' }}>
             Открыть мессенджер
           </button>
         </div>
@@ -103,16 +105,17 @@ export default function AdminPage() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder='Поиск по имени, тегу, телефону'
-                    style={{ width: 280, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#E8E8ED', padding: '8px 10px' }}
+                    className="zg-input"
+                    style={{ width: 320 }}
                   />
-                  <button type='submit' style={{ background: '#4A9EE5', color: '#fff', border: 0, borderRadius: 8, padding: '8px 12px', cursor: 'pointer' }}>Найти</button>
+                  <button type='submit' className="zg-grad-btn" style={{ padding: '9px 14px' }}>Найти</button>
                 </form>
               </div>
 
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
-                    <tr style={{ color: '#8B93A8', textAlign: 'left' }}>
+                    <tr style={{ color: '#9ba6bf', textAlign: 'left' }}>
                       <th style={{ paddingBottom: 8 }}>Пользователь</th>
                       <th style={{ paddingBottom: 8 }}>Телефон</th>
                       <th style={{ paddingBottom: 8 }}>Создан</th>
@@ -123,10 +126,10 @@ export default function AdminPage() {
                   </thead>
                   <tbody>
                     {users.map((u) => (
-                      <tr key={u.id} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <tr key={u.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                         <td style={{ padding: '10px 0' }}>
                           <div style={{ fontWeight: 600 }}>{u.name}</div>
-                          <div style={{ color: '#7F869B' }}>{u.tag}</div>
+                          <div style={{ color: '#9aa4be' }}>{u.tag}</div>
                         </td>
                         <td>{u.phone}</td>
                         <td>{new Date(u.createdAt).toLocaleString()}</td>
@@ -140,14 +143,16 @@ export default function AdminPage() {
                             <button
                               onClick={() => handleBlockToggle(u)}
                               disabled={busyUserId === u.id}
-                              style={{ background: u.blocked ? 'rgba(136,212,152,0.15)' : 'rgba(255,138,138,0.15)', color: u.blocked ? '#88D498' : '#FF8A8A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer' }}
+                              className="zg-pill-btn"
+                              style={{ background: u.blocked ? 'rgba(136,212,152,0.15)' : 'rgba(255,138,138,0.15)', color: u.blocked ? '#88D498' : '#FF8A8A', padding: '7px 10px' }}
                             >
                               {u.blocked ? 'Разблокировать' : 'Блок'}
                             </button>
                             <button
                               onClick={() => handleDelete(u)}
                               disabled={busyUserId === u.id}
-                              style={{ background: 'rgba(255,138,138,0.2)', color: '#FF8A8A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer' }}
+                              className="zg-pill-btn"
+                              style={{ background: 'rgba(255,138,138,0.2)', color: '#FF8A8A', padding: '7px 10px' }}
                             >
                               Удалить
                             </button>

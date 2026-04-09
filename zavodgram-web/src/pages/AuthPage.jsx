@@ -115,8 +115,8 @@ export default function AuthPage() {
   const telegramStartCommand = telegramStartPayload ? `/start ${telegramStartPayload}` : '';
 
   return (
-    <div style={s.page}>
-      <div style={s.card}>
+    <div className="zg-shell" style={s.page}>
+      <div className="zg-glass-card" style={s.card}>
         <div style={s.logo}>Z</div>
         <h1 style={s.title}>ZavodGram</h1>
         <p style={s.subtitle}>{mode === 'login' ? 'Вход в аккаунт' : 'Создание аккаунта'}</p>
@@ -124,17 +124,17 @@ export default function AuthPage() {
         <form onSubmit={handleSubmit} style={s.form}>
           {mode === 'register' && registerStep === 'form' && (
             <>
-              <input style={s.input} placeholder="Имя" value={form.name} onChange={(e) => set('name', e.target.value)} />
-              <input style={s.input} placeholder="@ваш_тег" value={form.tag} onChange={(e) => set('tag', e.target.value)} />
+              <input className="zg-input" style={s.input} placeholder="Имя" value={form.name} onChange={(e) => set('name', e.target.value)} />
+              <input className="zg-input" style={s.input} placeholder="@ваш_тег" value={form.tag} onChange={(e) => set('tag', e.target.value)} />
             </>
           )}
 
           {(mode === 'login' || (mode === 'register' && registerStep === 'form')) && (
             <>
-              <input style={s.input} placeholder="+79001234567" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
-              <input style={s.input} type="password" placeholder="Пароль" value={form.password} onChange={(e) => set('password', e.target.value)} />
+              <input className="zg-input" style={s.input} placeholder="+79001234567" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+              <input className="zg-input" style={s.input} type="password" placeholder="Пароль" value={form.password} onChange={(e) => set('password', e.target.value)} />
               {mode === 'register' && (
-                <textarea style={{ ...s.input, minHeight: 50, resize: 'vertical' }} placeholder="О себе (необязательно)" value={form.bio} onChange={(e) => set('bio', e.target.value)} />
+                <textarea className="zg-input" style={{ ...s.input, minHeight: 70, resize: 'vertical' }} placeholder="О себе (необязательно)" value={form.bio} onChange={(e) => set('bio', e.target.value)} />
               )}
             </>
           )}
@@ -180,7 +180,7 @@ export default function AuthPage() {
 
           {error && <div style={s.error}>{error}</div>}
 
-          <button style={s.btn} type="submit" disabled={loading || (mode === 'register' && registerStep !== 'form' && !telegramConfirmed)}>
+          <button className="zg-grad-btn" style={s.btn} type="submit" disabled={loading || (mode === 'register' && registerStep !== 'form' && !telegramConfirmed)}>
             {loading
               ? '...'
               : mode === 'login'
@@ -210,17 +210,17 @@ export default function AuthPage() {
 }
 
 const s = {
-  page: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0C0E13', padding: 20 },
-  card: { background: '#11141B', borderRadius: 20, padding: '40px 32px', width: '100%', maxWidth: 420, border: '1px solid rgba(255,255,255,0.06)', textAlign: 'center' },
-  logo: { width: 64, height: 64, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#fff', marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
-  subtitle: { fontSize: 14, color: '#5A6070', marginBottom: 24 },
+  page: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 20 },
+  card: { padding: '42px 32px', width: '100%', maxWidth: 450, textAlign: 'center' },
+  logo: { width: 68, height: 68, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 34, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#fff', marginBottom: 16, boxShadow: '0 14px 34px rgba(82,120,212,0.45)' },
+  title: { fontSize: 26, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, color: '#edf2ff' },
+  subtitle: { fontSize: 14, color: '#98a3bd', marginBottom: 24 },
   form: { display: 'flex', flexDirection: 'column', gap: 10 },
-  input: { width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '11px 14px', color: '#E8E8ED', fontSize: 14, outline: 'none', fontFamily: "'Manrope', sans-serif" },
-  btn: { width: '100%', padding: '12px', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 6 },
+  input: { fontSize: 14, fontFamily: "'Manrope', sans-serif" },
+  btn: { width: '100%', fontSize: 15, marginTop: 6 },
   error: { color: '#E55A5A', fontSize: 13, textAlign: 'left', padding: '6px 0' },
-  switch: { background: 'none', border: 'none', color: '#4A9EE5', fontSize: 13, cursor: 'pointer', marginTop: 16, padding: 4 },
-  telegramBox: { textAlign: 'left', border: '1px solid rgba(74,158,229,0.35)', borderRadius: 10, background: 'rgba(74,158,229,0.08)', padding: 12 },
+  switch: { background: 'none', border: 'none', color: '#7cb4ff', fontSize: 13, cursor: 'pointer', marginTop: 16, padding: 4 },
+  telegramBox: { textAlign: 'left', border: '1px solid rgba(124,173,255,0.35)', borderRadius: 14, background: 'rgba(84,139,255,0.12)', padding: 14 },
   telegramTitle: { color: '#E8E8ED', fontSize: 14, fontWeight: 700, marginBottom: 8 },
   telegramText: { color: '#B8BDCA', fontSize: 13, marginBottom: 6 },
   telegramLink: { display: 'inline-block', color: '#7CB4FF', textDecoration: 'none', fontWeight: 600, margin: '8px 0' },
