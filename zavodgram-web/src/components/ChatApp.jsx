@@ -1076,6 +1076,8 @@ export default function ChatApp() {
                 const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin;
                 const { title: postTitle, paragraphs: postParagraphs } = parseChannelPostText(msg.text || '');
                 const postImage = (msg.media || []).find((m) => m.type === 'IMAGE');
+                const postViewsRaw = msg.viewsCount ?? msg.viewCount ?? msg.views ?? msg.channelViews ?? msg._count?.views ?? 0;
+                const postViews = Number.isFinite(Number(postViewsRaw)) ? Number(postViewsRaw) : 0;
                 return (
                   <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'flex-start' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(255,255,255,0.12)' } : {}) }}
                     onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
@@ -1157,30 +1159,33 @@ export default function ChatApp() {
                         </div>
                       )}
                       {isChannel && (
-                        <>
-                          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, color: '#B1B8C8', fontSize: 13 }}>
-                            <span style={{ color: '#9AA2B4' }}>•</span>
-                            <span style={{ color: '#8E96A9', textDecoration: 'underline' }}>{postAuthor}</span>
-                          </div>
-                          <button
-                            style={{ marginTop: 8, border: 'none', background: 'transparent', color: commentsButtonActive ? '#B4A4FF' : '#959CAA', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', fontSize: 20, fontWeight: 700, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 8, opacity: commentsButtonActive ? 1 : 0.7 }}
-                            onClick={() => commentsButtonActive && openPostComments(msg)}
-                            disabled={!commentsButtonActive}
-                            title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
-                          >
-                            <span style={{ fontSize: 24, lineHeight: 1 }}>💬</span>
-                            <span style={{ fontSize: 28, lineHeight: 1, color: '#8877FF' }}>{postComments.length}</span>
-                            <span style={{ fontSize: 16, color: '#9A90E6' }}>Comments</span>
-                          </button>
-                        </>
+                        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, color: '#B1B8C8', fontSize: 13 }}>
+                          <span style={{ color: '#9AA2B4' }}>•</span>
+                          <span style={{ color: '#8E96A9', textDecoration: 'underline' }}>{postAuthor}</span>
+                        </div>
                       )}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#686F7F', marginTop: 8, fontFamily: 'mono' }}>
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
                         {msg.encrypted && <Icons.Lock />}
+                        {isChannel && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 11 }}>👁</span>{postViews}</span>}
                         {formatTimeShort(msg.createdAt)}
                         {isMine && <span style={{ display: 'flex', alignItems: 'center', color: '#E9EBEF' }}><Icons.Check double={msg.status === 'READ'} /></span>}
                       </span>
                       </div>
+                      {isChannel && (
+                        <button
+                          style={{ margin: '6px 5px 7px', width: 'calc(100% - 10px)', border: 'none', borderRadius: 11, background: commentsButtonActive ? 'rgba(17,20,27,0.96)' : 'rgba(17,20,27,0.7)', color: commentsButtonActive ? '#8F85E9' : '#6E7482', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', padding: '9px 12px', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+                          onClick={() => commentsButtonActive && openPostComments(msg)}
+                          disabled={!commentsButtonActive}
+                          title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <Icons.Reply size={16} />
+                            Прокомментировать {postComments.length > 0 ? `(${postComments.length})` : ''}
+                          </span>
+                          <span style={{ display: 'inline-flex', transform: 'rotate(-90deg)' }}><Icons.ArrowDown size={16} /></span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
