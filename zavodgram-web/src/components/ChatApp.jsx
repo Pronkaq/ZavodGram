@@ -1599,7 +1599,20 @@ export default function ChatApp() {
                   ))}
                 </div>
                 <button
-                  style={{ ...s.ib, color: commentsAllowed ? '#B0A5FF' : '#959CAA', fontSize: 16, fontWeight: 700, padding: 0, height: 'auto', opacity: commentsAllowed ? 1 : 0.7 }}
+                  style={{
+                    ...s.ib,
+                    color: commentsAllowed ? '#8F85E9' : '#959CAA',
+                    fontSize: 16,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    padding: '2px 8px 3px',
+                    height: 'auto',
+                    opacity: commentsAllowed ? 1 : 0.7,
+                    borderRadius: 999,
+                    border: '1px solid rgba(143,133,233,0.55)',
+                    background: 'rgba(143,133,233,0.12)',
+                    fontFamily: 'Inter, system-ui, sans-serif'
+                  }}
                   onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
                   disabled={!commentsAllowed}
                 >
@@ -1615,38 +1628,76 @@ export default function ChatApp() {
                 const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
                 const commentAuthor = comment.from || null;
                 const canOpenAuthorChat = Boolean(commentAuthor?.id) && commentAuthor.id !== user.id;
+                const isMyComment = (comment.fromId || comment.from?.id) === user.id;
                 return (
-                <div key={comment.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginLeft: Math.min((comment.depth || 0) * 18, 72), display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div
+                  key={comment.id}
+                  style={{
+                    padding: '6px 0 10px',
+                    borderBottom: '1px solid rgba(255,255,255,0.04)',
+                    marginLeft: Math.min((comment.depth || 0) * 18, 72),
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10
+                  }}
+                >
                   <Av
                     src={commentAuthor?.avatar}
                     name={commentAuthor?.name || 'Пользователь'}
-                    size={30}
+                    size={34}
                     radius={999}
                     onClick={canOpenAuthorChat ? () => openDirectChatWithUser(commentAuthor) : undefined}
-                    style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.12)' }}
+                    style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: '#F5F6F8', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span>
+                    <div style={{ fontSize: 12, color: '#F5F6F8', marginBottom: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <button
                           type="button"
-                          style={{ ...s.ib, fontSize: 12, color: canOpenAuthorChat ? '#E9EBEF' : '#A7AEBB', padding: 0, height: 'auto', textDecoration: canOpenAuthorChat ? 'underline' : 'none', textUnderlineOffset: 2, cursor: canOpenAuthorChat ? 'pointer' : 'default' }}
+                          style={{
+                            ...s.ib,
+                            fontSize: 14,
+                            padding: 0,
+                            height: 'auto',
+                            color: canOpenAuthorChat ? (isMyComment ? '#9FD3FF' : '#58C8E8') : '#B0B5BF',
+                            cursor: canOpenAuthorChat ? 'pointer' : 'default',
+                            fontWeight: 600,
+                            fontFamily: 'Inter, system-ui, sans-serif',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
                           onClick={() => canOpenAuthorChat && openDirectChatWithUser(commentAuthor)}
                           disabled={!canOpenAuthorChat}
+                          title={canOpenAuthorChat ? 'Открыть чат' : undefined}
                         >
                           {commentAuthor?.name || 'Пользователь'}
                         </button>
-                        <span style={{ color: '#7C8392', fontFamily: 'mono', marginLeft: 6 }}>{formatTimeShort(comment.createdAt)}</span>
-                      </span>
+                        <span style={{ color: '#8A92A1', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button style={{ ...s.ib, fontSize: 12 }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
+                        <button style={{ ...s.ib, fontSize: 12, border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12, padding: '3px 10px', height: 'auto', fontFamily: 'Inter, system-ui, sans-serif' }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
                         {canModerate && (
                           <>
-                            <button style={{ ...s.ib, fontSize: 12 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
-                            <button style={{ ...s.ib, fontSize: 12, color: '#D5D8DE' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
+                            <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
+                            <button style={{ ...s.ib, fontSize: 11, color: '#D5D8DE' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
                           </>
                         )}
                       </div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: '#F2F4F7',
+                        lineHeight: 1.35,
+                        background: isMyComment ? 'rgba(76,91,118,0.55)' : 'rgba(24,28,37,0.96)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: 14,
+                        padding: '8px 11px',
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)'
+                      }}
+                    >
+                      {comment.text}
                     </div>
                     <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.45 }}>{comment.text}</div>
                   </div>
