@@ -189,6 +189,26 @@ export default function ChatApp() {
     return cms.filter((m) => m.text?.toLowerCase().includes(msgSearch.toLowerCase())).map((m) => m.id);
   }, [msgSearch, cms]);
 
+  const loadTopics = useCallback(async (chatId) => {
+    if (!chatId) return;
+    setTopicsLoading(true);
+    try {
+      const data = await chatsApi.listTopics(chatId);
+      setChatTopics(data);
+      if (data.length > 0) {
+        setActiveTopicId((prev) => (prev && data.some((t) => t.id === prev) ? prev : data[0].id));
+      } else {
+        setActiveTopicId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setChatTopics([]);
+      setActiveTopicId(null);
+    } finally {
+      setTopicsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (searchResults.length > 0 && msgSearchIdx >= 0)
       document.getElementById(`msg-${searchResults[msgSearchIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -453,26 +473,6 @@ export default function ChatApp() {
       setGroupSettingsModal(false);
     } catch (err) { console.error(err); }
   };
-
-  const loadTopics = useCallback(async (chatId) => {
-    if (!chatId) return;
-    setTopicsLoading(true);
-    try {
-      const data = await chatsApi.listTopics(chatId);
-      setChatTopics(data);
-      if (data.length > 0) {
-        setActiveTopicId((prev) => (prev && data.some((t) => t.id === prev) ? prev : data[0].id));
-      } else {
-        setActiveTopicId(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setChatTopics([]);
-      setActiveTopicId(null);
-    } finally {
-      setTopicsLoading(false);
-    }
-  }, []);
 
   const createTopic = async () => {
     if (!activeChat || !newTopicTitle.trim()) return;
