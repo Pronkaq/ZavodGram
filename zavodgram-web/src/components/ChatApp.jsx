@@ -1657,14 +1657,11 @@ export default function ChatApp() {
                           key={comment.id}
                           style={{
                             marginLeft: Math.min((comment.depth || 0) * 16, 64),
-                            marginBottom: 10,
+                            marginBottom: 8,
                             display: 'flex',
                             alignItems: 'flex-start',
                             gap: 10,
-                            borderRadius: 14,
-                            padding: '10px 10px 10px 11px',
-                            border: '1px solid rgba(255,255,255,0.07)',
-                            background: 'rgba(255,255,255,0.03)'
+                            padding: '6px 0'
                           }}
                         >
                           <Av
@@ -1676,12 +1673,13 @@ export default function ChatApp() {
                             style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
                           />
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                                 <button
                                   type="button"
                                   style={{
-                                    ...s.ib,
+                                    background: 'transparent',
+                                    border: 'none',
                                     fontSize: 14,
                                     padding: 0,
                                     height: 'auto',
@@ -1702,7 +1700,7 @@ export default function ChatApp() {
                                 <span style={{ color: '#8790A0', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                <button style={{ ...s.ib, fontSize: 12, border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '4px 10px', height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#C4C9D3', background: 'rgba(255,255,255,0.03)' }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
+                                <button style={{ background: 'transparent', border: 'none', fontSize: 12, padding: 0, height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#98A0AF', cursor: 'pointer', fontWeight: 500 }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
                                 {canModerate && (
                                   <>
                                     <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
@@ -1711,7 +1709,7 @@ export default function ChatApp() {
                                 )}
                               </div>
                             </div>
-                            <div style={{ borderRadius: 12, background: isMyComment ? 'rgba(68,86,115,0.56)' : 'rgba(19,22,30,0.92)', border: '1px solid rgba(255,255,255,0.08)', padding: '9px 11px' }}>
+                            <div style={{ borderRadius: 12, background: isMyComment ? 'rgba(68,86,115,0.46)' : 'rgba(255,255,255,0.04)', padding: '9px 11px' }}>
                               <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.42, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                 {commentBody || '…'}
                               </div>
