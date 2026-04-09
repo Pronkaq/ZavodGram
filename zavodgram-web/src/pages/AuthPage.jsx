@@ -115,7 +115,7 @@ export default function AuthPage() {
   const telegramStartCommand = telegramStartPayload ? `/start ${telegramStartPayload}` : '';
 
   return (
-    <div style={s.page}>
+    <div style={s.page} className="zg-auth">
       <div style={s.card}>
         <div style={s.logo}>Z</div>
         <h1 style={s.title}>ZavodGram</h1>
@@ -205,28 +205,37 @@ export default function AuthPage() {
           {mode === 'login' ? 'Нет аккаунта? Зарегистрируйтесь' : 'Уже есть аккаунт? Войти'}
         </button>
       </div>
+      <style>{`
+        .zg-auth input::placeholder,
+        .zg-auth textarea::placeholder{
+          color: rgba(228,232,238,.58);
+        }
+        .zg-auth button:hover{
+          filter: brightness(1.06);
+        }
+      `}</style>
     </div>
   );
 }
 
 const s = {
-  page: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0C0E13', padding: 20 },
-  card: { background: '#11141B', borderRadius: 20, padding: '40px 32px', width: '100%', maxWidth: 420, border: '1px solid rgba(255,255,255,0.06)', textAlign: 'center' },
-  logo: { width: 64, height: 64, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#fff', marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
-  subtitle: { fontSize: 14, color: '#5A6070', marginBottom: 24 },
+  page: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'radial-gradient(1000px 520px at 20% 10%, rgba(255,255,255,0.14), transparent 60%), linear-gradient(150deg, #0f1319 0%, #171c24 55%, #1f242c 100%)', padding: 20 },
+  card: { background: 'rgba(0,0,0,0.58)', borderRadius: 24, padding: '40px 32px', width: '100%', maxWidth: 430, border: '1px solid rgba(255,255,255,0.24)', textAlign: 'center', backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -18px 34px rgba(255,255,255,0.025), 0 24px 55px rgba(0,0,0,0.46)' },
+  logo: { width: 64, height: 64, background: 'rgba(255,255,255,0.66)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#181d26', marginBottom: 16, border: '1px solid rgba(255,255,255,0.28)' },
+  title: { fontSize: 24, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, color: '#F5F6F8' },
+  subtitle: { fontSize: 14, color: '#B8BEC9', marginBottom: 24 },
   form: { display: 'flex', flexDirection: 'column', gap: 10 },
-  input: { width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '11px 14px', color: '#E8E8ED', fontSize: 14, outline: 'none', fontFamily: "'Manrope', sans-serif" },
-  btn: { width: '100%', padding: '12px', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 6 },
-  error: { color: '#E55A5A', fontSize: 13, textAlign: 'left', padding: '6px 0' },
-  switch: { background: 'none', border: 'none', color: '#4A9EE5', fontSize: 13, cursor: 'pointer', marginTop: 16, padding: 4 },
-  telegramBox: { textAlign: 'left', border: '1px solid rgba(74,158,229,0.35)', borderRadius: 10, background: 'rgba(74,158,229,0.08)', padding: 12 },
-  telegramTitle: { color: '#E8E8ED', fontSize: 14, fontWeight: 700, marginBottom: 8 },
-  telegramText: { color: '#B8BDCA', fontSize: 13, marginBottom: 6 },
-  telegramLink: { display: 'inline-block', color: '#7CB4FF', textDecoration: 'none', fontWeight: 600, margin: '8px 0' },
-  telegramHint: { color: '#B8BDCA', fontSize: 12, marginTop: 4, marginBottom: 6 },
+  input: { width: '100%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 12, padding: '11px 14px', color: '#EEF1F6', fontSize: 14, outline: 'none', fontFamily: "'Manrope', sans-serif", backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -10px 24px rgba(0,0,0,0.24)' },
+  btn: { width: '100%', padding: '12px', background: 'rgba(255,255,255,0.26)', border: '1px solid rgba(255,255,255,0.32)', borderRadius: 12, color: '#F5F7FB', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 6, backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.26), 0 12px 24px rgba(0,0,0,0.28)' },
+  error: { color: '#DDE1E8', fontSize: 13, textAlign: 'left', padding: '6px 0' },
+  switch: { background: 'none', border: 'none', color: '#F0F2F6', fontSize: 13, cursor: 'pointer', marginTop: 16, padding: 4 },
+  telegramBox: { textAlign: 'left', border: '1px solid rgba(255,255,255,0.24)', borderRadius: 12, background: 'rgba(255,255,255,0.08)', padding: 12, backdropFilter: 'blur(20px)' },
+  telegramTitle: { color: '#F2F4F7', fontSize: 14, fontWeight: 700, marginBottom: 8 },
+  telegramText: { color: '#D2D6DE', fontSize: 13, marginBottom: 6 },
+  telegramLink: { display: 'inline-block', color: '#F5F6F8', textDecoration: 'none', fontWeight: 600, margin: '8px 0' },
+  telegramHint: { color: '#D2D6DE', fontSize: 12, marginTop: 4, marginBottom: 6 },
   telegramCommandRow: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  telegramCommand: { background: 'rgba(0,0,0,0.22)', borderRadius: 6, padding: '5px 8px', color: '#E8E8ED', fontSize: 12 },
-  telegramCopyBtn: { border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, padding: '5px 10px', background: 'transparent', color: '#D6DBE8', cursor: 'pointer', fontSize: 12 },
-  telegramStatus: { color: '#E8E8ED', fontSize: 13, marginTop: 8 },
+  telegramCommand: { background: 'rgba(0,0,0,0.45)', borderRadius: 8, padding: '5px 8px', color: '#F2F4F7', fontSize: 12 },
+  telegramCopyBtn: { border: '1px solid rgba(255,255,255,0.28)', borderRadius: 8, padding: '5px 10px', background: 'rgba(255,255,255,0.1)', color: '#E5E9F0', cursor: 'pointer', fontSize: 12 },
+  telegramStatus: { color: '#F2F4F7', fontSize: 13, marginTop: 8 },
 };
