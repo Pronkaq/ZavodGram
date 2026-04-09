@@ -38,7 +38,7 @@ function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: 
 }
 
 // Media attachment in message bubble
-function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {} }) {
+function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true }) {
   if (!media || media.length === 0) return null;
   return media.map((m) => {
     if (m.type === 'AUDIO') {
@@ -49,13 +49,19 @@ function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcripti
             <div style={{ fontSize: 12, fontWeight: 600 }}>{m.originalName || 'Голосовое сообщение'}</div>
           </div>
           <audio controls preload="none" src={mediaUrlById(m.id)} style={{ width: '100%' }} />
-          <button
-            style={{ ...s.ib, alignSelf: 'flex-start', fontSize: 12, padding: '6px 10px', height: 'auto' }}
-            onClick={() => onTranscribe?.(m.id)}
-            disabled={!!transcriptionLoading[m.id]}
-          >
-            <Icons.Wave /> {transcriptionLoading[m.id] ? 'Расшифровка…' : 'Расшифровать'}
-          </button>
+          {transcriptionAvailable ? (
+            <button
+              style={{ ...s.ib, alignSelf: 'flex-start', fontSize: 12, padding: '6px 10px', height: 'auto' }}
+              onClick={() => onTranscribe?.(m.id)}
+              disabled={!!transcriptionLoading[m.id]}
+            >
+              <Icons.Wave /> {transcriptionLoading[m.id] ? 'Расшифровка…' : 'Расшифровать'}
+            </button>
+          ) : (
+            <div style={{ fontSize: 12, color: '#778099' }}>
+              Расшифровка временно недоступна
+            </div>
+          )}
           {transcriptions[m.id] && (
             <div style={{ fontSize: 12, lineHeight: 1.45, color: '#DDE7EE', background: 'rgba(0,0,0,0.18)', borderRadius: 8, padding: '8px 10px', whiteSpace: 'pre-wrap' }}>
               {transcriptions[m.id]}
@@ -146,6 +152,7 @@ export default function ChatApp() {
   const [recordingNowTs, setRecordingNowTs] = useState(Date.now());
   const [transcriptions, setTranscriptions] = useState({});
   const [transcriptionLoading, setTranscriptionLoading] = useState({});
+  const [transcriptionAvailable, setTranscriptionAvailable] = useState(true);
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
@@ -251,7 +258,9 @@ export default function ChatApp() {
       setVoiceRecorderState({ startedAt: 0, error: '' });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
+      const isAppleDevice = /iPad|iPhone|iPod|Macintosh/i.test(navigator.userAgent || '');
       const mimeTypes = [
+        ...(isAppleDevice ? ['audio/mp4'] : []),
         'audio/webm;codecs=opus',
         'audio/ogg;codecs=opus',
         'audio/mp4',
@@ -316,13 +325,17 @@ export default function ChatApp() {
   };
 
   const handleTranscribe = async (mediaId) => {
-    if (!mediaId || transcriptionLoading[mediaId]) return;
+    if (!mediaId || transcriptionLoading[mediaId] || !transcriptionAvailable) return;
     setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: true }));
     try {
       const result = await mediaApi.transcribe(mediaId);
       setTranscriptions((prev) => ({ ...prev, [mediaId]: result.text || '' }));
     } catch (err) {
-      setTranscriptions((prev) => ({ ...prev, [mediaId]: err?.message || 'Не удалось получить расшифровку' }));
+      const message = err?.message || 'Не удалось получить расшифровку';
+      if (message.toLowerCase().includes('не настроен провайдер')) {
+        setTranscriptionAvailable(false);
+      }
+      setTranscriptions((prev) => ({ ...prev, [mediaId]: message }));
     } finally {
       setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: false }));
     }
@@ -915,6 +928,7 @@ export default function ChatApp() {
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
+                        transcriptionAvailable={transcriptionAvailable}
                       />
                       {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
                       {!!Object.keys(groupReactions(msg)).length && (
