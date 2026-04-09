@@ -272,11 +272,22 @@ export default function ChatApp() {
 
         const chunks = voiceChunksRef.current;
         voiceChunksRef.current = [];
-        if (!chunks.length || !activeChat) return;
+        if (!chunks.length || !activeChat) {
+          if (!chunks.length) {
+            setVoiceRecorderState({ startedAt: 0, error: 'Не удалось записать аудио. Попробуйте ещё раз' });
+          }
+          return;
+        }
 
         try {
           const audioType = chunks[0]?.type || 'audio/webm';
-          const ext = audioType.includes('ogg') ? 'ogg' : audioType.includes('mpeg') ? 'mp3' : 'webm';
+          const ext = audioType.includes('ogg')
+            ? 'ogg'
+            : audioType.includes('mpeg')
+              ? 'mp3'
+              : audioType.includes('mp4')
+                ? 'm4a'
+                : 'webm';
           const voiceFile = new File(chunks, `voice-${Date.now()}.${ext}`, { type: audioType });
           const media = await mediaApi.upload(voiceFile);
           await messagesApi.send(activeChat, { mediaIds: [media.id] });

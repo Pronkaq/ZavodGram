@@ -38,7 +38,7 @@ const upload = multer({
       'application/pdf', 'application/zip',
       'text/plain', 'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'audio/mpeg', 'audio/ogg', 'audio/wav',
+      'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4',
     ];
     if (allowed.includes(file.mimetype)) cb(null, true);
     else cb(new ValidationError('ÐÐµÐ¿Ð¾Ð´Ð´ÐµÑ€Ð¶Ð¸Ð²Ð°ÐµÐ¼Ñ‹Ð¹ Ñ‚Ð¸Ð¿ Ñ„Ð°Ð¹Ð»Ð°') as any);
