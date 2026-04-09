@@ -568,6 +568,7 @@ export default function ChatApp() {
   }, [cms]);
 
   const openPostComments = useCallback((msg) => {
+    if (!msg) return;
     setPostCommentsModal(msg);
     setPostCommentDraft('');
     setPostCommentReplyTo(null);
@@ -575,12 +576,14 @@ export default function ChatApp() {
 
   const sendPostComment = useCallback(async () => {
     if (!postCommentsModal) return;
+    const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
+    if (!commentsAllowed) return;
     const text = postCommentDraft.trim();
     if (!text) return;
     sendMessage(activeChat, text, postCommentReplyTo?.id || postCommentsModal.id, null);
     setPostCommentDraft('');
     setPostCommentReplyTo(null);
-  }, [activeChat, postCommentDraft, postCommentReplyTo, postCommentsModal, sendMessage]);
+  }, [activeChat, isOwnerOrAdmin, postCommentDraft, postCommentReplyTo, postCommentsModal, sendMessage]);
 
 
   const handleModerateComment = useCallback(async (comment, action) => {
@@ -727,9 +730,7 @@ export default function ChatApp() {
                 const isHL = searchResults[msgSearchIdx] === msg.id;
                 const postAuthor = acd.name || chatName;
                 const postComments = getPostComments(msg);
-                const adminIds = new Set((acd.members || []).filter((m) => ['OWNER', 'ADMIN'].includes(m.role)).map((m) => m.userId));
-                const hasAdminComment = postComments.some((comment) => adminIds.has(comment.fromId || comment.from?.id));
-                const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin || hasAdminComment;
+                const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin;
                 return (
                   <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'flex-start' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
                     onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
@@ -786,8 +787,10 @@ export default function ChatApp() {
                       )}
                       {isChannel && (
                         <button
-                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: commentsButtonActive ? '#7CB4FF' : '#616980', cursor: 'pointer', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: commentsButtonActive ? 1 : 0.7 }}
-                          onClick={() => openPostComments(msg)}
+                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: commentsButtonActive ? '#7CB4FF' : '#616980', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: commentsButtonActive ? 1 : 0.7 }}
+                          onClick={() => commentsButtonActive && openPostComments(msg)}
+                          disabled={!commentsButtonActive}
+                          title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
                         >
                           <Icons.Reply size={13} />
                           Комментарии ({postComments.length})
@@ -1130,7 +1133,16 @@ export default function ChatApp() {
       {postCommentsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}>
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            {(() => {
+              const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
+              return (
+                <>
             <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
+            {!commentsAllowed && (
+              <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 10, background: 'rgba(229,90,90,0.12)', border: '1px solid rgba(229,90,90,0.4)', color: '#FFB5B5', fontSize: 12 }}>
+                Комментарии отключены для этого поста.
+              </div>
+            )}
             <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#B7BDCB', marginBottom: 12, maxHeight: 120, overflow: 'auto' }}>
               {postCommentsModal.text || '[медиа-пост]'}
             </div>
@@ -1169,11 +1181,15 @@ export default function ChatApp() {
                 style={s.inp2}
                 value={postCommentDraft}
                 onChange={(e) => setPostCommentDraft(e.target.value)}
-                placeholder={postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...'}
-                onKeyDown={(e) => e.key === 'Enter' && sendPostComment()}
+                placeholder={commentsAllowed ? (postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...') : 'Комментарии отключены'}
+                onKeyDown={(e) => e.key === 'Enter' && commentsAllowed && sendPostComment()}
+                disabled={!commentsAllowed}
               />
-              <button style={s.saveBtn} onClick={sendPostComment} disabled={!postCommentDraft.trim()}>Отправить</button>
+              <button style={s.saveBtn} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
             </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
