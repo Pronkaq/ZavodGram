@@ -143,6 +143,7 @@ export default function ChatApp() {
   const [joiningInvite, setJoiningInvite] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceRecorderState, setVoiceRecorderState] = useState({ startedAt: 0, error: '' });
+  const [recordingNowTs, setRecordingNowTs] = useState(Date.now());
   const [transcriptions, setTranscriptions] = useState({});
   const [transcriptionLoading, setTranscriptionLoading] = useState({});
   const endRef = useRef(null);
@@ -185,6 +186,12 @@ export default function ChatApp() {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
+
+  useEffect(() => {
+    if (!voiceRecording) return undefined;
+    const timer = setInterval(() => setRecordingNowTs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [voiceRecording]);
 
   // ── Handlers ──
   const handleSend = () => {
@@ -244,7 +251,14 @@ export default function ChatApp() {
       setVoiceRecorderState({ startedAt: 0, error: '' });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+        'audio/webm',
+      ];
+      const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       voiceChunksRef.current = [];
 
@@ -258,11 +272,22 @@ export default function ChatApp() {
 
         const chunks = voiceChunksRef.current;
         voiceChunksRef.current = [];
-        if (!chunks.length || !activeChat) return;
+        if (!chunks.length || !activeChat) {
+          if (!chunks.length) {
+            setVoiceRecorderState({ startedAt: 0, error: 'Не удалось записать аудио. Попробуйте ещё раз' });
+          }
+          return;
+        }
 
         try {
           const audioType = chunks[0]?.type || 'audio/webm';
-          const ext = audioType.includes('ogg') ? 'ogg' : audioType.includes('mpeg') ? 'mp3' : 'webm';
+          const ext = audioType.includes('ogg')
+            ? 'ogg'
+            : audioType.includes('mpeg')
+              ? 'mp3'
+              : audioType.includes('mp4')
+                ? 'm4a'
+                : 'webm';
           const voiceFile = new File(chunks, `voice-${Date.now()}.${ext}`, { type: audioType });
           const media = await mediaApi.upload(voiceFile);
           await messagesApi.send(activeChat, { mediaIds: [media.id] });
@@ -274,12 +299,18 @@ export default function ChatApp() {
         }
       };
 
-      recorder.start();
+      recorder.start(1000);
       setVoiceRecorderState({ startedAt: Date.now(), error: '' });
+      setRecordingNowTs(Date.now());
       setVoiceRecording(true);
     } catch (err) {
       console.error('Voice recording failed', err);
-      setVoiceRecorderState({ startedAt: 0, error: 'Не удалось получить доступ к микрофону' });
+      const errorText = err?.name === 'NotFoundError'
+        ? 'Микрофон не найден. Подключите устройство ввода и попробуйте снова'
+        : err?.name === 'NotAllowedError'
+          ? 'Нет доступа к микрофону. Разрешите доступ в браузере'
+          : 'Не удалось получить доступ к микрофону';
+      setVoiceRecorderState({ startedAt: 0, error: errorText });
       setVoiceRecording(false);
     }
   };
@@ -941,7 +972,7 @@ export default function ChatApp() {
               )}
               {(voiceRecording || voiceRecorderState.error) && (
                 <div style={{ fontSize: 12, color: voiceRecorderState.error ? '#E55A5A' : '#4AE58E', fontFamily: 'mono' }}>
-                  {voiceRecorderState.error || `Идёт запись голосового${voiceRecorderState.startedAt ? ` · ${Math.floor((Date.now() - voiceRecorderState.startedAt) / 1000)}с` : ''}`}
+                  {voiceRecorderState.error || `Идёт запись голосового${voiceRecorderState.startedAt ? ` · ${Math.floor((recordingNowTs - voiceRecorderState.startedAt) / 1000)}с` : ''}`}
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
