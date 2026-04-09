@@ -5,16 +5,17 @@ import { ChatProvider } from './context/ChatContext';
 import AuthPage from './pages/AuthPage';
 import ChatApp from './components/ChatApp';
 import AdminPage from './pages/AdminPage';
+import './styles/redesign.css';
 
 function App() {
   const { user, loading } = useAuth();
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0C0E13' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: 'monospace', color: '#fff', marginBottom: 16, animation: 'pulse 1.5s infinite' }}>Z</div>
-          <div style={{ color: '#4A5060', fontSize: 14 }}>Загрузка...</div>
+      <div className="zg-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', padding: 16 }}>
+        <div className="zg-glass-card" style={{ textAlign: 'center', padding: '30px 34px', minWidth: 240 }}>
+          <div style={{ width: 70, height: 70, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 34, fontWeight: 700, fontFamily: 'monospace', color: '#fff', marginBottom: 16, animation: 'pulse 1.5s infinite' }}>Z</div>
+          <div style={{ color: '#8b95ad', fontSize: 14 }}>Загрузка интерфейса...</div>
         </div>
         <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }`}</style>
       </div>
