@@ -1629,6 +1629,7 @@ export default function ChatApp() {
                 const commentAuthor = comment.from || null;
                 const canOpenAuthorChat = Boolean(commentAuthor?.id) && commentAuthor.id !== user.id;
                 const isMyComment = (comment.fromId || comment.from?.id) === user.id;
+                const commentBody = `${comment.text || ''}`.trim();
                 return (
                 <div
                   key={comment.id}
@@ -1650,7 +1651,7 @@ export default function ChatApp() {
                     style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: '#F5F6F8', marginBottom: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ fontSize: 12, color: '#F5F6F8', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <button
                           type="button"
@@ -1685,19 +1686,10 @@ export default function ChatApp() {
                         )}
                       </div>
                     </div>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: '#F2F4F7',
-                        lineHeight: 1.35,
-                        background: isMyComment ? 'rgba(76,91,118,0.55)' : 'rgba(24,28,37,0.96)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: 14,
-                        padding: '8px 11px',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)'
-                      }}
-                    >
-                      {comment.text}
+                    <div style={{ borderRadius: 14, background: isMyComment ? 'rgba(68,86,115,0.62)' : 'rgba(19,22,30,0.94)', border: '1px solid rgba(255,255,255,0.07)', padding: '8px 11px' }}>
+                      <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.35, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {commentBody || '…'}
+                      </div>
                     </div>
                     <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.45 }}>{comment.text}</div>
                   </div>
