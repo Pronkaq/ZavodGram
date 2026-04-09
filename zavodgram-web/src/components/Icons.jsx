@@ -26,6 +26,8 @@ export const Icons = {
   Attach: makeSvg(<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>, 20),
   Image: makeSvg(<React.Fragment><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></React.Fragment>),
   File: makeSvg(<React.Fragment><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></React.Fragment>),
+  Mic: makeSvg(<React.Fragment><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/><path d="M8 22h8"/></React.Fragment>, 18),
+  Wave: makeSvg(<React.Fragment><path d="M2 12h2"/><path d="M6 9v6"/><path d="M10 6v12"/><path d="M14 8v8"/><path d="M18 5v14"/><path d="M22 10v4"/></React.Fragment>, 16),
   Tag: makeSvg(<React.Fragment><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor"/></React.Fragment>, 14),
   Shield: makeSvg(<React.Fragment><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></React.Fragment>, 15),
   Reply: makeSvg(<React.Fragment><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></React.Fragment>, 14),

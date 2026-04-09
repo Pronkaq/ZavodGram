@@ -38,9 +38,32 @@ function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: 
 }
 
 // Media attachment in message bubble
-function MediaAttachment({ media }) {
+function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {} }) {
   if (!media || media.length === 0) return null;
   return media.map((m) => {
+    if (m.type === 'AUDIO') {
+      return (
+        <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', background: 'rgba(74,229,142,0.08)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(74,229,142,0.18)', minWidth: 240 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(74,229,142,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2e8f5d', flexShrink: 0 }}><Icons.Mic size={14} /></div>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>{m.originalName || 'Голосовое сообщение'}</div>
+          </div>
+          <audio controls preload="none" src={mediaUrlById(m.id)} style={{ width: '100%' }} />
+          <button
+            style={{ ...s.ib, alignSelf: 'flex-start', fontSize: 12, padding: '6px 10px', height: 'auto' }}
+            onClick={() => onTranscribe?.(m.id)}
+            disabled={!!transcriptionLoading[m.id]}
+          >
+            <Icons.Wave /> {transcriptionLoading[m.id] ? 'Расшифровка…' : 'Расшифровать'}
+          </button>
+          {transcriptions[m.id] && (
+            <div style={{ fontSize: 12, lineHeight: 1.45, color: '#DDE7EE', background: 'rgba(0,0,0,0.18)', borderRadius: 8, padding: '8px 10px', whiteSpace: 'pre-wrap' }}>
+              {transcriptions[m.id]}
+            </div>
+          )}
+        </div>
+      );
+    }
     if (m.type === 'IMAGE') {
       return (
         <div key={m.id} style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260 }}>
@@ -118,11 +141,18 @@ export default function ChatApp() {
   const [channelPostCommentsEnabled, setChannelPostCommentsEnabled] = useState(true);
   const [inviteChannel, setInviteChannel] = useState(null);
   const [joiningInvite, setJoiningInvite] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceRecorderState, setVoiceRecorderState] = useState({ startedAt: 0, error: '' });
+  const [transcriptions, setTranscriptions] = useState({});
+  const [transcriptionLoading, setTranscriptionLoading] = useState({});
   const endRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
   const handledSlugRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
 
   const acd = chats.find((c) => c.id === activeChat);
   const cms = messages[activeChat] || [];
@@ -151,6 +181,10 @@ export default function ChatApp() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [cms.length, activeChat]);
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
+  useEffect(() => () => {
+    mediaRecorderRef.current?.stop?.();
+    mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+  }, []);
 
   // ── Handlers ──
   const handleSend = () => {
@@ -190,6 +224,77 @@ export default function ChatApp() {
     } catch (err) { console.error('Upload failed', err); }
     e.target.value = '';
     setAttachMenu(false);
+  };
+
+  const handleVoiceRecordToggle = async () => {
+    if (!activeChat) return;
+    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
+    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
+
+    if (voiceRecording) {
+      mediaRecorderRef.current?.stop?.();
+      return;
+    }
+
+    try {
+      if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        setVoiceRecorderState({ startedAt: 0, error: 'Запись голоса не поддерживается в этом браузере' });
+        return;
+      }
+      setVoiceRecorderState({ startedAt: 0, error: '' });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) voiceChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        setVoiceRecording(false);
+        mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+
+        const chunks = voiceChunksRef.current;
+        voiceChunksRef.current = [];
+        if (!chunks.length || !activeChat) return;
+
+        try {
+          const audioType = chunks[0]?.type || 'audio/webm';
+          const ext = audioType.includes('ogg') ? 'ogg' : audioType.includes('mpeg') ? 'mp3' : 'webm';
+          const voiceFile = new File(chunks, `voice-${Date.now()}.${ext}`, { type: audioType });
+          const media = await mediaApi.upload(voiceFile);
+          await messagesApi.send(activeChat, { mediaIds: [media.id] });
+          await loadMessages(activeChat);
+          await loadChats();
+        } catch (err) {
+          console.error('Voice upload failed', err);
+          setVoiceRecorderState({ startedAt: 0, error: 'Не удалось отправить голосовое сообщение' });
+        }
+      };
+
+      recorder.start();
+      setVoiceRecorderState({ startedAt: Date.now(), error: '' });
+      setVoiceRecording(true);
+    } catch (err) {
+      console.error('Voice recording failed', err);
+      setVoiceRecorderState({ startedAt: 0, error: 'Не удалось получить доступ к микрофону' });
+      setVoiceRecording(false);
+    }
+  };
+
+  const handleTranscribe = async (mediaId) => {
+    if (!mediaId || transcriptionLoading[mediaId]) return;
+    setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: true }));
+    try {
+      const result = await mediaApi.transcribe(mediaId);
+      setTranscriptions((prev) => ({ ...prev, [mediaId]: result.text || '' }));
+    } catch (err) {
+      setTranscriptions((prev) => ({ ...prev, [mediaId]: err?.message || 'Не удалось получить расшифровку' }));
+    } finally {
+      setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: false }));
+    }
   };
 
   const openProfile = async (userId) => {
@@ -774,7 +879,12 @@ export default function ChatApp() {
                           {sender.name} <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.4, fontFamily: 'mono' }}>{sender.tag}</span>
                         </span>
                       )}
-                      <MediaAttachment media={msg.media} />
+                      <MediaAttachment
+                        media={msg.media}
+                        onTranscribe={handleTranscribe}
+                        transcriptions={transcriptions}
+                        transcriptionLoading={transcriptionLoading}
+                      />
                       {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
                       {!!Object.keys(groupReactions(msg)).length && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
@@ -829,6 +939,11 @@ export default function ChatApp() {
                   Разрешить комментарии к этому посту
                 </label>
               )}
+              {(voiceRecording || voiceRecorderState.error) && (
+                <div style={{ fontSize: 12, color: voiceRecorderState.error ? '#E55A5A' : '#4AE58E', fontFamily: 'mono' }}>
+                  {voiceRecorderState.error || `Идёт запись голосового${voiceRecorderState.startedAt ? ` · ${Math.floor((Date.now() - voiceRecorderState.startedAt) / 1000)}с` : ''}`}
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {canPublishInChannel ? (
                   <>
@@ -844,6 +959,13 @@ export default function ChatApp() {
                     <input ref={inpRef} style={s.inp2} placeholder={isChannel ? 'Опубликовать новость...' : 'Сообщение...'} value={input}
                       onChange={e => { setInput(e.target.value); handleTyping(); }}
                       onKeyDown={e => e.key === 'Enter' && handleSend()} />
+                    <button
+                      style={{ ...s.ib, color: voiceRecording ? '#E55A5A' : '#4AE58E' }}
+                      onClick={handleVoiceRecordToggle}
+                      title={voiceRecording ? 'Остановить запись' : 'Записать голосовое'}
+                    >
+                      <Icons.Mic />
+                    </button>
                     <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
                   </>
                 ) : (
