@@ -1568,152 +1568,190 @@ export default function ChatApp() {
 
       {postCommentsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}>
-          <div style={{ background: 'linear-gradient(180deg, rgba(31,35,46,0.98), rgba(24,27,36,0.98))', borderRadius: 18, padding: 20, width: 560, maxWidth: '96vw', maxHeight: '84vh', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px rgba(0,0,0,0.45)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'linear-gradient(180deg, rgba(31,35,46,0.98), rgba(24,27,36,0.98))', borderRadius: 20, padding: 20, width: 580, maxWidth: '96vw', maxHeight: '86vh', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px rgba(0,0,0,0.45)', gap: 12 }} onClick={e => e.stopPropagation()}>
             {(() => {
               const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
               const modalComments = getPostComments(postCommentsModal);
               const uniqParticipants = Array.from(new Map(modalComments.map((comment) => [comment.fromId || comment.from?.id, comment.from]).filter(([id]) => !!id)).values()).slice(0, 4);
+              const hasLongPost = (postCommentsModal.text || '').length > 330;
+              const commentsCount = modalComments.length;
+              const commentsWord = (n) => {
+                const abs = Math.abs(n) % 100;
+                const last = abs % 10;
+                if (abs > 10 && abs < 20) return 'комментариев';
+                if (last > 1 && last < 5) return 'комментария';
+                if (last === 1) return 'комментарий';
+                return 'комментариев';
+              };
               return (
                 <>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: 'mono' }}>Комментарии к посту</h3>
-            {!commentsAllowed && (
-              <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 10, background: 'rgba(238,240,244,0.12)', border: '1px solid rgba(238,240,244,0.4)', color: '#F0F1F4', fontSize: 12 }}>
-                Комментарии отключены для этого поста.
-              </div>
-            )}
-            <div style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', fontSize: 13, color: '#D6DAE2', marginBottom: 12, maxHeight: 120, overflow: 'auto', border: '1px solid rgba(255,255,255,0.08)' }}>
-              {postCommentsModal.text || '[медиа-пост]'}
-            </div>
-            {uniqParticipants.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  {uniqParticipants.map((participant, idx) => (
-                    <Av
-                      key={`${participant?.id || participant?.name}-${idx}`}
-                      src={participant?.avatar}
-                      name={participant?.name}
-                      size={28}
-                      radius={999}
-                      style={{ marginLeft: idx === 0 ? 0 : -8, border: '2px solid #1C202B' }}
-                    />
-                  ))}
-                </div>
-                <button
-                  style={{
-                    ...s.ib,
-                    color: commentsAllowed ? '#8F85E9' : '#959CAA',
-                    fontSize: 16,
-                    fontWeight: 700,
-                    lineHeight: 1,
-                    padding: '2px 8px 3px',
-                    height: 'auto',
-                    opacity: commentsAllowed ? 1 : 0.7,
-                    borderRadius: 999,
-                    border: '1px solid rgba(143,133,233,0.55)',
-                    background: 'rgba(143,133,233,0.12)',
-                    fontFamily: 'Inter, system-ui, sans-serif'
-                  }}
-                  onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
-                  disabled={!commentsAllowed}
-                >
-                  {`${modalComments.length} ${modalComments.length === 1 ? 'комментарий' : 'комментариев'}`}
-                </button>
-              </div>
-            )}
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 12 }}>
-              {modalComments.length === 0 ? (
-                <div style={{ color: '#A2A8B6', fontSize: 13 }}>Пока комментариев нет. Будьте первым.</div>
-              ) : modalComments.map((comment) => {
-                const canModerate = isOwnerOrAdmin && (comment.fromId || comment.from?.id) !== user.id;
-                const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
-                const commentAuthor = comment.from || null;
-                const canOpenAuthorChat = Boolean(commentAuthor?.id) && commentAuthor.id !== user.id;
-                const isMyComment = (comment.fromId || comment.from?.id) === user.id;
-                const commentBody = `${comment.text || ''}`.trim();
-                return (
-                <div
-                  key={comment.id}
-                  style={{
-                    padding: '6px 0 10px',
-                    borderBottom: '1px solid rgba(255,255,255,0.04)',
-                    marginLeft: Math.min((comment.depth || 0) * 18, 72),
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 10
-                  }}
-                >
-                  <Av
-                    src={commentAuthor?.avatar}
-                    name={commentAuthor?.name || 'Пользователь'}
-                    size={34}
-                    radius={999}
-                    onClick={canOpenAuthorChat ? () => openDirectChatWithUser(commentAuthor) : undefined}
-                    style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: '#F5F6F8', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                        <button
-                          type="button"
-                          style={{
-                            ...s.ib,
-                            fontSize: 14,
-                            padding: 0,
-                            height: 'auto',
-                            color: canOpenAuthorChat ? (isMyComment ? '#9FD3FF' : '#58C8E8') : '#B0B5BF',
-                            cursor: canOpenAuthorChat ? 'pointer' : 'default',
-                            fontWeight: 600,
-                            fontFamily: 'Inter, system-ui, sans-serif',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}
-                          onClick={() => canOpenAuthorChat && openDirectChatWithUser(commentAuthor)}
-                          disabled={!canOpenAuthorChat}
-                          title={canOpenAuthorChat ? 'Открыть чат' : undefined}
-                        >
-                          {commentAuthor?.name || 'Пользователь'}
-                        </button>
-                        <span style={{ color: '#8A92A1', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button style={{ ...s.ib, fontSize: 12, border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12, padding: '3px 10px', height: 'auto', fontFamily: 'Inter, system-ui, sans-serif' }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
-                        {canModerate && (
-                          <>
-                            <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
-                            <button style={{ ...s.ib, fontSize: 11, color: '#D5D8DE' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
-                          </>
-                        )}
-                      </div>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: 0.2, color: '#F7F8FB', fontFamily: 'mono' }}>Комментарии к посту</h3>
+                  {!commentsAllowed && (
+                    <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(238,240,244,0.12)', border: '1px solid rgba(238,240,244,0.4)', color: '#F0F1F4', fontSize: 12 }}>
+                      Комментарии отключены для этого поста.
                     </div>
-                    <div style={{ borderRadius: 14, background: isMyComment ? 'rgba(68,86,115,0.62)' : 'rgba(19,22,30,0.94)', border: '1px solid rgba(255,255,255,0.07)', padding: '8px 11px' }}>
-                      <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.35, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {commentBody || '…'}
-                      </div>
+                  )}
+
+                  <div style={{ position: 'relative', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', padding: '12px 14px' }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: '#D6DAE2',
+                        lineHeight: 1.5,
+                        maxHeight: 132,
+                        overflow: 'hidden',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 6,
+                        WebkitBoxOrient: 'vertical',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word'
+                      }}
+                    >
+                      {postCommentsModal.text || '[медиа-пост]'}
                     </div>
-                    <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.45 }}>{comment.text}</div>
+                    {hasLongPost && (
+                      <div style={{ position: 'absolute', left: 1, right: 1, bottom: 1, height: 28, borderRadius: '0 0 13px 13px', background: 'linear-gradient(180deg, rgba(26,30,39,0), rgba(26,30,39,0.94))', pointerEvents: 'none' }} />
+                    )}
                   </div>
-                </div>
-              )})}
-            </div>
-            {postCommentReplyTo && (
-              <div style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 10, background: 'rgba(255,255,255,0.08)', borderLeft: '3px solid #E9EBEF', fontSize: 12, color: '#D6DAE2', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <span>Ответ для {postCommentReplyTo.from?.name || 'пользователя'}: {(postCommentReplyTo.text || '').slice(0, 90)}</span>
-                <button style={s.ib} onClick={() => setPostCommentReplyTo(null)}><Icons.Close /></button>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                id="channel-comment-input"
-                style={s.inp2}
-                value={postCommentDraft}
-                onChange={(e) => setPostCommentDraft(e.target.value)}
-                placeholder={commentsAllowed ? (postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...') : 'Комментарии отключены'}
-                onKeyDown={(e) => e.key === 'Enter' && commentsAllowed && sendPostComment()}
-                disabled={!commentsAllowed}
-              />
-              <button style={s.saveBtn} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
-            </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    {uniqParticipants.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        {uniqParticipants.map((participant, idx) => (
+                          <Av
+                            key={`${participant?.id || participant?.name}-${idx}`}
+                            src={participant?.avatar}
+                            name={participant?.name}
+                            size={28}
+                            radius={999}
+                            style={{ marginLeft: idx === 0 ? 0 : -8, border: '2px solid #1C202B' }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      style={{
+                        ...s.ib,
+                        color: '#9FA6B4',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        lineHeight: 1,
+                        padding: '5px 10px',
+                        height: 'auto',
+                        opacity: commentsAllowed ? 1 : 0.75,
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        background: 'rgba(255,255,255,0.05)',
+                        fontFamily: 'Inter, system-ui, sans-serif'
+                      }}
+                      onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
+                      disabled={!commentsAllowed}
+                    >
+                      {`${commentsCount} ${commentsWord(commentsCount)}`}
+                    </button>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2, marginTop: 2 }}>
+                    {modalComments.length === 0 ? (
+                      <div style={{ color: '#A2A8B6', fontSize: 13, paddingTop: 6 }}>Пока комментариев нет. Будьте первым.</div>
+                    ) : modalComments.map((comment) => {
+                      const canModerate = isOwnerOrAdmin && (comment.fromId || comment.from?.id) !== user.id;
+                      const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
+                      const commentAuthor = comment.from || null;
+                      const canOpenAuthorChat = Boolean(commentAuthor?.id) && commentAuthor.id !== user.id;
+                      const isMyComment = (comment.fromId || comment.from?.id) === user.id;
+                      const commentBody = `${comment.text || ''}`.trim();
+                      return (
+                        <div
+                          key={comment.id}
+                          style={{
+                            marginLeft: Math.min((comment.depth || 0) * 16, 64),
+                            marginBottom: 8,
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 10,
+                            padding: '5px 0',
+                            borderRadius: 10,
+                            transition: 'background 120ms ease'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          <Av
+                            src={commentAuthor?.avatar}
+                            name={commentAuthor?.name || 'Пользователь'}
+                            size={34}
+                            radius={999}
+                            onClick={canOpenAuthorChat ? () => openDirectChatWithUser(commentAuthor) : undefined}
+                            style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                                <button
+                                  type="button"
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    fontSize: 14,
+                                    padding: 0,
+                                    height: 'auto',
+                                    color: canOpenAuthorChat ? (isMyComment ? '#9FD3FF' : '#58C8E8') : '#C1C7D2',
+                                    cursor: canOpenAuthorChat ? 'pointer' : 'default',
+                                    fontWeight: 700,
+                                    fontFamily: 'Inter, system-ui, sans-serif',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}
+                                  onClick={() => canOpenAuthorChat && openDirectChatWithUser(commentAuthor)}
+                                  disabled={!canOpenAuthorChat}
+                                  title={canOpenAuthorChat ? 'Открыть чат' : undefined}
+                                >
+                                  {commentAuthor?.name || 'Пользователь'}
+                                </button>
+                                <span style={{ color: '#8790A0', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                <button style={{ background: 'transparent', border: 'none', fontSize: 12, padding: 0, height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#98A0AF', cursor: 'pointer', fontWeight: 500, opacity: 0.78, transition: 'opacity 120ms ease, color 120ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#C2C8D2'; }} onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.78'; e.currentTarget.style.color = '#98A0AF'; }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
+                                {canModerate && (
+                                  <>
+                                    <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
+                                    <button style={{ ...s.ib, fontSize: 11, color: '#D5D8DE' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ borderRadius: 12, background: isMyComment ? 'rgba(68,86,115,0.42)' : 'rgba(255,255,255,0.035)', padding: '8px 10px', transition: 'background 120ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.5)' : 'rgba(255,255,255,0.05)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.42)' : 'rgba(255,255,255,0.035)'; }}>
+                              <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.42, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {commentBody || '…'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {postCommentReplyTo && (
+                    <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', fontSize: 12, color: '#D6DAE2', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ответ для {postCommentReplyTo.from?.name || 'пользователя'}: {(postCommentReplyTo.text || '').slice(0, 90)}</span>
+                      <button style={s.ib} onClick={() => setPostCommentReplyTo(null)}><Icons.Close /></button>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      id="channel-comment-input"
+                      style={{ ...s.inp2, flex: '1 1 260px', minWidth: 0, borderRadius: 12, padding: '10px 12px' }}
+                      value={postCommentDraft}
+                      onChange={(e) => setPostCommentDraft(e.target.value)}
+                      placeholder={commentsAllowed ? (postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...') : 'Комментарии отключены'}
+                      onKeyDown={(e) => e.key === 'Enter' && commentsAllowed && sendPostComment()}
+                      disabled={!commentsAllowed}
+                    />
+                    <button style={{ ...s.ib, flex: '0 0 auto', minWidth: 108, borderRadius: 12, padding: '10px 14px', fontSize: 14, fontWeight: 600, color: '#DCE1EA' }} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
+                  </div>
                 </>
               );
             })()}
