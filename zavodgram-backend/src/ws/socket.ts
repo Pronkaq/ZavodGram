@@ -127,15 +127,24 @@ export function setupWebSocket(httpServer: HttpServer) {
       forwardedFromId?: string;
       encrypted?: boolean;
       commentsEnabled?: boolean;
+      topicId?: string;
     }) => {
       try {
         if (!enforceSocketRate(userId, 'message:send', 40, 60000)) return;
         const membership = await requireChatMembership(prisma, data.chatId, userId);
         const chatMeta = await prisma.chat.findUnique({
           where: { id: data.chatId },
-          select: { type: true },
+          select: { type: true, topicsEnabled: true },
         });
         if (!chatMeta) return socket.emit('error', { message: 'Чат не найден' });
+        if (chatMeta.type === 'GROUP' && chatMeta.topicsEnabled) {
+          if (!data.topicId) return socket.emit('error', { message: 'Выберите тему для сообщения' });
+          const topic = await prisma.chatTopic.findFirst({ where: { id: data.topicId, chatId: data.chatId }, select: { id: true } });
+          if (!topic) return socket.emit('error', { message: 'Тема не найдена' });
+        } else if (data.topicId) {
+          return socket.emit('error', { message: 'topicId доступен только для групп с темами' });
+        }
+
         if (chatMeta.type === 'CHANNEL') {
           if (!data.replyToId && membership.role === 'MEMBER') {
             return socket.emit('error', { message: 'В канале могут публиковать только администраторы и модераторы' });
@@ -179,6 +188,7 @@ export function setupWebSocket(httpServer: HttpServer) {
             forwardedFromName,
             encrypted: data.encrypted || false,
             commentsEnabled: chatMeta.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
+            topicId: data.topicId || null,
           },
           include: {
             from: { select: { id: true, name: true, tag: true, avatar: true } },
