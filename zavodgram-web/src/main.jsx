@@ -13,7 +13,7 @@ function App() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0C0E13' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: 'monospace', color: '#fff', marginBottom: 16, animation: 'pulse 1.5s infinite' }}>Z</div>
+          <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: 'monospace', color: '#fff', marginBottom: 16, animation: 'pulse 1.5s infinite' }}>Z</div>
           <div style={{ color: '#4A5060', fontSize: 14 }}>Загрузка...</div>
         </div>
         <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }`}</style>

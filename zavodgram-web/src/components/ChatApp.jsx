@@ -27,7 +27,7 @@ function resolveAvatarSrc(src) {
 // Avatar component — shows image or initials, clickable
 function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: extraStyle }) {
   const initials = name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
-  const bg = src ? 'transparent' : (color || '#4A9EE5');
+  const bg = src ? 'transparent' : (color || '#E03A4E');
   return (
     <div onClick={onClick} style={{ width: size, height: size, borderRadius: radius, background: bg, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: onClick ? 'pointer' : 'default', overflow: 'hidden', ...extraStyle }}>
       {src ? <img src={resolveAvatarSrc(src)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> :
@@ -81,14 +81,14 @@ function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcripti
     if (m.type === 'VIDEO') {
       return (
         <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(124,107,222,0.1)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(124,107,222,0.15)' }}>
-          <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(124,107,222,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7C6BDE', flexShrink: 0 }}><Icons.Video /></div>
+          <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(124,107,222,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A0C18', flexShrink: 0 }}><Icons.Video /></div>
           <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#4A5060', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
         </div>
       );
     }
     return (
-      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(74,158,229,0.08)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(74,158,229,0.1)' }}>
-        <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(74,158,229,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A9EE5', flexShrink: 0 }}><Icons.File /></div>
+      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(224,58,78,0.12)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(224,58,78,0.2)' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(224,58,78,0.24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#E03A4E', flexShrink: 0 }}><Icons.File /></div>
         <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#4A5060', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
       </div>
     );
@@ -526,7 +526,7 @@ export default function ChatApp() {
 
   const scrollToMsg = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.background = 'rgba(74,158,229,0.15)'; setTimeout(() => el.style.background = 'transparent', 1500); }
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.background = 'rgba(224,58,78,0.24)'; setTimeout(() => el.style.background = 'transparent', 1500); }
   };
 
   const ctx = (e, msg) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 220), msg }); };
@@ -759,7 +759,7 @@ export default function ChatApp() {
     const parts = text.split(/(https?:\/\/[^\s]+)/g);
     return parts.map((part, idx) => (
       /^https?:\/\/[^\s]+$/.test(part)
-        ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#7CB4FF', textDecoration: 'underline' }}>{part}</a>
+        ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#FF7D8E', textDecoration: 'underline' }}>{part}</a>
         : <span key={idx}>{part}</span>
     ));
   };
@@ -842,7 +842,7 @@ export default function ChatApp() {
         <div style={{ padding: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => { setSidebarOpen(false); openProfile(user.id); }}>
             <Av src={user.avatar} name={user.name} size={42} />
-            <div><div style={{ fontSize: 15, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 12, color: '#4A9EE5', fontFamily: 'mono' }}>{user.tag}</div></div>
+            <div><div style={{ fontSize: 15, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 12, color: '#E03A4E', fontFamily: 'mono' }}>{user.tag}</div></div>
           </div>
         </div>
         <div style={{ flex: 1, padding: '6px 0' }}>
@@ -873,7 +873,7 @@ export default function ChatApp() {
             const other = getOtherUser(c, user.id);
             const on = isOnline(c, user.id);
             return (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(74,158,229,0.1)', borderLeft: '3px solid #4A9EE5' } : {}) }}
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(224,58,78,0.2)', borderLeft: '3px solid #E03A4E' } : {}) }}
                 onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
                 <Av src={getAvatarSourceForChat(c)} name={name} color={tc[c.type]} online={on} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -916,7 +916,7 @@ export default function ChatApp() {
                 onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)} />
               <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => isDirectChat && other ? openProfile(other.id) : (acd.type === 'CHANNEL' ? openChannelInfo() : isGroupOrChannel ? openGroupSettings() : null)}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{chatName}</div>
-                <div style={{ fontSize: 12, color: typingText ? '#4A9EE5' : '#3A4050', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
+                <div style={{ fontSize: 12, color: typingText ? '#E03A4E' : '#3A4050', cursor: isGroupOrChannel ? 'pointer' : 'default' }}
                   onClick={(e) => { if (isGroupOrChannel) { e.stopPropagation(); setMemberListModal(true); } }}>
                   {typingText || (acd.type === 'SECRET' ? '🔐 End-to-end' : acd.type === 'GROUP' ? `${memberCount} участников` : acd.type === 'CHANNEL' ? `${memberCount} подписчиков` : on ? 'в сети' : 'был(а) недавно')}
                 </div>
@@ -949,7 +949,7 @@ export default function ChatApp() {
                 {!topicsLoading && chatTopics.map((topic) => (
                   <button
                     key={topic.id}
-                    style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(74,158,229,0.2)', color: '#7CB4FF' } : {}) }}
+                    style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(74,158,229,0.2)', color: '#FF7D8E' } : {}) }}
                     onClick={() => setActiveTopicId(topic.id)}
                   >
                     #{topic.title}
@@ -996,7 +996,7 @@ export default function ChatApp() {
                       lineHeight: 1.45,
                       ...(isChannel
                         ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.12), rgba(124,107,222,0.09))', border: '1px solid rgba(74,158,229,0.2)' }
-                        : (isMine ? { background: 'linear-gradient(135deg, rgba(74,158,229,0.15), rgba(124,107,222,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(74,158,229,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
+                        : (isMine ? { background: 'linear-gradient(135deg, rgba(224,58,78,0.24), rgba(124,107,222,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(224,58,78,0.2)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
                       {isChannel && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -1004,16 +1004,16 @@ export default function ChatApp() {
                           <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.2, color: '#E8EDF8' }}>{postAuthor}</span>
                         </div>
                       )}
-                      {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#4A9EE5', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
+                      {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E03A4E', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
                       {msg.replyTo && (
-                        <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #4A9EE5', background: 'rgba(74,158,229,0.08)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
+                        <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #E03A4E', background: 'rgba(224,58,78,0.12)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
                           onClick={() => scrollToMsg(msg.replyTo.id)}>
-                          <span style={{ fontWeight: 600, color: '#4A9EE5', display: 'block', marginBottom: 1 }}>{msg.replyTo.from?.name}</span>
+                          <span style={{ fontWeight: 600, color: '#E03A4E', display: 'block', marginBottom: 1 }}>{msg.replyTo.from?.name}</span>
                           <span style={{ color: '#6A7090' }}>{msg.replyTo.text?.slice(0, 60)}</span>
                         </div>
                       )}
                       {!isMine && acd.type === 'GROUP' && !msg.forwardedFromName && (
-                        <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#7C6BDE', marginBottom: 2, cursor: 'pointer' }} onClick={() => openProfile(msg.fromId || sender.id)}>
+                        <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#7A0C18', marginBottom: 2, cursor: 'pointer' }} onClick={() => openProfile(msg.fromId || sender.id)}>
                           {sender.name} <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.4, fontFamily: 'mono' }}>{sender.tag}</span>
                         </span>
                       )}
@@ -1036,7 +1036,7 @@ export default function ChatApp() {
                       )}
                       {isChannel && (
                         <button
-                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: commentsButtonActive ? '#7CB4FF' : '#616980', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: commentsButtonActive ? 1 : 0.7 }}
+                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: commentsButtonActive ? '#FF7D8E' : '#616980', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: commentsButtonActive ? 1 : 0.7 }}
                           onClick={() => commentsButtonActive && openPostComments(msg)}
                           disabled={!commentsButtonActive}
                           title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
@@ -1049,7 +1049,7 @@ export default function ChatApp() {
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
                         {msg.encrypted && <Icons.Lock />}
                         {formatTimeShort(msg.createdAt)}
-                        {isMine && <span style={{ display: 'flex', alignItems: 'center', color: '#4A9EE5' }}><Icons.Check double={msg.status === 'READ'} /></span>}
+                        {isMine && <span style={{ display: 'flex', alignItems: 'center', color: '#E03A4E' }}><Icons.Check double={msg.status === 'READ'} /></span>}
                       </span>
                     </div>
                   </div>
@@ -1060,7 +1060,7 @@ export default function ChatApp() {
 
             {/* Reply / Edit bar */}
             {(editingMsg || replyTo) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderTop: '1px solid rgba(74,158,229,0.15)', background: 'rgba(74,158,229,0.05)', color: '#4A9EE5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderTop: '1px solid rgba(224,58,78,0.24)', background: 'rgba(74,158,229,0.05)', color: '#E03A4E' }}>
                 {editingMsg ? <Icons.Edit /> : <Icons.Reply />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{editingMsg ? 'Редактирование' : `Ответ для ${replyTo?.from?.name}`}</div>
@@ -1117,7 +1117,7 @@ export default function ChatApp() {
           </>);
         })() : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
-            <div style={{ width: 80, height: 80, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, fontWeight: 700, fontFamily: 'mono', color: '#fff', marginBottom: 16 }}>Z</div>
+            <div style={{ width: 80, height: 80, background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, fontWeight: 700, fontFamily: 'mono', color: '#fff', marginBottom: 16 }}>Z</div>
             <h2 style={{ fontSize: 24, fontWeight: 700, fontFamily: 'mono', marginBottom: 8 }}>ZavodGram</h2>
             <p style={{ fontSize: 14, color: '#4A5060' }}>Выберите чат для начала</p>
           </div>
@@ -1136,14 +1136,14 @@ export default function ChatApp() {
               <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
                 onClick={() => !settingsMode && setAvatarView({ url: profileData.avatar, name: profileData.name })} />
               {settingsMode && (
-                <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #11141B' }}>
+                <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #11141B' }}>
                   <Icons.Edit />
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
                 </label>
               )}
             </div>
             <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(74,158,229,0.1)', borderRadius: 20, color: '#4A9EE5', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(224,58,78,0.2)', borderRadius: 20, color: '#E03A4E', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
 
             {settingsMode ? (
               <div style={{ width: '100%' }}>
@@ -1160,7 +1160,7 @@ export default function ChatApp() {
             ) : (<>
               <p style={{ fontSize: 14, color: '#7A8090', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
               <div style={{ width: '100%' }}>
-                {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#4A9EE5']].map(([l, v, c], i) => (
+                {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#E03A4E']].map(([l, v, c], i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <span style={{ fontSize: 13, color: '#4A5060' }}>{l}</span>
                     <span style={{ fontSize: 13, fontWeight: 500, fontFamily: 'mono', color: c || '#E8E8ED' }}>{v}</span>
@@ -1178,7 +1178,7 @@ export default function ChatApp() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <button style={s.ib} onClick={() => setNotifPanel(false)}><Icons.Close /></button>
             <span style={{ fontSize: 15, fontWeight: 600 }}>Уведомления</span>
-            {notifications.length > 0 && <button style={{ ...s.ib, marginLeft: 'auto', fontSize: 12, color: '#4A9EE5' }} onClick={() => setNotifications([])}>Очистить</button>}
+            {notifications.length > 0 && <button style={{ ...s.ib, marginLeft: 'auto', fontSize: 12, color: '#E03A4E' }} onClick={() => setNotifications([])}>Очистить</button>}
           </div>
           <div style={{ flex: 1, padding: '8px 0' }}>
             {notifications.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: '#3A4050' }}>Нет уведомлений</div> : notifications.map(n => (
@@ -1217,7 +1217,7 @@ export default function ChatApp() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => setForwardMsg(null)}>
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, minWidth: 300, maxWidth: 380, border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, fontFamily: 'mono' }}>Переслать</h3>
-            <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 14, fontSize: 13, color: '#6A7090', borderLeft: '3px solid #4A9EE5' }}>{forwardMsg.text || '[медиа]'}</div>
+            <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 14, fontSize: 13, color: '#6A7090', borderLeft: '3px solid #E03A4E' }}>{forwardMsg.text || '[медиа]'}</div>
             <div style={{ maxHeight: 240, overflowY: 'auto' }}>
               {chats.filter(c => c.type !== 'CHANNEL').map(c => (
                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => doForward(c.id)}>
@@ -1238,7 +1238,7 @@ export default function ChatApp() {
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Новый чат</h3>
               {/* Type selector */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-                {[['Личный','PRIVATE','#4A9EE5'],['Группа','GROUP','#7C6BDE'],['Канал','CHANNEL','#E5884A'],['Секретный','SECRET','#4AE58E']].map(([l,t,c]) => (
+                {[['Личный','PRIVATE','#E03A4E'],['Группа','GROUP','#7A0C18'],['Канал','CHANNEL','#E5884A'],['Секретный','SECRET','#4AE58E']].map(([l,t,c]) => (
                   <button key={t} onClick={() => (t === 'GROUP' || t === 'CHANNEL') ? setNewChatMode(t) : setNewChatType(t)}
                     style={{ flex: 1, padding: '8px 4px', background: newChatType === t ? c+'22' : 'rgba(255,255,255,0.04)', border: `1px solid ${newChatType === t ? c : 'rgba(255,255,255,0.06)'}`, borderRadius: 8, color: newChatType === t ? c : '#6A7090', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'mono' }}>{l}</button>
                 ))}
@@ -1248,7 +1248,7 @@ export default function ChatApp() {
                 {newChatResults.map(u => (
                   <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => handleNewChat(u.id, newChatType)}>
                     <Av src={u.avatar} name={u.name} size={36} radius={10} online={u.online} />
-                    <div><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#4A9EE5', fontFamily: 'mono' }}>{u.tag}</div></div>
+                    <div><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#E03A4E', fontFamily: 'mono' }}>{u.tag}</div></div>
                   </div>
                 ))}
                 {newChatSearch.length >= 2 && newChatResults.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: '#3A4050', fontSize: 13 }}>Никого не найдено</div>}
@@ -1265,7 +1265,7 @@ export default function ChatApp() {
               {groupMembers.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0' }}>
                   {groupMembers.map(m => (
-                    <span key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'rgba(74,158,229,0.1)', borderRadius: 20, fontSize: 12, color: '#4A9EE5' }}>
+                    <span key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'rgba(224,58,78,0.2)', borderRadius: 20, fontSize: 12, color: '#E03A4E' }}>
                       {m.name} <span style={{ cursor: 'pointer', opacity: 0.6, fontSize: 14 }} onClick={() => setGroupMembers(p => p.filter(x => x.id !== m.id))}>×</span>
                     </span>
                   ))}
@@ -1276,7 +1276,7 @@ export default function ChatApp() {
                   <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => setGroupMembers(p => [...p, u])}>
                     <Av src={u.avatar} name={u.name} size={30} radius={8} />
                     <span style={{ fontSize: 13 }}>{u.name}</span>
-                    <span style={{ fontSize: 11, color: '#4A9EE5', fontFamily: 'mono' }}>{u.tag}</span>
+                    <span style={{ fontSize: 11, color: '#E03A4E', fontFamily: 'mono' }}>{u.tag}</span>
                   </div>
                 ))}
               </div>
@@ -1297,7 +1297,7 @@ export default function ChatApp() {
               <div style={{ position: 'relative' }}>
                 <Av src={acd.avatar} name={acd.name} size={78} radius={20} color={tc[acd.type]} />
                 {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                  <label style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
                     <Icons.Edit />
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
                   </label>
@@ -1323,7 +1323,7 @@ export default function ChatApp() {
           <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '84vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Управление каналом</h3>
-              <button style={{ ...s.ib, ...(channelManageTab === 'main' ? { color: '#4A9EE5' } : {}) }} onClick={() => setChannelManageTab('main')}>Основное</button>
+              <button style={{ ...s.ib, ...(channelManageTab === 'main' ? { color: '#E03A4E' } : {}) }} onClick={() => setChannelManageTab('main')}>Основное</button>
               <button style={{ ...s.ib, ...(channelManageTab === 'bans' ? { color: '#E5884A' } : {}) }} onClick={() => { setChannelManageTab('bans'); loadChannelBans(); }}>Забаненные</button>
               <button style={s.ib} onClick={() => setChannelManageModal(false)}><Icons.Close /></button>
             </div>
@@ -1333,7 +1333,7 @@ export default function ChatApp() {
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
                   <div style={{ position: 'relative' }}>
                     <Av src={acd.avatar} name={acd.name} size={88} radius={22} color={tc[acd.type]} />
-                    <label style={{ position: 'absolute', bottom: -2, right: -2, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                    <label style={{ position: 'absolute', bottom: -2, right: -2, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
                       <Icons.Edit />
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
                     </label>
@@ -1379,11 +1379,11 @@ export default function ChatApp() {
             {channelAttachments.map((item) => (
               <div key={`${item.msgId}-${item.kind}-${item.id || item.media?.id}`} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                 {item.kind === 'link' ? (
-                  <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5', wordBreak: 'break-all' }}>{item.url}</a>
+                  <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#E03A4E', wordBreak: 'break-all' }}>{item.url}</a>
                 ) : item.media?.type === 'IMAGE' ? (
                   <img src={mediaUrlById(item.media.id)} alt={item.media.originalName} style={{ maxWidth: '100%', borderRadius: 10 }} />
                 ) : (
-                  <a href={mediaUrlById(item.media.id)} target="_blank" rel="noreferrer" style={{ color: '#4A9EE5' }}>{item.media?.originalName || 'Файл'}</a>
+                  <a href={mediaUrlById(item.media.id)} target="_blank" rel="noreferrer" style={{ color: '#E03A4E' }}>{item.media?.originalName || 'Файл'}</a>
                 )}
               </div>
             ))}
@@ -1415,7 +1415,7 @@ export default function ChatApp() {
                 const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
                 return (
                 <div key={comment.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginLeft: Math.min((comment.depth || 0) * 18, 72) }}>
-                  <div style={{ fontSize: 12, color: '#7CB4FF', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: '#FF7D8E', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span>{comment.from?.name || 'Пользователь'} <span style={{ color: '#4A5060', fontFamily: 'mono' }}>{formatTimeShort(comment.createdAt)}</span></span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button style={{ ...s.ib, fontSize: 12 }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
@@ -1432,7 +1432,7 @@ export default function ChatApp() {
               )})}
             </div>
             {postCommentReplyTo && (
-              <div style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 10, background: 'rgba(74,158,229,0.08)', borderLeft: '3px solid #4A9EE5', fontSize: 12, color: '#B7BDCB', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 10, background: 'rgba(224,58,78,0.12)', borderLeft: '3px solid #E03A4E', fontSize: 12, color: '#B7BDCB', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                 <span>Ответ для {postCommentReplyTo.from?.name || 'пользователя'}: {(postCommentReplyTo.text || '').slice(0, 90)}</span>
                 <button style={s.ib} onClick={() => setPostCommentReplyTo(null)}><Icons.Close /></button>
               </div>
@@ -1476,7 +1476,7 @@ export default function ChatApp() {
           {avatarView.url ? (
             <img src={resolveAvatarSrc(avatarView.url)} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 16 }} alt="" />
           ) : (
-            <div style={{ width: 240, height: 240, borderRadius: 32, background: '#4A9EE5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 96, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>
+            <div style={{ width: 240, height: 240, borderRadius: 32, background: '#E03A4E', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 96, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>
               {avatarView.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
             </div>
           )}
@@ -1497,7 +1497,7 @@ export default function ChatApp() {
               <div style={{ position: 'relative' }}>
                 <Av src={acd.avatar} name={acd.name} size={90} radius={22} color={tc[acd.type]} />
                 {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                  <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
                     <Icons.Edit />
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
                   </label>
@@ -1536,7 +1536,7 @@ export default function ChatApp() {
                 <Icons.Group />
                 <span style={{ fontSize: 14 }}>{acd._count?.members || acd.members?.length} участников</span>
               </div>
-              <span style={{ color: '#4A9EE5', fontSize: 13 }}>Показать →</span>
+              <span style={{ color: '#E03A4E', fontSize: 13 }}>Показать →</span>
             </div>
           </div>
         </div>
@@ -1549,7 +1549,7 @@ export default function ChatApp() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <button style={s.ib} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}><Icons.Close /></button>
               <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Участники ({acd.members?.length || 0})</h3>
-              {isOwnerOrAdmin && <button style={{ ...s.ib, color: '#4A9EE5', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
+              {isOwnerOrAdmin && <button style={{ ...s.ib, color: '#E03A4E', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
                 onClick={() => { setGroupSettingsModal(true); setMemberListModal(false); }}><Icons.Edit /> Управление</button>}
             </div>
 
@@ -1563,7 +1563,7 @@ export default function ChatApp() {
                       <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', borderRadius: 6 }} onClick={() => handleAddMember(u.id)}>
                         <Av src={u.avatar} name={u.name} size={28} radius={7} />
                         <span style={{ fontSize: 13 }}>{u.name}</span>
-                        <span style={{ fontSize: 11, color: '#4A9EE5', fontFamily: 'mono' }}>{u.tag}</span>
+                        <span style={{ fontSize: 11, color: '#E03A4E', fontFamily: 'mono' }}>{u.tag}</span>
                         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4AE58E' }}>+ Добавить</span>
                       </div>
                     ))}
@@ -1580,7 +1580,7 @@ export default function ChatApp() {
                   const u = member.user;
                   const isMe = member.userId === user.id;
                   const roleLabel = member.role === 'OWNER' ? 'Создатель' : member.role === 'ADMIN' ? 'Модератор' : null;
-                  const roleColor = member.role === 'OWNER' ? '#E5884A' : member.role === 'ADMIN' ? '#7C6BDE' : null;
+                  const roleColor = member.role === 'OWNER' ? '#E5884A' : member.role === 'ADMIN' ? '#7A0C18' : null;
                   const canManage = isOwner && !isMe && member.role !== 'OWNER';
                   const canAdminManage = isOwnerOrAdmin && !isMe && member.role === 'MEMBER';
 
@@ -1593,7 +1593,7 @@ export default function ChatApp() {
                           {roleLabel && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: roleColor + '22', color: roleColor, fontFamily: 'mono', fontWeight: 600 }}>{roleLabel}</span>}
                           {isMe && <span style={{ fontSize: 10, color: '#4A5060' }}>(вы)</span>}
                         </div>
-                        <div style={{ fontSize: 12, color: '#4A9EE5', fontFamily: 'mono' }}>{u?.tag}</div>
+                        <div style={{ fontSize: 12, color: '#E03A4E', fontFamily: 'mono' }}>{u?.tag}</div>
                       </div>
 
                       {/* Actions dropdown */}
@@ -1642,15 +1642,15 @@ export default function ChatApp() {
 }
 
 const s = {
-  root: { display: 'flex', width: '100%', height: '100vh', background: '#0C0E13', fontFamily: "'Manrope', sans-serif", color: '#E8E8ED', position: 'relative', overflow: 'hidden' },
-  sb: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 280, background: '#11141B', borderRight: '1px solid rgba(255,255,255,0.06)', zIndex: 100, display: 'flex', flexDirection: 'column', transition: 'transform .25s cubic-bezier(.4,0,.2,1)' },
-  cl: { width: 360, minWidth: 280, maxWidth: 400, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', background: '#0F1219' },
-  title: { flex: 1, fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
-  ib: { background: 'none', border: 'none', color: '#5A6070', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  si: { flex: 1, background: 'none', border: 'none', outline: 'none', color: '#E8E8ED', fontSize: 13, fontFamily: "'Manrope', sans-serif" },
-  mi: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', borderRadius: 8 },
-  lbl: { fontSize: 11, color: '#4A5060', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: "'JetBrains Mono', monospace", display: 'block', marginTop: 14, marginBottom: 4 },
-  inp2: { flex: 1, width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '10px 14px', color: '#E8E8ED', fontSize: 14, fontFamily: "'Manrope', sans-serif", outline: 'none' },
-  saveBtn: { padding: '10px 16px', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
-  sendBtn: { width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  root: { display: 'flex', width: '100%', height: '100vh', background: 'radial-gradient(circle at top left, #1a0c11, #090a0e 45%)', fontFamily: "'Manrope', sans-serif", color: '#F1E9EB', position: 'relative', overflow: 'hidden', fontSize: 16 },
+  sb: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 320, background: '#131017', borderRight: '1px solid rgba(255,110,128,0.24)', zIndex: 100, display: 'flex', flexDirection: 'column', transition: 'transform .25s cubic-bezier(.4,0,.2,1)' },
+  cl: { width: 390, minWidth: 310, maxWidth: 440, borderRight: '1px solid rgba(255,110,128,0.2)', display: 'flex', flexDirection: 'column', background: '#0d0b10' },
+  title: { flex: 1, fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: 'linear-gradient(135deg, #FF667B, #8D1123)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
+  ib: { background: 'none', border: 'none', color: '#9D8391', cursor: 'pointer', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  si: { flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F1E9EB', fontSize: 15, fontFamily: "'Manrope', sans-serif" },
+  mi: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', fontSize: 15, fontWeight: 600, cursor: 'pointer', borderRadius: 10 },
+  lbl: { fontSize: 12, color: '#8A6E79', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: "'JetBrains Mono', monospace", display: 'block', marginTop: 16, marginBottom: 6 },
+  inp2: { flex: 1, width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,122,142,0.22)', borderRadius: 14, padding: '12px 16px', color: '#F1E9EB', fontSize: 15, fontFamily: "'Manrope', sans-serif", outline: 'none' },
+  saveBtn: { padding: '12px 18px', background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', border: 'none', borderRadius: 12, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' },
+  sendBtn: { width: 46, height: 46, borderRadius: 14, background: 'linear-gradient(135deg, #E03A4E, #7A0C18)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 };
