@@ -6,10 +6,15 @@ const listeners = new Map();
 
 export function connectSocket() {
   const token = getAccessToken();
-  if (!token || socket?.connected) return socket;
+  if (!token) return null;
+
+  if (socket) {
+    if (!socket.connected) socket.connect();
+    return socket;
+  }
 
   socket = io(window.location.origin, {
-    auth: { token },
+    auth: (cb) => cb({ token: getAccessToken() }),
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 1000,
