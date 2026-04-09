@@ -111,6 +111,9 @@ export const chatsApi = {
   transferOwnership: (chatId, userId) => api(`/chats/${chatId}/transfer-ownership`, { method: 'POST', body: { userId } }),
   mute: (chatId, muted) => api(`/chats/${chatId}/mute`, { method: 'PATCH', body: { muted } }),
   muteComments: (chatId, userId, muted) => api(`/chats/${chatId}/members/${userId}/comments-mute`, { method: 'PATCH', body: { muted } }),
+  listBans: (chatId) => api(`/chats/${chatId}/bans`),
+  banMember: (chatId, userId, reason = '') => api(`/chats/${chatId}/bans/${userId}`, { method: 'POST', body: { reason } }),
+  unbanMember: (chatId, userId) => api(`/chats/${chatId}/bans/${userId}`, { method: 'DELETE' }),
 };
 
 // ── Messages API ──
