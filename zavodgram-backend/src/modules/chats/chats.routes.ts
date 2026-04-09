@@ -146,6 +146,8 @@ router.post('/public/:slug/join', authMiddleware, rateLimiter(20, 60), async (re
       select: { id: true },
     });
     if (!channel) throw new NotFoundError('Канал');
+    const ban = await prisma.chatBan.findUnique({ where: { chatId_userId: { chatId: channel.id, userId: req.user!.userId } } });
+    if (ban) throw new ForbiddenError('Вы заблокированы в этом канале');
 
     await prisma.chatMember.upsert({
       where: { chatId_userId: { chatId: channel.id, userId: req.user!.userId } },
@@ -241,6 +243,8 @@ router.post('/:id/members', authMiddleware, rateLimiter(30, 60), async (req: Req
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
     const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
     if (!user) throw new ValidationError('Пользователь не найден');
+    const ban = await prisma.chatBan.findUnique({ where: { chatId_userId: { chatId, userId: payload.userId } } });
+    if (ban) throw new ForbiddenError('Пользователь заблокирован в этом канале');
 
     const member = await prisma.chatMember.upsert({
       where: { chatId_userId: { chatId, userId: payload.userId } },
@@ -275,6 +279,77 @@ router.delete('/:id/members/:userId', authMiddleware, rateLimiter(30, 60), async
 
     await prisma.chatMember.deleteMany({ where: { chatId, userId: targetId } });
     redisPub.publish('chat:member_removed', JSON.stringify({ chatId, userId: targetId }));
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// ── GET /chats/:id/bans — List banned users (OWNER/ADMIN) ──
+router.get('/:id/bans', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const chatId = req.params.id;
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.type !== 'CHANNEL') throw new ForbiddenError('Список заблокированных доступен только в каналах');
+    await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
+
+    const bans = await prisma.chatBan.findMany({
+      where: { chatId },
+      include: {
+        user: { select: { id: true, name: true, tag: true, avatar: true } },
+        admin: { select: { id: true, name: true, tag: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ ok: true, data: bans });
+  } catch (err) { next(err); }
+});
+
+// ── POST /chats/:id/bans/:userId — Ban user from channel (OWNER/ADMIN) ──
+router.post('/:id/bans/:userId', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id: chatId, userId: targetId } = req.params;
+    const { reason } = z.object({ reason: z.string().max(280).optional() }).parse(req.body || {});
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.type !== 'CHANNEL') throw new ForbiddenError('Блокировка доступна только в каналах');
+    if (targetId === req.user!.userId) throw new ForbiddenError('Нельзя заблокировать себя');
+
+    const myMembership = await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
+    const targetMembership = await prisma.chatMember.findUnique({ where: { chatId_userId: { chatId, userId: targetId } } });
+    if (targetMembership?.role === 'OWNER') throw new ForbiddenError('Нельзя заблокировать создателя');
+    if (targetMembership?.role === 'ADMIN' && myMembership.role !== 'OWNER') {
+      throw new ForbiddenError('Только создатель может блокировать администраторов');
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true } });
+    if (!targetUser) throw new NotFoundError('Пользователь');
+
+    const ban = await prisma.chatBan.upsert({
+      where: { chatId_userId: { chatId, userId: targetId } },
+      create: { chatId, userId: targetId, bannedBy: req.user!.userId, reason: reason || null },
+      update: { bannedBy: req.user!.userId, reason: reason || null, createdAt: new Date() },
+      include: { user: { select: { id: true, name: true, tag: true, avatar: true } }, admin: { select: { id: true, name: true, tag: true } } },
+    });
+
+    await prisma.chatMember.deleteMany({ where: { chatId, userId: targetId } });
+    redisPub.publish('chat:member_removed', JSON.stringify({ chatId, userId: targetId }));
+    res.status(201).json({ ok: true, data: ban });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
+});
+
+// ── DELETE /chats/:id/bans/:userId — Unban user from channel (OWNER/ADMIN) ──
+router.delete('/:id/bans/:userId', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id: chatId, userId: targetId } = req.params;
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true } });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.type !== 'CHANNEL') throw new ForbiddenError('Разблокировка доступна только в каналах');
+    await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
+
+    await prisma.chatBan.deleteMany({ where: { chatId, userId: targetId } });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

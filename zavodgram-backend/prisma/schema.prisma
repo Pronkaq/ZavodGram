@@ -31,6 +31,8 @@ model User {
   mediaFiles     MediaFile[]
   tagHistory     TagHistory[]
   reactions      MessageReaction[]
+  channelBans    ChatBan[]         @relation("ChatBanUser")
+  bansIssued     ChatBan[]         @relation("ChatBanBy")
 
   @@index([tag])
   @@index([phone])
@@ -118,6 +120,7 @@ model Chat {
 
   members  ChatMember[]
   messages Message[]
+  bans     ChatBan[]
 
   @@index([type])
 }
@@ -144,6 +147,22 @@ model ChatMember {
   @@unique([chatId, userId])
   @@index([userId])
   @@index([chatId])
+}
+
+model ChatBan {
+  id        String   @id @default(uuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("ChatBanUser", fields: [userId], references: [id], onDelete: Cascade)
+  bannedBy  String
+  admin     User     @relation("ChatBanBy", fields: [bannedBy], references: [id], onDelete: Cascade)
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
 }
 
 // ── Сообщение ──

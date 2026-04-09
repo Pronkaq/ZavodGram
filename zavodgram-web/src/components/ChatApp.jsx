@@ -106,6 +106,10 @@ export default function ChatApp() {
   const [channelInfoModal, setChannelInfoModal] = useState(false);
   const [channelSlugEdit, setChannelSlugEdit] = useState('');
   const [channelSlugError, setChannelSlugError] = useState('');
+  const [channelManageModal, setChannelManageModal] = useState(false);
+  const [channelManageTab, setChannelManageTab] = useState('main');
+  const [bannedUsers, setBannedUsers] = useState([]);
+  const [bansLoading, setBansLoading] = useState(false);
   const [attachmentsModal, setAttachmentsModal] = useState(false);
   const [reactionPicker, setReactionPicker] = useState(null);
   const [postCommentsModal, setPostCommentsModal] = useState(null);
@@ -328,10 +332,10 @@ export default function ChatApp() {
   }, [notifications]);
 
   useEffect(() => {
-    if (profilePanel || newChatModal || groupSettingsModal || memberListModal || forwardMsg || avatarView || channelInfoModal || attachmentsModal) {
+    if (profilePanel || newChatModal || groupSettingsModal || memberListModal || forwardMsg || avatarView || channelInfoModal || channelManageModal || attachmentsModal) {
       setNotifPanel(false);
     }
-  }, [profilePanel, newChatModal, groupSettingsModal, memberListModal, forwardMsg, avatarView, channelInfoModal, attachmentsModal]);
+  }, [profilePanel, newChatModal, groupSettingsModal, memberListModal, forwardMsg, avatarView, channelInfoModal, channelManageModal, attachmentsModal]);
 
   const openNotificationsPanel = useCallback(() => {
     setSidebarOpen(false);
@@ -379,6 +383,68 @@ export default function ChatApp() {
       setChannelInfoModal(false);
     } catch (err) {
       setChannelSlugError(err.message || 'Не удалось сохранить ссылку');
+    }
+  };
+
+  const loadChannelBans = useCallback(async () => {
+    if (!activeChat) return;
+    setBansLoading(true);
+    try {
+      const bans = await chatsApi.listBans(activeChat);
+      setBannedUsers(bans || []);
+    } catch (err) {
+      setBannedUsers([]);
+      alert(err.message || 'Не удалось загрузить список заблокированных');
+    } finally {
+      setBansLoading(false);
+    }
+  }, [activeChat]);
+
+  const openChannelManagement = useCallback(async () => {
+    if (!acd || acd.type !== 'CHANNEL' || !isOwner) return;
+    setEditGroupName(acd.name || '');
+    setEditGroupDesc(acd.description || '');
+    setChannelSlugEdit(acd.channelSlug || '');
+    setChannelSlugError('');
+    setChannelManageTab('main');
+    setChannelManageModal(true);
+    await loadChannelBans();
+  }, [acd, isOwner, loadChannelBans]);
+
+  const saveChannelManagement = async () => {
+    if (!activeChat || !acd || acd.type !== 'CHANNEL' || !isOwner) return;
+    const slug = normalizedSlug(channelSlugEdit);
+    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
+      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
+      return;
+    }
+    try {
+      await chatsApi.update(activeChat, { name: editGroupName.trim(), description: editGroupDesc, channelSlug: slug });
+      await loadChats();
+      setChannelManageModal(false);
+    } catch (err) {
+      setChannelSlugError(err.message || 'Не удалось сохранить настройки канала');
+    }
+  };
+
+  const handleBanMember = async (targetId) => {
+    if (!activeChat || !targetId) return;
+    try {
+      await chatsApi.banMember(activeChat, targetId);
+      await loadChats();
+      if (channelManageModal) await loadChannelBans();
+    } catch (err) {
+      alert(err.message || 'Не удалось заблокировать пользователя');
+    }
+  };
+
+  const handleUnbanMember = async (targetId) => {
+    if (!activeChat || !targetId) return;
+    try {
+      await chatsApi.unbanMember(activeChat, targetId);
+      await loadChannelBans();
+    } catch (err) {
+      alert(err.message || 'Не удалось разблокировать пользователя');
     }
   };
 
@@ -660,6 +726,10 @@ export default function ChatApp() {
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
                 const postAuthor = acd.name || chatName;
+                const postComments = getPostComments(msg);
+                const adminIds = new Set((acd.members || []).filter((m) => ['OWNER', 'ADMIN'].includes(m.role)).map((m) => m.userId));
+                const hasAdminComment = postComments.some((comment) => adminIds.has(comment.fromId || comment.from?.id));
+                const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin || hasAdminComment;
                 return (
                   <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isChannel ? 'flex-start' : (isMine ? 'flex-end' : 'flex-start'), marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(74,158,229,0.12)' } : {}) }}
                     onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
@@ -716,11 +786,11 @@ export default function ChatApp() {
                       )}
                       {isChannel && (
                         <button
-                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: '#7CB4FF', cursor: 'pointer', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          style={{ marginTop: 10, border: 'none', background: 'transparent', color: commentsButtonActive ? '#7CB4FF' : '#616980', cursor: 'pointer', fontSize: 13, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: commentsButtonActive ? 1 : 0.7 }}
                           onClick={() => openPostComments(msg)}
                         >
                           <Icons.Reply size={13} />
-                          Комментарии ({getPostComments(msg).length})
+                          Комментарии ({postComments.length})
                         </button>
                       )}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#3A4050', marginTop: 8, fontFamily: 'mono' }}>
@@ -976,20 +1046,63 @@ export default function ChatApp() {
               <button style={s.ib} onClick={() => navigator.clipboard?.writeText(channelPublicLink)} disabled={!channelPublicLink}><Icons.Copy /></button>
               <button style={s.ib} onClick={shareChannelLink} disabled={!channelPublicLink}><Icons.Share /></button>
             </div>
-            {isOwnerOrAdmin && (
-              <>
+            {isOwner && <button style={{ ...s.saveBtn, width: '100%' }} onClick={() => { setChannelInfoModal(false); openChannelManagement(); }}><Icons.Edit /> Управление</button>}
+            <button style={{ ...s.ib, marginTop: 14, width: '100%', justifyContent: 'center', padding: 10, border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}>
+              <Icons.Image /> Вложения канала
+            </button>
+          </div>
+        </div>
+      )}
+
+      {channelManageModal && acd?.type === 'CHANNEL' && isOwner && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 362, backdropFilter: 'blur(4px)' }} onClick={() => setChannelManageModal(false)}>
+          <div style={{ background: '#1A1D26', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '84vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Управление каналом</h3>
+              <button style={{ ...s.ib, ...(channelManageTab === 'main' ? { color: '#4A9EE5' } : {}) }} onClick={() => setChannelManageTab('main')}>Основное</button>
+              <button style={{ ...s.ib, ...(channelManageTab === 'bans' ? { color: '#E5884A' } : {}) }} onClick={() => { setChannelManageTab('bans'); loadChannelBans(); }}>Забаненные</button>
+              <button style={s.ib} onClick={() => setChannelManageModal(false)}><Icons.Close /></button>
+            </div>
+
+            {channelManageTab === 'main' ? (
+              <div style={{ overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                  <div style={{ position: 'relative' }}>
+                    <Av src={acd.avatar} name={acd.name} size={88} radius={22} color={tc[acd.type]} />
+                    <label style={{ position: 'absolute', bottom: -2, right: -2, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #4A9EE5, #7C6BDE)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1A1D26' }}>
+                      <Icons.Edit />
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
+                    </label>
+                  </div>
+                </div>
+                <label style={s.lbl}>Название</label>
+                <input style={{ ...s.inp2, marginBottom: 10 }} value={editGroupName} onChange={(e) => setEditGroupName(e.target.value)} placeholder="Название канала" />
+                <label style={s.lbl}>Описание</label>
+                <textarea style={{ ...s.inp2, minHeight: 72, resize: 'vertical', marginBottom: 10 }} value={editGroupDesc} onChange={(e) => setEditGroupDesc(e.target.value)} placeholder="Описание канала" />
                 <label style={s.lbl}>Уникальная ссылка (slug)</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ color: '#6A7090', fontSize: 13 }}>{window.location.origin}/</span>
                   <input style={s.inp2} value={channelSlugEdit} onChange={e => { setChannelSlugEdit(e.target.value); setChannelSlugError(''); }} placeholder="my-channel" />
                 </div>
                 {channelSlugError && <div style={{ color: '#E55A5A', fontSize: 12, marginTop: 6 }}>{channelSlugError}</div>}
-                <button style={{ ...s.saveBtn, marginTop: 12, width: '100%' }} onClick={saveChannelSlug}>Сохранить ссылку</button>
-              </>
+                <button style={{ ...s.saveBtn, marginTop: 12, width: '100%' }} onClick={saveChannelManagement}>Сохранить изменения</button>
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
+                {bansLoading && <div style={{ color: '#7A8090', fontSize: 13 }}>Загрузка...</div>}
+                {!bansLoading && bannedUsers.length === 0 && <div style={{ color: '#7A8090', fontSize: 13 }}>Список пуст.</div>}
+                {!bansLoading && bannedUsers.map((ban) => (
+                  <div key={ban.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <Av src={ban.user?.avatar} name={ban.user?.name} size={36} radius={10} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{ban.user?.name}</div>
+                      <div style={{ fontSize: 11, color: '#7A8090' }}>{ban.user?.tag} • бан от {ban.admin?.name || 'админа'}</div>
+                    </div>
+                    <button style={{ ...s.ib, color: '#4AE58E' }} onClick={() => handleUnbanMember(ban.userId)}><Icons.Check /> Разбан</button>
+                  </div>
+                ))}
+              </div>
             )}
-            <button style={{ ...s.ib, marginTop: 14, width: '100%', justifyContent: 'center', padding: 10, border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}>
-              <Icons.Image /> Вложения канала
-            </button>
           </div>
         </div>
       )}
@@ -1206,6 +1319,7 @@ export default function ChatApp() {
                               if (action === 'make_admin') handleSetRole(member.userId, 'ADMIN');
                               if (action === 'remove_admin') handleSetRole(member.userId, 'MEMBER');
                               if (action === 'kick') handleKickMember(member.userId);
+                              if (action === 'ban') handleBanMember(member.userId);
                               if (action === 'transfer') handleTransferOwnership(member.userId);
                               e.target.value = '';
                             }}
@@ -1213,7 +1327,8 @@ export default function ChatApp() {
                             <option value="" disabled>···</option>
                             {isOwner && member.role === 'MEMBER' && <option value="make_admin">Назначить модератором</option>}
                             {isOwner && member.role === 'ADMIN' && <option value="remove_admin">Снять модератора</option>}
-                            {(canManage || canAdminManage) && <option value="kick">Удалить из группы</option>}
+                            {(canManage || canAdminManage) && <option value="kick">{acd.type === 'CHANNEL' ? 'Удалить из канала' : 'Удалить из группы'}</option>}
+                            {(canManage || canAdminManage) && acd.type === 'CHANNEL' && <option value="ban">Забанить в канале</option>}
                             {isOwner && <option value="transfer">Передать права создателя</option>}
                           </select>
                         </div>
