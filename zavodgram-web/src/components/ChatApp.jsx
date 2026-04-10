@@ -8,6 +8,8 @@ import { Icons, typeColors } from './Icons';
 import { ChatToasts } from './ChatToasts';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatListPanel } from './ChatListPanel';
+import { ChatNotificationsPanel } from './ChatNotificationsPanel';
+import { ChatMessageContextMenu } from './ChatMessageContextMenu';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
@@ -1500,35 +1502,30 @@ export default function ChatApp() {
       )}
 
       {/* ── Notification Panel ── */}
-      {notifPanel && (
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#171A20', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 95, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <button style={s.ib} onClick={() => setNotifPanel(false)}><Icons.Close /></button>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>Уведомления</span>
-            {notifications.length > 0 && <button style={{ ...s.ib, marginLeft: 'auto', fontSize: 12, color: '#E9EBEF' }} onClick={() => setNotifications([])}>Очистить</button>}
-          </div>
-          <div style={{ flex: 1, padding: '8px 0' }}>
-            {notifications.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: '#686F7F' }}>Нет уведомлений</div> : notifications.map(n => (
-              <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)' }}
-                onClick={() => { selectChat(n.chatId); setShowMobileChat(true); setNotifPanel(false); }}>
-                <Icons.Bell size={14} /><div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{n.chatName}</div><div style={{ fontSize: 12, color: '#7C8392' }}>{n.text}</div></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ChatNotificationsPanel
+        open={notifPanel}
+        styles={s}
+        notifications={notifications}
+        onClose={() => setNotifPanel(false)}
+        onClear={() => setNotifications([])}
+        onOpenNotification={(notification) => {
+          selectChat(notification.chatId);
+          setShowMobileChat(true);
+          setNotifPanel(false);
+        }}
+      />
 
       {/* ── Context Menu ── */}
-      {contextMenu && (
-        <div style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 200, minWidth: 180, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
-          <div style={s.mi} onClick={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}><Icons.Reply /> Ответить</div>
-          <div style={s.mi} onClick={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}><Icons.Forward /> Переслать</div>
-          <div style={s.mi} onClick={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}><Icons.Smile /> Реакция</div>
-          <div style={s.mi} onClick={() => { navigator.clipboard?.writeText(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Copy /> Копировать</div>
-          {contextMenu.msg.mine && <div style={s.mi} onClick={() => { setEditingMsg(contextMenu.msg); setReplyTo(null); setInput(contextMenu.msg.text || ''); setContextMenu(null); }}><Icons.Edit /> Редактировать</div>}
-          {contextMenu.msg.mine && <div style={{ ...s.mi, color: '#D5D8DE' }} onClick={() => { deleteMessage(activeChat, contextMenu.msg.id); setContextMenu(null); }}><Icons.Trash /> Удалить</div>}
-        </div>
-      )}
+      <ChatMessageContextMenu
+        contextMenu={contextMenu}
+        styles={s}
+        onReply={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}
+        onForward={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}
+        onReaction={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}
+        onCopy={() => { navigator.clipboard?.writeText(contextMenu.msg.text || ''); setContextMenu(null); }}
+        onEdit={() => { setEditingMsg(contextMenu.msg); setReplyTo(null); setInput(contextMenu.msg.text || ''); setContextMenu(null); }}
+        onDelete={() => { deleteMessage(activeChat, contextMenu.msg.id); setContextMenu(null); }}
+      />
 
 
       {reactionPicker && (
