@@ -192,3 +192,20 @@
 - **Deep-link утёк**: короткий TTL + одноразовость + hash токена.
 - **Гонки при завершении регистрации**: транзакция + уникальные индексы + повторная валидация.
 
+
+## Автозеркало постов из публичного Telegram-канала
+
+Добавлена фоновая задача в backend, которая периодически:
+1. читает публичную страницу `https://t.me/s/<sourceSlug>`;
+2. забирает новые посты (текст + изображения/видео, если доступны публичные ссылки);
+3. публикует их в канал ZavodGram с указанным `channelSlug`;
+4. хранит прогресс (`lastImportedPostId`) в таблице `TelegramChannelMirrorState`.
+
+### Переменные окружения
+- `TELEGRAM_CHANNEL_MIRROR_ENABLED=true` — включить импорт;
+- `TELEGRAM_CHANNEL_MIRROR_SOURCE_SLUG=dvachannel` — источник в Telegram;
+- `TELEGRAM_CHANNEL_MIRROR_TARGET_SLUG=<slug_вашего_канала_в_ZavodGram>` — куда публиковать;
+- `TELEGRAM_CHANNEL_MIRROR_POLL_INTERVAL_SEC=120` — интервал опроса;
+- `TELEGRAM_CHANNEL_MIRROR_BATCH_SIZE=10` — максимум постов за один цикл.
+
+> Важно: медиа импортируются best-effort (из публичных URL Telegram). Комментарии пока не переносятся.
