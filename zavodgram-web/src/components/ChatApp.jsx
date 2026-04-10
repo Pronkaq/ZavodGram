@@ -1172,7 +1172,7 @@ export default function ChatApp() {
                               openMediaModal?.({ type: postVisual.type, src: mediaUrlById(postVisual.id), title: postVisual.originalName });
                             }
                           }}
-                          style={{ width: '100%', maxHeight: 460, background: '#000', padding: 0, overflow: 'hidden', display: 'block', borderBottom: '1px solid rgba(255,255,255,0.09)', cursor: 'zoom-in', position: 'relative' }}
+                          style={{ width: '100%', maxHeight: 460, background: '#000', padding: 0, overflow: 'hidden', display: 'block', borderBottom: '1px solid rgba(255,255,255,0.09)', cursor: 'pointer', position: 'relative' }}
                         >
                           {postVisual.type === 'VIDEO' ? (
                             <>
@@ -1217,6 +1217,9 @@ export default function ChatApp() {
                         transcriptionAvailable={transcriptionAvailable}
                         actionButtonStyle={s.ib}
                         onOpenMedia={openMediaModal}
+                        showMeta={!isChannel}
+                        carouselImages={isChannel}
+                        mediaMaxWidth={isChannel ? '100%' : 260}
                       />
                       {isChannel ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1965,9 +1968,8 @@ export default function ChatApp() {
           onClick={() => setMediaModal(null)}
         >
           <div style={{ width: 'min(96vw, 980px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', gap: 10 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <div style={{ color: '#D9DFEB', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mediaModal.title || (mediaModal.type === 'VIDEO' ? 'Видео' : 'Изображение')}</div>
-              <button type="button" style={s.ib} onClick={() => setMediaModal(null)}><Icons.Close /></button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
+              <button type="button" style={s.ib} onClick={() => setMediaModal(null)} aria-label="Закрыть медиа"><Icons.Close /></button>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, overflow: 'hidden', maxHeight: 'calc(92vh - 54px)' }}>
               {mediaModal.type === 'VIDEO' ? (
