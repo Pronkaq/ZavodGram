@@ -257,6 +257,7 @@ export default function ChatApp() {
   const [newChatSearch, setNewChatSearch] = useState('');
   const [newChatResults, setNewChatResults] = useState([]);
   const [settingsMode, setSettingsMode] = useState(false);
+  const [settingsSubpage, setSettingsSubpage] = useState(null);
   const [tagEdit, setTagEdit] = useState('');
   const [tagError, setTagError] = useState('');
   const [newChatMode, setNewChatMode] = useState('search'); // search | GROUP | CHANNEL
@@ -634,6 +635,7 @@ export default function ChatApp() {
     if (userId === user.id) { setProfileData({ ...user, online: true }); }
     else { try { const data = await usersApi.getById(userId); setProfileData(data); } catch {} }
     setSettingsMode(false);
+    setSettingsSubpage(null);
     setProfilePanel(userId);
   };
 
@@ -698,7 +700,12 @@ export default function ChatApp() {
 
   const saveTag = async () => {
     const t = tagEdit.startsWith('@') ? tagEdit : '@' + tagEdit;
-    try { await usersApi.updateTag(t); updateUser({ tag: t }); setTagError(''); } catch (e) { setTagError(e.message); }
+    try {
+      await usersApi.updateTag(t);
+      updateUser({ tag: t });
+      setProfileData((prev) => (prev ? { ...prev, tag: t } : prev));
+      setTagError('');
+    } catch (e) { setTagError(e.message); }
   };
 
   const handleAvatarUpload = async (e) => {
@@ -978,6 +985,9 @@ export default function ChatApp() {
     setSidebarOpen(false);
     setNotifPanel(false);
     setSettingsMode(true);
+    setSettingsSubpage(null);
+    setTagEdit(user.tag || '');
+    setTagError('');
     setProfileData({ ...user, online: true });
     setProfilePanel(user.id);
   }, [user]);
@@ -1573,36 +1583,129 @@ export default function ChatApp() {
       {profilePanel && profileData && (
         <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#171A20', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 90, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <button style={s.ib} onClick={() => setProfilePanel(null)}><Icons.Close /></button>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>{settingsMode ? 'Настройки' : 'Профиль'}</span>
+            <button
+              style={s.ib}
+              onClick={() => {
+                if (settingsMode && settingsSubpage) {
+                  setSettingsSubpage(null);
+                  return;
+                }
+                setProfilePanel(null);
+                setSettingsSubpage(null);
+              }}
+            >
+              {settingsMode && settingsSubpage ? <Icons.Back /> : <Icons.Close />}
+            </button>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>
+              {settingsMode ? (settingsSubpage === 'username' ? 'Имя пользователя' : settingsSubpage ? 'Настройки' : 'Настройки') : 'Профиль'}
+            </span>
           </div>
-          <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ position: 'relative', marginBottom: 14 }}>
-              <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
-                onClick={() => !settingsMode && setAvatarView({ url: profileData.avatar, name: profileData.name })} />
-              {settingsMode && (
-                <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #171A20' }}>
-                  <Icons.Edit />
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-                </label>
-              )}
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(255,255,255,0.1)', borderRadius: 20, color: '#E9EBEF', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
-
-            {settingsMode ? (
-              <div style={{ width: '100%' }}>
-                <label style={s.lbl}>Персональный тег</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit || user.tag} onChange={e => { setTagEdit(e.target.value); setTagError(''); }} />
-                  <button onClick={saveTag} style={s.saveBtn}>Сохранить</button>
-                </div>
-                {tagError && <span style={{ color: '#D5D8DE', fontSize: 12, fontFamily: 'mono', marginTop: 4, display: 'block' }}>{tagError}</span>}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 18, padding: '12px 14px', background: 'rgba(245,247,250,0.06)', borderRadius: 10, color: '#EDEFF3', fontSize: 12, lineHeight: 1.5 }}>
-                  <Icons.Shield /><span>Тег бронируется за вами навсегда.</span>
+          {settingsMode ? (
+            settingsSubpage === 'username' ? (
+              <div style={{ padding: '20px 16px 24px' }}>
+                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18, boxShadow: '0 12px 26px rgba(0,0,0,0.24)' }}>
+                  <label style={s.lbl}>Имя пользователя</label>
+                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit} onChange={e => { setTagEdit(e.target.value); setTagError(''); }} placeholder="@username" />
+                  {tagError && <span style={{ color: '#D5D8DE', fontSize: 12, fontFamily: 'mono', marginTop: 4, display: 'block' }}>{tagError}</span>}
+                  <button onClick={saveTag} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }}>Сохранить</button>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 12, color: '#BFC4D0', fontSize: 12, lineHeight: 1.5 }}>
+                    <Icons.Shield /><span>Имя пользователя видно другим. Вы можете поменять его позже.</span>
+                  </div>
                 </div>
               </div>
-            ) : (<>
+            ) : settingsSubpage ? (
+              <div style={{ padding: '20px 16px 24px' }}>
+                <div style={{ padding: 18, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>Скоро</h3>
+                  <p style={{ fontSize: 13, color: '#99A1B2', lineHeight: 1.5 }}>Этот раздел уже подготовлен в интерфейсе. Функциональность появится в одном из следующих обновлений.</p>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '14px 14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ background: 'linear-gradient(150deg, rgba(35,40,51,0.96), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, padding: 14, boxShadow: '0 12px 30px rgba(0,0,0,0.28)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ position: 'relative' }}>
+                      <Av src={profileData.avatar} name={profileData.name} size={72} radius={18} />
+                      <label style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #171A20' }}>
+                        <Icons.Edit />
+                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+                      </label>
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#F3F5F9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.name}</div>
+                      <div style={{ fontSize: 13, color: '#BBC2D1', fontFamily: 'mono', marginTop: 3 }}>{profileData.tag || '@username'}</div>
+                      <div style={{ fontSize: 12, color: '#8E96A7', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.bio || 'Расскажите немного о себе'}</div>
+                    </div>
+                    <button style={{ ...s.ib, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => setSettingsSubpage('profile')}>
+                      <Icons.Edit />
+                    </button>
+                  </div>
+                </div>
+
+                {[
+                  {
+                    id: 'account',
+                    rows: [
+                      { id: 'profile', title: 'Профиль', subtitle: 'Имя и фото', icon: <Icons.User size={16} /> },
+                      { id: 'username', title: 'Имя пользователя', subtitle: profileData.tag || '@username', icon: <Icons.Tag size={14} /> },
+                      { id: 'bio', title: 'О себе', subtitle: profileData.bio || 'Добавьте описание профиля', icon: <Icons.Edit size={14} /> },
+                    ],
+                  },
+                  {
+                    id: 'privacy',
+                    rows: [
+                      { id: 'notifications', title: 'Уведомления', subtitle: 'Звуки и предпросмотр', icon: <Icons.Bell size={15} /> },
+                      { id: 'privacy', title: 'Конфиденциальность', subtitle: 'Доступ и безопасность', icon: <Icons.Lock size={14} /> },
+                      { id: 'data', title: 'Данные и память', subtitle: 'Кэш и медиа', icon: <Icons.File size={14} /> },
+                      { id: 'devices', title: 'Устройства', subtitle: 'Активные сессии', icon: <Icons.Group size={14} /> },
+                    ],
+                  },
+                  {
+                    id: 'appearance',
+                    rows: [
+                      { id: 'language', title: 'Язык', subtitle: 'Русский', icon: <Icons.Copy size={14} /> },
+                      { id: 'stickers', title: 'Стикеры и эмодзи', subtitle: 'Наборы и реакции', icon: <Icons.Smile size={14} /> },
+                      { id: 'folders', title: 'Папки чатов', subtitle: 'Организация диалогов', icon: <Icons.Channel size={14} /> },
+                    ],
+                  },
+                ].map((group) => (
+                  <div key={group.id} style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 18, overflow: 'hidden' }}>
+                    {group.rows.map((row, idx) => (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => setSettingsSubpage(row.id)}
+                        style={{ width: '100%', border: 'none', background: 'transparent', color: 'inherit', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px', cursor: 'pointer', borderBottom: idx === group.rows.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)', textAlign: 'left' }}
+                      >
+                        <div style={{ width: 30, height: 30, borderRadius: 10, background: 'rgba(255,255,255,0.07)', color: '#ECEFF5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{row.icon}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#F2F4F8' }}>{row.title}</div>
+                          {row.subtitle && <div style={{ fontSize: 12, color: '#8F98A9', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.subtitle}</div>}
+                        </div>
+                        <div style={{ transform: 'rotate(180deg)', color: '#7D8799', display: 'flex' }}>
+                          <Icons.Back size={14} />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '2px 2px 6px' }}>
+                  <div style={{ fontSize: 12, color: '#717A8B', textAlign: 'center' }}>ZavodGram Web · v1.0</div>
+                  <button onClick={logout} style={{ ...s.saveBtn, width: '100%', background: 'rgba(255,255,255,0.07)', color: '#F3F4F7', border: '1px solid rgba(255,255,255,0.11)' }}>
+                    <Icons.Logout /> Выйти
+                  </button>
+                </div>
+              </div>
+            )
+          ) : (
+            <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ position: 'relative', marginBottom: 14 }}>
+                <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
+                  onClick={() => setAvatarView({ url: profileData.avatar, name: profileData.name })} />
+              </div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(255,255,255,0.1)', borderRadius: 20, color: '#E9EBEF', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
               <p style={{ fontSize: 14, color: '#A2A8B6', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
               <div style={{ width: '100%' }}>
                 {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#E9EBEF']].map(([l, v, c], i) => (
@@ -1612,8 +1715,8 @@ export default function ChatApp() {
                   </div>
                 ))}
               </div>
-            </>)}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
