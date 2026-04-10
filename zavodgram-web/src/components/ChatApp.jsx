@@ -1572,7 +1572,6 @@ export default function ChatApp() {
             {(() => {
               const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
               const modalComments = getPostComments(postCommentsModal);
-              const uniqParticipants = Array.from(new Map(modalComments.map((comment) => [comment.fromId || comment.from?.id, comment.from]).filter(([id]) => !!id)).values()).slice(0, 4);
               const hasLongPost = (postCommentsModal.text || '').length > 330;
               const commentsCount = modalComments.length;
               const commentsWord = (n) => {
@@ -1596,8 +1595,8 @@ export default function ChatApp() {
                     <div
                       style={{
                         fontSize: 14,
-                        color: '#D6DAE2',
-                        lineHeight: 1.5,
+                        color: '#C5CBD6',
+                        lineHeight: 1.58,
                         maxHeight: 132,
                         overflow: 'hidden',
                         display: '-webkit-box',
@@ -1614,34 +1613,19 @@ export default function ChatApp() {
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                    {uniqParticipants.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        {uniqParticipants.map((participant, idx) => (
-                          <Av
-                            key={`${participant?.id || participant?.name}-${idx}`}
-                            src={participant?.avatar}
-                            name={participant?.name}
-                            size={28}
-                            radius={999}
-                            style={{ marginLeft: idx === 0 ? 0 : -8, border: '2px solid #1C202B' }}
-                          />
-                        ))}
-                      </div>
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                     <button
                       style={{
-                        ...s.ib,
-                        color: '#9FA6B4',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#8F97A6',
                         fontSize: 12,
-                        fontWeight: 600,
+                        fontWeight: 500,
                         lineHeight: 1,
-                        padding: '5px 10px',
+                        padding: '2px 0',
                         height: 'auto',
                         opacity: commentsAllowed ? 1 : 0.75,
-                        borderRadius: 999,
-                        border: '1px solid rgba(255,255,255,0.14)',
-                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: 0,
                         fontFamily: 'Inter, system-ui, sans-serif'
                       }}
                       onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
@@ -1666,16 +1650,30 @@ export default function ChatApp() {
                           key={comment.id}
                           style={{
                             marginLeft: Math.min((comment.depth || 0) * 16, 64),
-                            marginBottom: 8,
+                            marginBottom: 6,
                             display: 'flex',
                             alignItems: 'flex-start',
                             gap: 10,
-                            padding: '5px 0',
+                            padding: '4px 6px',
                             borderRadius: 10,
-                            transition: 'background 120ms ease'
+                            transition: 'background 160ms ease'
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                            const replyBtn = e.currentTarget.querySelector('[data-reply-btn="true"]');
+                            if (replyBtn) {
+                              replyBtn.style.opacity = '0.95';
+                              replyBtn.style.color = '#BCC3CF';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
+                            const replyBtn = e.currentTarget.querySelector('[data-reply-btn="true"]');
+                            if (replyBtn) {
+                              replyBtn.style.opacity = '0.5';
+                              replyBtn.style.color = '#8D95A4';
+                            }
+                          }}
                         >
                           <Av
                             src={commentAuthor?.avatar}
@@ -1713,7 +1711,7 @@ export default function ChatApp() {
                                 <span style={{ color: '#8790A0', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                <button style={{ background: 'transparent', border: 'none', fontSize: 12, padding: 0, height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#98A0AF', cursor: 'pointer', fontWeight: 500, opacity: 0.78, transition: 'opacity 120ms ease, color 120ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#C2C8D2'; }} onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.78'; e.currentTarget.style.color = '#98A0AF'; }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
+                                <button data-reply-btn="true" style={{ background: 'transparent', border: 'none', fontSize: 12, padding: 0, height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#8D95A4', cursor: 'pointer', fontWeight: 500, opacity: 0.5, transition: 'opacity 160ms ease, color 160ms ease' }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
                                 {canModerate && (
                                   <>
                                     <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
@@ -1722,7 +1720,7 @@ export default function ChatApp() {
                                 )}
                               </div>
                             </div>
-                            <div style={{ borderRadius: 12, background: isMyComment ? 'rgba(68,86,115,0.42)' : 'rgba(255,255,255,0.035)', padding: '8px 10px', transition: 'background 120ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.5)' : 'rgba(255,255,255,0.05)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.42)' : 'rgba(255,255,255,0.035)'; }}>
+                            <div style={{ borderRadius: 10, background: isMyComment ? 'rgba(68,86,115,0.36)' : 'rgba(255,255,255,0.03)', padding: '7px 9px', transition: 'background 160ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.44)' : 'rgba(255,255,255,0.045)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.36)' : 'rgba(255,255,255,0.03)'; }}>
                               <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.42, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                 {commentBody || '…'}
                               </div>
@@ -1750,7 +1748,7 @@ export default function ChatApp() {
                       onKeyDown={(e) => e.key === 'Enter' && commentsAllowed && sendPostComment()}
                       disabled={!commentsAllowed}
                     />
-                    <button style={{ ...s.ib, flex: '0 0 auto', minWidth: 108, borderRadius: 12, padding: '10px 14px', fontSize: 14, fontWeight: 600, color: '#DCE1EA' }} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
+                    <button style={{ ...s.ib, flex: '0 0 auto', minWidth: 102, borderRadius: 11, padding: '9px 12px', fontSize: 14, fontWeight: 500, color: '#C9D0DB', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.16)', boxShadow: 'none' }} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
                   </div>
                 </>
               );
