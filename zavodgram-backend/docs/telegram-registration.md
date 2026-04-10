@@ -192,3 +192,30 @@
 - **Deep-link утёк**: короткий TTL + одноразовость + hash токена.
 - **Гонки при завершении регистрации**: транзакция + уникальные индексы + повторная валидация.
 
+
+## Автозеркало постов из публичного Telegram-канала
+
+Добавлена фоновая задача в backend, которая периодически:
+1. читает публичную страницу `https://t.me/s/<sourceSlug>`;
+2. забирает новые посты (текст + изображения/видео, если доступны публичные ссылки);
+3. публикует их в канал ZavodGram с указанным `channelSlug`;
+4. хранит прогресс (`lastImportedPostId`) в таблице `TelegramChannelMirrorState`.
+
+### Переменные окружения
+- `TELEGRAM_CHANNEL_MIRROR_ENABLED=true` — включить импорт;
+- `TELEGRAM_CHANNEL_MIRROR_SOURCE_SLUG=dvachannel` — источник в Telegram;
+- `TELEGRAM_CHANNEL_MIRROR_TARGET_SLUG=<slug_вашего_канала_в_ZavodGram>` — куда публиковать;
+- `TELEGRAM_CHANNEL_MIRROR_POLL_INTERVAL_SEC=120` — интервал опроса;
+- `TELEGRAM_CHANNEL_MIRROR_BATCH_SIZE=10` — максимум постов за один цикл.
+
+> Важно: медиа импортируются best-effort (из публичных URL Telegram). Комментарии пока не переносятся.
+
+
+### Управление несколькими источниками
+Теперь mirror поддерживает несколько правил одновременно через админку:
+- `GET /api/admin/telegram-mirrors` — список правил;
+- `POST /api/admin/telegram-mirrors` — добавить правило `sourceSlug -> targetChatId`;
+- `PATCH /api/admin/telegram-mirrors/:id` — включить/выключить или изменить правило;
+- `DELETE /api/admin/telegram-mirrors/:id` — удалить правило.
+
+Фоновый воркер проходит по всем включённым правилам (`enabled=true`) и синхронизирует каждое независимо.
