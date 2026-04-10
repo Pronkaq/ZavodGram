@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { chatsApi, messagesApi } from '../api/client';
-import { onSocket, ws, getSocket } from '../api/socket';
+import { onSocket, ws } from '../api/socket';
 import { useAuth } from './AuthContext';
 
 const ChatContext = createContext(null);
@@ -15,14 +15,12 @@ export function ChatProvider({ children }) {
   const [typingUsers, setTypingUsers] = useState({});
   const [notifications, setNotifications] = useState([]);
   const typingTimers = useRef({});
-  const activeChatRef = useRef(activeChat);
   const loadChatsTimerRef = useRef(null);
   const messagesRef = useRef(messages);
   const messageLoadMetaRef = useRef({});
   const MESSAGES_CACHE_TTL_MS = 20_000;
 
-  // Keep ref in sync
-  useEffect(() => { activeChatRef.current = activeChat; }, [activeChat]);
+  // Keep refs in sync
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   // ── Load chats ──
@@ -235,7 +233,7 @@ export function ChatProvider({ children }) {
       }),
 
       // Member added to chat
-      onSocket('chat:member_added', (data) => {
+      onSocket('chat:member_added', () => {
         scheduleLoadChats(); // Reload to get fresh member list
       }),
 
