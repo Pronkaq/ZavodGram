@@ -203,6 +203,56 @@ async function transcribeWithOpenAI(filePath: string, originalName: string, mime
   return text;
 }
 
+async function streamMediaFile(req: Request, res: Response, filePath: string, mimeType: string, originalName: string) {
+  const fileStat = await fs.stat(filePath);
+  const fileSize = fileStat.size;
+  const rangeHeader = req.headers.range;
+
+  res.setHeader('Content-Type', mimeType);
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalName)}"`);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'private, max-age=60');
+
+  if (!rangeHeader) {
+    res.setHeader('Content-Length', fileSize);
+    createReadStream(filePath).pipe(res);
+    return;
+  }
+
+  const bytesPrefix = 'bytes=';
+  if (!rangeHeader.startsWith(bytesPrefix)) {
+    res.status(416).setHeader('Content-Range', `bytes */${fileSize}`).end();
+    return;
+  }
+
+  const [startRaw, endRaw] = rangeHeader.slice(bytesPrefix.length).split('-');
+
+  let start: number;
+  let end: number;
+  if (!startRaw && endRaw) {
+    const suffixLength = Number.parseInt(endRaw, 10);
+    if (Number.isNaN(suffixLength) || suffixLength <= 0) {
+      res.status(416).setHeader('Content-Range', `bytes */${fileSize}`).end();
+      return;
+    }
+    start = Math.max(0, fileSize - suffixLength);
+    end = fileSize - 1;
+  } else {
+    start = Number.parseInt(startRaw, 10);
+    end = endRaw ? Number.parseInt(endRaw, 10) : fileSize - 1;
+  }
+
+  if (Number.isNaN(start) || Number.isNaN(end) || start < 0 || end < start || end >= fileSize) {
+    res.status(416).setHeader('Content-Range', `bytes */${fileSize}`).end();
+    return;
+  }
+
+  res.status(206);
+  res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+  res.setHeader('Content-Length', end - start + 1);
+  createReadStream(filePath, { start, end }).pipe(res);
+}
+
 router.post('/upload', authMiddleware, rateLimiter(20, 60), upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.file) throw new ValidationError('Ð¤Ð°Ð¹Ð» Ð½Ðµ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð»Ñ‘Ð½');
@@ -271,9 +321,7 @@ router.get('/:id/download', rateLimiter(120, 60), async (req: Request, res: Resp
     const relative = media.url.replace('/internal/', '');
     const filePath = path.resolve(config.upload.dir, relative);
 
-    res.setHeader('Content-Type', media.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
-    createReadStream(filePath).pipe(res);
+    await streamMediaFile(req, res, filePath, media.mimeType, media.originalName);
   } catch (err) { next(err); }
 });
 
@@ -315,9 +363,7 @@ router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, 
     const relative = media.url.replace('/internal/', '');
     const filePath = path.resolve(config.upload.dir, relative);
 
-    res.setHeader('Content-Type', media.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(media.originalName)}"`);
-    createReadStream(filePath).pipe(res);
+    await streamMediaFile(req, res, filePath, media.mimeType, media.originalName);
   } catch (err) { next(err); }
 });
 
