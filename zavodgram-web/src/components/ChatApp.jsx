@@ -1134,7 +1134,7 @@ export default function ChatApp() {
                 const isHL = searchResults[msgSearchIdx] === msg.id;
                 const postComments = getPostComments(msg);
                 const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin;
-                const postImage = (msg.media || []).find((m) => m.type === 'IMAGE');
+                const postVisual = (msg.media || []).find((m) => m.type === 'IMAGE' || m.type === 'VIDEO');
                 const postViewsRaw = msg.viewsCount ?? msg.viewCount ?? msg.views ?? msg.channelViews ?? msg._count?.views ?? 0;
                 const postViews = Number.isFinite(Number(postViewsRaw)) ? Number(postViewsRaw) : 0;
                 return (
@@ -1161,10 +1161,24 @@ export default function ChatApp() {
                         ? { background: 'linear-gradient(180deg, rgba(36,42,55,0.95), rgba(27,31,41,0.98))', border: '1px solid rgba(220,224,235,0.13)', boxShadow: '0 10px 26px rgba(0,0,0,0.25)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
-                      {isChannel && postImage && (
-                        <div style={{ maxHeight: 285, overflow: 'hidden', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
-                          <img src={mediaUrlById(postImage.id)} alt={postImage.originalName || 'Пост'} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
-                        </div>
+                      {isChannel && postVisual && (
+                        <button
+                          type="button"
+                          onClick={() => openMediaModal?.({ type: postVisual.type, src: mediaUrlById(postVisual.id), title: postVisual.originalName })}
+                          style={{ width: '100%', maxHeight: 460, border: 'none', background: '#000', padding: 0, overflow: 'hidden', display: 'block', borderBottom: '1px solid rgba(255,255,255,0.09)', cursor: 'zoom-in' }}
+                        >
+                          {postVisual.type === 'VIDEO' ? (
+                            <video
+                              src={mediaUrlById(postVisual.id)}
+                              preload="metadata"
+                              muted
+                              playsInline
+                              style={{ width: '100%', maxHeight: 460, display: 'block', objectFit: 'cover', background: '#000' }}
+                            />
+                          ) : (
+                            <img src={mediaUrlById(postVisual.id)} alt={postVisual.originalName || 'Пост'} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
+                          )}
+                        </button>
                       )}
                       <div style={{ padding: isChannel ? '12px 14px 8px' : 0 }}>
                       {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E9EBEF', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
@@ -1181,7 +1195,7 @@ export default function ChatApp() {
                         </span>
                       )}
                       <MediaAttachment
-                        media={isChannel ? (msg.media || []).filter((m) => m.id !== postImage?.id) : msg.media}
+                        media={isChannel ? (msg.media || []).filter((m) => m.id !== postVisual?.id) : msg.media}
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
