@@ -37,7 +37,7 @@ export function Av({ src, name, size = 46, radius = 12, color, online, onClick, 
   );
 }
 
-export function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {} }) {
+export function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia }) {
   if (!media || media.length === 0) return null;
   return media.map((m) => {
     if (m.type === 'AUDIO') {
@@ -55,18 +55,42 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
     }
     if (m.type === 'IMAGE') {
       return (
-        <div key={m.id} style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260 }}>
+        <button
+          key={m.id}
+          type="button"
+          onClick={() => onOpenMedia?.({ type: 'IMAGE', src: mediaUrlById(m.id), title: m.originalName })}
+          style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260, border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in', textAlign: 'left' }}
+        >
           <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
           {m.originalName && <div style={{ fontSize: 11, color: '#8E95A3', marginTop: 4 }}>{m.originalName}</div>}
-        </div>
+        </button>
       );
     }
     if (m.type === 'VIDEO') {
       return (
-        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(231,234,240,0.1)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(231,234,240,0.15)' }}>
-          <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(231,234,240,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C8CCD4', flexShrink: 0 }}><Icons.Video /></div>
-          <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#7C8392', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
-        </div>
+        <button
+          key={m.id}
+          type="button"
+          onClick={() => onOpenMedia?.({ type: 'VIDEO', src: mediaUrlById(m.id), title: m.originalName })}
+          style={{ marginBottom: 8, border: '1px solid rgba(231,234,240,0.2)', borderRadius: 12, background: 'rgba(20,23,31,0.55)', width: 'min(100%, 360px)', padding: 0, overflow: 'hidden', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <div style={{ position: 'relative', background: 'rgba(10,12,18,0.85)' }}>
+            <video
+              src={mediaUrlById(m.id)}
+              preload="metadata"
+              muted
+              playsInline
+              style={{ width: '100%', maxHeight: 260, display: 'block', objectFit: 'cover', background: '#0D1017' }}
+            />
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+              <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, border: '1px solid rgba(255,255,255,0.3)' }}>▶</div>
+            </div>
+          </div>
+          <div style={{ padding: '8px 10px' }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: '#E8ECF4' }}>{m.originalName || 'Видео'}</div>
+            <div style={{ fontSize: 11, color: '#93A0B7', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div>
+          </div>
+        </button>
       );
     }
     return (
