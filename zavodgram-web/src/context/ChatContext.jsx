@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { chatsApi, messagesApi } from '../api/client';
-import { onSocket, ws, getSocket } from '../api/socket';
+import { onSocket, ws } from '../api/socket';
 import { useAuth } from './AuthContext';
 
 const ChatContext = createContext(null);
@@ -15,10 +15,13 @@ export function ChatProvider({ children }) {
   const [typingUsers, setTypingUsers] = useState({});
   const [notifications, setNotifications] = useState([]);
   const typingTimers = useRef({});
-  const activeChatRef = useRef(activeChat);
+  const loadChatsTimerRef = useRef(null);
+  const messagesRef = useRef(messages);
+  const messageLoadMetaRef = useRef({});
+  const MESSAGES_CACHE_TTL_MS = 20_000;
 
-  // Keep ref in sync
-  useEffect(() => { activeChatRef.current = activeChat; }, [activeChat]);
+  // Keep refs in sync
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   // ── Load chats ──
   const loadChats = useCallback(async () => {
@@ -31,17 +34,57 @@ export function ChatProvider({ children }) {
     }
   }, [user]);
 
+  const scheduleLoadChats = useCallback((delayMs = 300) => {
+    clearTimeout(loadChatsTimerRef.current);
+    loadChatsTimerRef.current = setTimeout(() => {
+      loadChats();
+    }, delayMs);
+  }, [loadChats]);
+
   useEffect(() => { loadChats(); }, [loadChats]);
+  useEffect(() => () => clearTimeout(loadChatsTimerRef.current), []);
 
   // ── Load messages for a chat ──
-  const loadMessages = useCallback(async (chatId, topicId) => {
-    try {
-      const data = await messagesApi.list(chatId, undefined, topicId);
-      setMessages((prev) => ({ ...prev, [topicKey(chatId, topicId)]: data.messages }));
-      return data;
-    } catch (e) {
-      console.error('Failed to load messages', e);
+  const loadMessages = useCallback(async (chatId, topicId, options = {}) => {
+    const key = topicKey(chatId, topicId);
+    const now = Date.now();
+    const force = options?.force === true;
+    const meta = messageLoadMetaRef.current[key];
+    const cachedMessages = messagesRef.current[key];
+
+    if (!force && meta?.loadedAt && (now - meta.loadedAt) < MESSAGES_CACHE_TTL_MS && Array.isArray(cachedMessages)) {
+      return {
+        messages: cachedMessages,
+        hasMore: meta.hasMore ?? false,
+        nextCursor: meta.nextCursor ?? null,
+        cached: true,
+      };
     }
+
+    if (!force && meta?.pending) return meta.pending;
+
+    const pending = messagesApi.list(chatId, undefined, topicId)
+      .then((data) => {
+        setMessages((prev) => ({ ...prev, [key]: data.messages }));
+        messageLoadMetaRef.current[key] = {
+          loadedAt: Date.now(),
+          hasMore: data.hasMore,
+          nextCursor: data.nextCursor,
+        };
+        return data;
+      })
+      .catch((e) => {
+        console.error('Failed to load messages', e);
+        throw e;
+      })
+      .finally(() => {
+        if (messageLoadMetaRef.current[key]?.pending === pending) {
+          delete messageLoadMetaRef.current[key].pending;
+        }
+      });
+
+    messageLoadMetaRef.current[key] = { ...(meta || {}), pending };
+    return pending;
   }, []);
 
   // ── WebSocket listeners ──
@@ -71,7 +114,7 @@ export function ChatProvider({ children }) {
           const idx = prev.findIndex((c) => c.id === chatId);
           if (idx === -1) {
             // New chat we don't have yet — reload chat list
-            loadChats();
+            scheduleLoadChats(100);
             return prev;
           }
           const updated = [...prev];
@@ -190,8 +233,8 @@ export function ChatProvider({ children }) {
       }),
 
       // Member added to chat
-      onSocket('chat:member_added', (data) => {
-        loadChats(); // Reload to get fresh member list
+      onSocket('chat:member_added', () => {
+        scheduleLoadChats(); // Reload to get fresh member list
       }),
 
       // Member removed from chat
@@ -201,7 +244,7 @@ export function ChatProvider({ children }) {
           setChats((prev) => prev.filter((c) => c.id !== chatId));
           if (activeChat === chatId) setActiveChat(null);
         } else {
-          loadChats();
+          scheduleLoadChats();
         }
       }),
 
@@ -215,7 +258,7 @@ export function ChatProvider({ children }) {
     ];
 
     return () => cleanups.forEach((c) => c());
-  }, [user, loadChats, loadMessages]);
+  }, [user, loadMessages, scheduleLoadChats]);
 
   // ── Actions ──
   const sendMessage = useCallback((chatId, text, replyToId, forwardedFromId, options = {}) => {
@@ -261,7 +304,7 @@ export function ChatProvider({ children }) {
         });
       }, 500);
     }
-  }, [messages, loadMessages, markRead]);
+  }, [markRead]);
 
   return (
     <ChatContext.Provider value={{
