@@ -7,6 +7,7 @@ import { rateLimiter } from '../../middleware/errorHandler';
 import { ensureUuidArray, requireChatMembership, requireMessageInChat } from '../../core/security';
 
 const router = Router();
+const messagesViewSchema = z.enum(['lite', 'full']).default('full');
 
 async function resolveRootPost(chatId: string, messageId: string) {
   let current = await requireMessageInChat(prisma, messageId, chatId);
@@ -23,6 +24,7 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
     const cursor = req.query.cursor as string | undefined;
     const topicId = req.query.topicId as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const view = messagesViewSchema.parse((req.query.view as string | undefined) || 'full');
 
     await requireChatMembership(prisma, chatId, req.user!.userId);
     const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
@@ -35,27 +37,60 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
       if (!topic) throw new NotFoundError('Тема');
     }
 
-    const messages = await prisma.message.findMany({
+    const baseQuery = {
       where: { chatId, deleted: false, ...(topicId ? { topicId } : {}) },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'desc' as const },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      include: {
-        from: { select: { id: true, name: true, tag: true, avatar: true } },
-        replyTo: {
+    };
+
+    const messages = view === 'lite'
+      ? await prisma.message.findMany({
+          ...baseQuery,
           select: {
-            id: true, text: true, fromId: true,
-            from: { select: { id: true, name: true } },
+            id: true,
+            chatId: true,
+            topicId: true,
+            fromId: true,
+            text: true,
+            status: true,
+            edited: true,
+            deleted: true,
+            encrypted: true,
+            commentsEnabled: true,
+            replyToId: true,
+            forwardedFromId: true,
+            forwardedFromName: true,
+            createdAt: true,
+            updatedAt: true,
+            from: { select: { id: true, name: true, tag: true, avatar: true } },
+            replyTo: {
+              select: {
+                id: true, text: true, fromId: true,
+                from: { select: { id: true, name: true } },
+              },
+            },
+            _count: { select: { media: true, reactions: true } },
           },
-        },
-        media: {
-          select: { id: true, type: true, originalName: true, mimeType: true, size: true, thumbnail: true, width: true, height: true },
-        },
-        reactions: {
-          select: { emoji: true, userId: true },
-        },
-      },
-    });
+        })
+      : await prisma.message.findMany({
+          ...baseQuery,
+          include: {
+            from: { select: { id: true, name: true, tag: true, avatar: true } },
+            replyTo: {
+              select: {
+                id: true, text: true, fromId: true,
+                from: { select: { id: true, name: true } },
+              },
+            },
+            media: {
+              select: { id: true, type: true, originalName: true, mimeType: true, size: true, thumbnail: true, width: true, height: true },
+            },
+            reactions: {
+              select: { emoji: true, userId: true },
+            },
+          },
+        });
 
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
