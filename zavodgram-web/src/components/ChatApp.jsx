@@ -1162,23 +1162,38 @@ export default function ChatApp() {
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
                       {isChannel && postVisual && (
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => openMediaModal?.({ type: postVisual.type, src: mediaUrlById(postVisual.id), title: postVisual.originalName })}
-                          style={{ width: '100%', maxHeight: 460, border: 'none', background: '#000', padding: 0, overflow: 'hidden', display: 'block', borderBottom: '1px solid rgba(255,255,255,0.09)', cursor: 'zoom-in' }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              openMediaModal?.({ type: postVisual.type, src: mediaUrlById(postVisual.id), title: postVisual.originalName });
+                            }
+                          }}
+                          style={{ width: '100%', maxHeight: 460, background: '#000', padding: 0, overflow: 'hidden', display: 'block', borderBottom: '1px solid rgba(255,255,255,0.09)', cursor: 'zoom-in', position: 'relative' }}
                         >
                           {postVisual.type === 'VIDEO' ? (
-                            <video
-                              src={mediaUrlById(postVisual.id)}
-                              preload="metadata"
-                              muted
-                              playsInline
-                              style={{ width: '100%', maxHeight: 460, display: 'block', objectFit: 'cover', background: '#000' }}
-                            />
+                            <>
+                              <video
+                                src={mediaUrlById(postVisual.id)}
+                                preload="auto"
+                                muted
+                                autoPlay
+                                loop
+                                playsInline
+                                style={{ width: '100%', maxHeight: 460, display: 'block', objectFit: 'cover', background: '#000' }}
+                              />
+                              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.2))', pointerEvents: 'none' }} />
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(0,0,0,0.42)', border: '1px solid rgba(255,255,255,0.34)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, paddingLeft: 3 }}>▶</div>
+                              </div>
+                            </>
                           ) : (
                             <img src={mediaUrlById(postVisual.id)} alt={postVisual.originalName || 'Пост'} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
                           )}
-                        </button>
+                        </div>
                       )}
                       <div style={{ padding: isChannel ? '12px 14px 8px' : 0 }}>
                       {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E9EBEF', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
