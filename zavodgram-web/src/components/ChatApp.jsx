@@ -38,6 +38,8 @@ export default function ChatApp() {
   const [msgSearchIdx, setMsgSearchIdx] = useState(-1);
   const [notifPanel, setNotifPanel] = useState(false);
   const [attachMenu, setAttachMenu] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState([]);
+  const [mediaComposerMenu, setMediaComposerMenu] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState('');
   const [newChatResults, setNewChatResults] = useState([]);
   const [settingsMode, setSettingsMode] = useState(false);
@@ -93,6 +95,7 @@ export default function ChatApp() {
   const composerRef = useRef(null);
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
+  const mediaExtraRef = useRef(null);
   const handledSlugRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -275,26 +278,59 @@ export default function ChatApp() {
   }, [activeChat, acd, activeTopicId, startTyping, user.id]);
 
   // ── Handlers ──
-  const handleSend = () => {
+  const enqueuePendingMedia = useCallback((fileList) => {
+    const files = Array.from(fileList || []).filter((f) => f instanceof File);
+    if (!files.length) return;
+    setPendingMedia((prev) => ([
+      ...prev,
+      ...files.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        file,
+        spoiler: false,
+        previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/') ? URL.createObjectURL(file) : '',
+      })),
+    ]));
+  }, []);
+
+  const handleSend = async () => {
     const text = sanitizeRichHtml(input);
     const plainText = richTextToPlain(text);
-    if (!plainText || !activeChat) return;
+    if (!plainText && pendingMedia.length === 0) return;
+    if (!activeChat) return;
     if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    if (editingMsg) { editMessage(activeChat, editingMsg.id, text); setEditingMsg(null); }
-    else {
+    if (editingMsg) {
+      editMessage(activeChat, editingMsg.id, text);
+      setEditingMsg(null);
+    } else {
       const options = {
         ...((acd?.type === 'CHANNEL' && !replyTo) ? { commentsEnabled: channelPostCommentsEnabled } : {}),
         ...((acd?.type === 'GROUP' && acd?.topicsEnabled) ? { topicId: activeTopicId } : {}),
       };
-      sendMessage(activeChat, text, replyTo?.id, null, options);
+      let mediaIds = [];
+      if (pendingMedia.length > 0) {
+        const uploaded = await Promise.all(pendingMedia.map(async (item) => mediaApi.upload(item.file)));
+        mediaIds = uploaded.map((item) => item.id);
+      }
+      if (mediaIds.length > 0) {
+        await messagesApi.send(activeChat, { text: plainText ? text : undefined, mediaIds, replyToId: replyTo?.id, ...options });
+        await loadMessages(activeChat, acd?.type === 'GROUP' && acd?.topicsEnabled ? activeTopicId : undefined);
+        await loadChats();
+      } else {
+        sendMessage(activeChat, text, replyTo?.id, null, options);
+      }
       setReplyTo(null);
       if (acd?.type === 'CHANNEL') setChannelPostCommentsEnabled(true);
     }
     setInput('');
     if (composerRef.current) composerRef.current.innerHTML = '';
     setComposerToolbar(null);
+    pendingMedia.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    setPendingMedia([]);
+    setMediaComposerMenu(false);
   };
 
   const handleTyping = () => {
@@ -307,20 +343,42 @@ export default function ChatApp() {
     typingTimer.current = setTimeout(() => {}, 3000);
   };
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
+  const handleFileUpload = (e) => {
+    const files = e.target.files;
+    if (!files?.length || !activeChat) return;
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    try {
-      const media = await mediaApi.upload(file);
-      await messagesApi.send(activeChat, { mediaIds: [media.id], ...(acd?.type === 'GROUP' && acd?.topicsEnabled ? { topicId: activeTopicId } : {}) });
-      await loadMessages(activeChat, acd?.type === 'GROUP' && acd?.topicsEnabled ? activeTopicId : undefined);
-      await loadChats();
-    } catch (err) { console.error('Upload failed', err); }
+    enqueuePendingMedia(files);
     e.target.value = '';
     setAttachMenu(false);
   };
+
+  const handleComposerPaste = useCallback((e) => {
+    const files = Array.from(e.clipboardData?.items || [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (!files.length) return;
+    e.preventDefault();
+    enqueuePendingMedia(files);
+  }, [enqueuePendingMedia]);
+
+  const removePendingMedia = useCallback((id) => {
+    setPendingMedia((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((item) => item.id !== id);
+    });
+  }, []);
+
+  const togglePendingSpoiler = useCallback(() => {
+    setPendingMedia((prev) => {
+      if (!prev.length) return prev;
+      const next = [...prev];
+      next[0] = { ...next[0], spoiler: !next[0].spoiler };
+      return next;
+    });
+  }, []);
 
   const handleVoiceRecordToggle = async () => {
     if (!activeChat) return;
@@ -911,7 +969,7 @@ export default function ChatApp() {
   }, [activeChat, deleteMessage, loadChats]);
 
   return (
-    <div className="zg-root" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
+    <div className="zg-root" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setMediaComposerMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
 
       {/* ── Toasts ── */}
       <ChatToasts
@@ -1300,6 +1358,40 @@ export default function ChatApp() {
                     {voiceRecorderState.error || `Идёт запись голосового${voiceRecorderState.startedAt ? ` · ${Math.floor((recordingNowTs - voiceRecorderState.startedAt) / 1000)}с` : ''}`}
                   </div>
                 )}
+                {pendingMedia.length > 0 && (
+                  <div style={{ borderRadius: 16, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(17,20,27,0.92)', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      <button type="button" style={{ ...s.ib, width: 28, height: 28 }} onClick={() => { pendingMedia.forEach((item) => item.previewUrl && URL.revokeObjectURL(item.previewUrl)); setPendingMedia([]); setMediaComposerMenu(false); }}><Icons.Close /></button>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#EEF1F7' }}>Отправить {pendingMedia.length} фото</div>
+                      <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                        <button type="button" style={{ ...s.ib, width: 30, height: 30 }} onClick={() => setMediaComposerMenu((prev) => !prev)}>⋮</button>
+                        {mediaComposerMenu && (
+                          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, width: 220, background: '#2B303A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 6, zIndex: 70 }}>
+                            <label style={s.mi}><Icons.Plus /> Добавить<input ref={mediaExtraRef} type="file" accept="image/*,video/*" multiple onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                            <button type="button" style={{ ...s.mi, width: '100%', background: 'transparent' }} onClick={() => setMediaComposerMenu(false)}><Icons.File /> Отправить без сжатия</button>
+                            <button type="button" style={{ ...s.mi, width: '100%', background: 'transparent' }} onClick={togglePendingSpoiler}><Icons.Image /> {pendingMedia[0]?.spoiler ? 'Убрать спойлер' : 'Скрыть под спойлер'}</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ padding: 12, display: 'flex', gap: 8, overflowX: 'auto' }}>
+                      {pendingMedia.map((item) => (
+                        <div key={item.id} style={{ position: 'relative', width: 148, height: 110, borderRadius: 10, overflow: 'hidden', background: 'rgba(255,255,255,0.06)', flex: '0 0 auto' }}>
+                          {item.previewUrl ? (
+                            item.file.type.startsWith('video/') ? (
+                              <video src={item.previewUrl} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', filter: item.spoiler ? 'blur(12px)' : 'none' }} />
+                            ) : (
+                              <img src={item.previewUrl} alt={item.file.name} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: item.spoiler ? 'blur(12px)' : 'none' }} />
+                            )
+                          ) : (
+                            <div style={{ padding: 10, fontSize: 12, color: '#D5D9E1' }}>{item.file.name}</div>
+                          )}
+                          <button type="button" style={{ ...s.ib, position: 'absolute', top: 6, right: 6, width: 24, height: 24, background: 'rgba(9,10,14,0.72)' }} onClick={() => removePendingMedia(item.id)}><Icons.Close size={13} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderRadius: 16, background: 'rgba(15,18,25,0.84)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)' }}>
                   {canPublishInChannel && canSendInTopicGroup ? (
                     <>
@@ -1307,8 +1399,8 @@ export default function ChatApp() {
                         <button style={s.ib} onClick={e => { e.stopPropagation(); setAttachMenu(!attachMenu); }}><Icons.Attach /></button>
                         {attachMenu && (
                           <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 4, zIndex: 50, minWidth: 150, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-                            <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
-                            <label style={s.mi}><Icons.File /> Файл<input type="file" onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                            <label style={s.mi}><Icons.Image /> Фото/Видео<input type="file" accept="image/*,video/*" multiple onChange={handleFileUpload} style={{ display: 'none' }} /></label>
+                            <label style={s.mi}><Icons.File /> Файл<input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} /></label>
                           </div>
                         )}
                       </div>
@@ -1331,6 +1423,7 @@ export default function ChatApp() {
                           data-placeholder={isChannel ? 'Опубликовать сообщение...' : isTopicGroup ? 'Сообщение в тему...' : 'Сообщение...'}
                           style={{ ...s.inp2, minHeight: 40, maxHeight: 140, overflowY: 'auto', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: 'none', padding: '10px 12px', lineHeight: 1.42, fontSize: 15, color: '#E9EDF5', fontWeight: 400 }}
                           onInput={syncComposerInput}
+                          onPaste={handleComposerPaste}
                           onFocus={refreshComposerSelection}
                           onBlur={() => setTimeout(() => setComposerToolbar(null), 120)}
                           onMouseUp={refreshComposerSelection}
@@ -1373,7 +1466,7 @@ export default function ChatApp() {
                       >
                         <Icons.Mic />
                       </button>
-                      <button style={{ ...s.sendBtn, opacity: richTextToPlain(input) ? 1 : 0.3 }} onClick={handleSend} disabled={!richTextToPlain(input)}><Icons.Send /></button>
+                      <button style={{ ...s.sendBtn, opacity: (richTextToPlain(input) || pendingMedia.length > 0) ? 1 : 0.3 }} onClick={handleSend} disabled={!richTextToPlain(input) && pendingMedia.length === 0}><Icons.Send /></button>
                     </>
                   ) : (
                     <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#9CA3B1', fontSize: 13 }}>
