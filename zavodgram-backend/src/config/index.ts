@@ -29,6 +29,11 @@ export const config = {
     botUsername: process.env.TELEGRAM_BOT_USERNAME || '',
     internalToken: process.env.TELEGRAM_INTERNAL_TOKEN || '',
     verificationTtlMinutes: parseInt(process.env.TELEGRAM_VERIFICATION_TTL_MINUTES || '15'),
+    channelMirrorEnabled: (process.env.TELEGRAM_CHANNEL_MIRROR_ENABLED || 'false').toLowerCase() === 'true',
+    channelMirrorSourceSlug: process.env.TELEGRAM_CHANNEL_MIRROR_SOURCE_SLUG || 'dvachannel',
+    channelMirrorTargetSlug: process.env.TELEGRAM_CHANNEL_MIRROR_TARGET_SLUG || '',
+    channelMirrorPollIntervalSec: parseInt(process.env.TELEGRAM_CHANNEL_MIRROR_POLL_INTERVAL_SEC || '120'),
+    channelMirrorBatchSize: parseInt(process.env.TELEGRAM_CHANNEL_MIRROR_BATCH_SIZE || '10'),
   },
 
   encryption: {
