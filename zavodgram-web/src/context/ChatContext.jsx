@@ -12,16 +12,19 @@ export function ChatProvider({ children }) {
   const [chats, setChats] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [messages, setMessages] = useState({});
+  const [messagePaging, setMessagePaging] = useState({});
   const [typingUsers, setTypingUsers] = useState({});
   const [notifications, setNotifications] = useState([]);
   const typingTimers = useRef({});
   const loadChatsTimerRef = useRef(null);
   const messagesRef = useRef(messages);
+  const messagePagingRef = useRef(messagePaging);
   const messageLoadMetaRef = useRef({});
   const MESSAGES_CACHE_TTL_MS = 20_000;
 
   // Keep refs in sync
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { messagePagingRef.current = messagePaging; }, [messagePaging]);
 
   // ── Load chats ──
   const loadChats = useCallback(async () => {
@@ -66,6 +69,14 @@ export function ChatProvider({ children }) {
     const pending = messagesApi.list(chatId, undefined, topicId)
       .then((data) => {
         setMessages((prev) => ({ ...prev, [key]: data.messages }));
+        setMessagePaging((prev) => ({
+          ...prev,
+          [key]: {
+            hasMore: !!data.hasMore,
+            nextCursor: data.nextCursor || null,
+            loadingMore: false,
+          },
+        }));
         messageLoadMetaRef.current[key] = {
           loadedAt: Date.now(),
           hasMore: data.hasMore,
@@ -85,6 +96,61 @@ export function ChatProvider({ children }) {
 
     messageLoadMetaRef.current[key] = { ...(meta || {}), pending };
     return pending;
+  }, []);
+
+  const loadMoreMessages = useCallback(async (chatId, topicId) => {
+    const key = topicKey(chatId, topicId);
+    const paging = messagePagingRef.current[key];
+    if (!paging?.hasMore || !paging?.nextCursor || paging?.loadingMore) return null;
+
+    const meta = messageLoadMetaRef.current[key];
+    if (meta?.pendingMore) return meta.pendingMore;
+
+    setMessagePaging((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), loadingMore: true },
+    }));
+
+    const pendingMore = messagesApi.list(chatId, paging.nextCursor, topicId)
+      .then((data) => {
+        setMessages((prev) => {
+          const existing = prev[key] || [];
+          const knownIds = new Set(existing.map((m) => m.id));
+          const older = (data.messages || []).filter((m) => !knownIds.has(m.id));
+          return { ...prev, [key]: [...older, ...existing] };
+        });
+        setMessagePaging((prev) => ({
+          ...prev,
+          [key]: {
+            hasMore: !!data.hasMore,
+            nextCursor: data.nextCursor || null,
+            loadingMore: false,
+          },
+        }));
+        messageLoadMetaRef.current[key] = {
+          ...(messageLoadMetaRef.current[key] || {}),
+          loadedAt: Date.now(),
+          hasMore: data.hasMore,
+          nextCursor: data.nextCursor,
+        };
+        return data;
+      })
+      .catch((e) => {
+        setMessagePaging((prev) => ({
+          ...prev,
+          [key]: { ...(prev[key] || {}), loadingMore: false },
+        }));
+        console.error('Failed to load older messages', e);
+        throw e;
+      })
+      .finally(() => {
+        if (messageLoadMetaRef.current[key]?.pendingMore === pendingMore) {
+          delete messageLoadMetaRef.current[key].pendingMore;
+        }
+      });
+
+    messageLoadMetaRef.current[key] = { ...(meta || {}), pendingMore };
+    return pendingMore;
   }, []);
 
   // ── WebSocket listeners ──
@@ -309,8 +375,9 @@ export function ChatProvider({ children }) {
   return (
     <ChatContext.Provider value={{
       chats, activeChat, messages, typingUsers, notifications,
+      messagePaging,
       setChats, setNotifications,
-      loadChats, loadMessages, selectChat,
+      loadChats, loadMessages, loadMoreMessages, selectChat,
       sendMessage, editMessage, deleteMessage, markRead, startTyping,
     }}>
       {children}
