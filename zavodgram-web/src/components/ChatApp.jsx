@@ -190,7 +190,7 @@ function VoiceAttachment({ mediaItem, onTranscribe, transcriptions = {}, transcr
 
 export default function ChatApp() {
   const { user, logout, updateUser } = useAuth();
-  const { chats, activeChat, messages, typingUsers, notifications, setNotifications, loadChats, loadMessages, selectChat, sendMessage, editMessage, deleteMessage, startTyping } = useChat();
+  const { chats, activeChat, messages, typingUsers, notifications, setNotifications, loadChats, loadMessages, loadMoreMessages, messagePaging, selectChat, sendMessage, editMessage, deleteMessage, startTyping } = useChat();
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
@@ -253,6 +253,7 @@ export default function ChatApp() {
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [topicError, setTopicError] = useState('');
   const endRef = useRef(null);
+  const messagesScrollRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
@@ -264,6 +265,7 @@ export default function ChatApp() {
   const acd = chats.find((c) => c.id === activeChat);
   const topicMessageKey = activeTopicId ? `${activeChat}::${activeTopicId}` : activeChat;
   const cms = messages[topicMessageKey] || [];
+  const paging = messagePaging[topicMessageKey] || { hasMore: false, loadingMore: false };
 
   const filteredChats = useMemo(() => chats.filter((c) => {
     if (!search) return true;
@@ -336,6 +338,14 @@ export default function ChatApp() {
     const timer = setInterval(() => setRecordingNowTs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [voiceRecording]);
+
+  const onMessagesScroll = useCallback((e) => {
+    if (!activeChat || paging.loadingMore || !paging.hasMore) return;
+    const el = e.currentTarget;
+    if (el.scrollTop > 120) return;
+    const topicId = (acd?.type === 'GROUP' && acd?.topicsEnabled) ? activeTopicId : undefined;
+    loadMoreMessages(activeChat, topicId);
+  }, [activeChat, paging.loadingMore, paging.hasMore, acd?.type, acd?.topicsEnabled, activeTopicId, loadMoreMessages]);
 
   // ── Handlers ──
   const handleSend = () => {
@@ -1095,8 +1105,13 @@ export default function ChatApp() {
             {topicError && <div style={{ padding: '0 14px 8px', color: '#D5D8DE', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+            <div ref={messagesScrollRef} onScroll={onMessagesScroll} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
               <div style={{ ...s.chatInner, display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
+                {paging.loadingMore && (
+                  <div style={{ alignSelf: 'center', fontSize: 12, color: '#8E95A3', padding: '4px 0 8px' }}>
+                    Загружаем историю…
+                  </div>
+                )}
                 {(isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};

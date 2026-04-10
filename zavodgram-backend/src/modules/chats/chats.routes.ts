@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../../core/database';
 import { authMiddleware } from '../../middleware/auth';
@@ -87,15 +88,34 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
       orderBy: { updatedAt: 'desc' },
     });
 
-    const chatsWithUnread = await Promise.all(
-      chats.map(async (chat) => {
-        const myMembership = chat.members.find((m) => m.userId === userId);
-        const unreadCount = myMembership
-          ? await prisma.message.count({ where: { chatId: chat.id, createdAt: { gt: myMembership.lastRead }, fromId: { not: userId }, deleted: false } })
-          : 0;
-        return { ...chat, unreadCount, muted: myMembership?.muted || false, myRole: myMembership?.role || 'MEMBER', myCommentsMuted: myMembership?.commentsMuted || false };
-      })
-    );
+    const chatIds = chats.map((chat) => chat.id);
+    const unreadRows = chatIds.length > 0
+      ? await prisma.$queryRaw<Array<{ chatId: string; unreadCount: bigint }>>(Prisma.sql`
+          SELECT cm."chatId", COUNT(m.id)::bigint AS "unreadCount"
+          FROM "ChatMember" cm
+          LEFT JOIN "Message" m
+            ON m."chatId" = cm."chatId"
+           AND m."deleted" = false
+           AND m."fromId" <> ${userId}
+           AND m."createdAt" > cm."lastRead"
+          WHERE cm."userId" = ${userId}
+            AND cm."chatId" IN (${Prisma.join(chatIds)})
+          GROUP BY cm."chatId"
+        `)
+      : [];
+
+    const unreadMap = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount)]));
+    const chatsWithUnread = chats.map((chat) => {
+      const myMembership = chat.members.find((m) => m.userId === userId);
+      return {
+        ...chat,
+        unreadCount: unreadMap.get(chat.id) ?? 0,
+        muted: myMembership?.muted || false,
+        myRole: myMembership?.role || 'MEMBER',
+        myCommentsMuted: myMembership?.commentsMuted || false,
+      };
+    });
+
     res.json({ ok: true, data: chatsWithUnread });
   } catch (err) { next(err); }
 });
