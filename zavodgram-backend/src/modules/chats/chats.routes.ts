@@ -86,15 +86,6 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         name: true,
         avatar: true,
         updatedAt: true,
-        members: {
-          select: {
-            userId: true,
-            role: true,
-            muted: true,
-            commentsMuted: true,
-            user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } },
-          },
-        },
         messages: {
           where: { deleted: false },
           orderBy: { createdAt: 'desc' },
@@ -106,6 +97,25 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
     });
 
     const chatIds = chats.map((chat) => chat.id);
+    const privateChatIds = chats.filter((chat) => chat.type === 'PRIVATE' || chat.type === 'SECRET').map((chat) => chat.id);
+    const [myMemberships, peers] = await Promise.all([
+      chatIds.length > 0
+        ? prisma.chatMember.findMany({
+            where: { userId, chatId: { in: chatIds } },
+            select: { chatId: true, muted: true, role: true, commentsMuted: true },
+          })
+        : Promise.resolve([]),
+      privateChatIds.length > 0
+        ? prisma.chatMember.findMany({
+            where: { chatId: { in: privateChatIds }, userId: { not: userId } },
+            select: {
+              chatId: true,
+              user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
     const unreadRows = chatIds.length > 0
       ? await prisma.$queryRaw<Array<{ chatId: string; unreadCount: bigint }>>(Prisma.sql`
           SELECT cm."chatId", COUNT(m.id)::bigint AS "unreadCount"
@@ -122,11 +132,11 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
       : [];
 
     const unreadMap = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount)]));
+    const membershipMap = new Map(myMemberships.map((m) => [m.chatId, m]));
+    const peerMap = new Map(peers.map((p) => [p.chatId, p.user]));
     const chatsWithUnread = chats.map((chat) => {
-      const myMembership = chat.members.find((m) => m.userId === userId);
-      const peer = (chat.type === 'PRIVATE' || chat.type === 'SECRET')
-        ? chat.members.find((m) => m.userId !== userId)?.user || null
-        : null;
+      const myMembership = membershipMap.get(chat.id);
+      const peer = (chat.type === 'PRIVATE' || chat.type === 'SECRET') ? (peerMap.get(chat.id) || null) : null;
       const lastMessage = chat.messages[0];
       const hasMedia = (lastMessage?.media?.length || 0) > 0;
       return {
