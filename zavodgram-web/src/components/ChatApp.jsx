@@ -7,6 +7,7 @@ import { ws } from '../api/socket';
 import { Icons, typeColors } from './Icons';
 import { ChatToasts } from './ChatToasts';
 import { ChatSidebar } from './ChatSidebar';
+import { ChatListPanel } from './ChatListPanel';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
@@ -927,44 +928,29 @@ export default function ChatApp() {
       />
 
       {/* ── Chat List ── */}
-      <div style={s.cl} className="zg-chatlist">
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 12px', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <button style={s.ib} onClick={e => { e.stopPropagation(); setNotifPanel(false); setSidebarOpen(true); }}><Icons.Menu /></button>
-          <h1 style={s.title}>ZavodGram</h1>
-          <button style={s.ib} onClick={e => { e.stopPropagation(); notifPanel ? setNotifPanel(false) : openNotificationsPanel(); }}><Icons.Bell /></button>
-          <button style={s.ib} onClick={() => setNewChatModal(true)}><Icons.Plus /></button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 10, color: '#686F7F' }}>
-          <Icons.Search /><input style={s.si} placeholder="Поиск чатов..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filteredChats.map(c => {
-            const name = getChatName(c, user.id);
-            const other = getOtherUser(c, user.id);
-            const on = isOnline(c, user.id);
-            return (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(255,255,255,0.1)', borderLeft: '3px solid #E9EBEF' } : {}) }}
-                onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
-                <Av src={getAvatarSourceForChat(c)} name={name} color={tc[c.type]} online={on} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {c.type === 'SECRET' && <Icons.Lock />}{c.type === 'GROUP' && <Icons.Group />}{c.type === 'CHANNEL' && <Icons.Channel />}
-                      {c.muted && <Icons.BellOff size={12} />} {name}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#686F7F', flexShrink: 0, fontFamily: 'mono' }}>{formatTime(c.messages?.[0]?.createdAt || c.updatedAt)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: '#7C8392', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getLastMessage(c)}</span>
-                    {c.unreadCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', padding: '2px 7px', borderRadius: 10, background: c.muted ? '#686F7F' : tc[c.type], fontFamily: 'mono' }}>{c.unreadCount}</span>}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          {filteredChats.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: '#686F7F', fontSize: 14 }}>Нет чатов</div>}
-        </div>
-      </div>
+      <ChatListPanel
+        styles={s}
+        search={search}
+        onSearchChange={setSearch}
+        onOpenSidebar={(e) => {
+          e.stopPropagation();
+          setNotifPanel(false);
+          setSidebarOpen(true);
+        }}
+        onToggleNotifications={(e) => {
+          e.stopPropagation();
+          notifPanel ? setNotifPanel(false) : openNotificationsPanel();
+        }}
+        onOpenNewChat={() => setNewChatModal(true)}
+        filteredChats={filteredChats}
+        userId={user.id}
+        activeChat={activeChat}
+        onSelectChat={(chatId) => {
+          selectChat(chatId);
+          setShowMobileChat(true);
+        }}
+        getAvatarSourceForChat={getAvatarSourceForChat}
+      />
 
       {/* ── Chat Area ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(16,19,25,0.86)', backdropFilter: 'blur(24px)' }} className="zg-chatarea">
