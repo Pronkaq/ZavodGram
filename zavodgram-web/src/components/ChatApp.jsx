@@ -259,7 +259,6 @@ export default function ChatApp() {
   const [settingsMode, setSettingsMode] = useState(false);
   const [settingsSubpage, setSettingsSubpage] = useState(null);
   const [tagEdit, setTagEdit] = useState('');
-  const [tagError, setTagError] = useState('');
   const [nameEdit, setNameEdit] = useState('');
   const [bioEdit, setBioEdit] = useState('');
   const [settingsSaveState, setSettingsSaveState] = useState({ loading: false, error: '', ok: '' });
@@ -701,26 +700,20 @@ export default function ChatApp() {
     try { await chatsApi.mute(chatId, !chat?.muted); loadChats(); } catch {}
   };
 
-  const saveTag = async () => {
-    const t = tagEdit.startsWith('@') ? tagEdit : '@' + tagEdit;
-    try {
-      await usersApi.updateTag(t);
-      updateUser({ tag: t });
-      setProfileData((prev) => (prev ? { ...prev, tag: t } : prev));
-      setTagError('');
-    } catch (e) { setTagError(e.message); }
-  };
-
-  const saveProfileField = async (field, value) => {
-    if (!value?.trim()) {
-      setSettingsSaveState({ loading: false, error: 'Поле не может быть пустым', ok: '' });
+  const saveProfileCard = async () => {
+    const cleanName = nameEdit?.trim();
+    const cleanBio = bioEdit?.trim();
+    const cleanTag = (tagEdit?.trim() || user.tag || '').replace(/^@?/, '@');
+    if (!cleanName) {
+      setSettingsSaveState({ loading: false, error: 'Имя не может быть пустым', ok: '' });
       return;
     }
     setSettingsSaveState({ loading: true, error: '', ok: '' });
     try {
-      await usersApi.update({ [field]: value.trim() });
-      updateUser({ [field]: value.trim() });
-      setProfileData((prev) => (prev ? { ...prev, [field]: value.trim() } : prev));
+      await usersApi.update({ name: cleanName, bio: cleanBio });
+      if (cleanTag && cleanTag !== user.tag) await usersApi.updateTag(cleanTag);
+      updateUser({ name: cleanName, bio: cleanBio, tag: cleanTag });
+      setProfileData((prev) => (prev ? { ...prev, name: cleanName, bio: cleanBio, tag: cleanTag } : prev));
       setSettingsSaveState({ loading: false, error: '', ok: 'Сохранено' });
     } catch (err) {
       setSettingsSaveState({ loading: false, error: err.message || 'Не удалось сохранить', ok: '' });
@@ -1008,7 +1001,6 @@ export default function ChatApp() {
     setTagEdit(user.tag || '');
     setNameEdit(user.name || '');
     setBioEdit(user.bio || '');
-    setTagError('');
     setSettingsSaveState({ loading: false, error: '', ok: '' });
     setProfileData({ ...user, online: true });
     setProfilePanel(user.id);
@@ -1016,7 +1008,6 @@ export default function ChatApp() {
 
   const openSettingsSubpage = useCallback((subpage) => {
     setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setTagError('');
     setSettingsSubpage(subpage);
   }, []);
 
@@ -1626,47 +1617,28 @@ export default function ChatApp() {
             </button>
             <span style={{ fontSize: 15, fontWeight: 600 }}>
               {settingsMode ? ({
-                username: 'Имя пользователя',
                 profile: 'Профиль',
-                bio: 'О себе',
               }[settingsSubpage] || 'Настройки') : 'Профиль'}
             </span>
           </div>
           {settingsMode ? (
-            settingsSubpage === 'username' ? (
-              <div style={{ padding: '20px 16px 24px' }}>
-                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18, boxShadow: '0 12px 26px rgba(0,0,0,0.24)' }}>
-                  <label style={s.lbl}>Имя пользователя</label>
-                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit} onChange={e => { setTagEdit(e.target.value); setTagError(''); }} placeholder="@username" />
-                  {tagError && <span style={{ color: '#D5D8DE', fontSize: 12, fontFamily: 'mono', marginTop: 4, display: 'block' }}>{tagError}</span>}
-                  <button onClick={saveTag} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }}>Сохранить</button>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 12, color: '#BFC4D0', fontSize: 12, lineHeight: 1.5 }}>
-                    <Icons.Shield /><span>Имя пользователя видно другим. Вы можете поменять его позже.</span>
-                  </div>
-                </div>
-              </div>
-            ) : settingsSubpage === 'profile' ? (
+            settingsSubpage === 'profile' ? (
               <div style={{ padding: '20px 16px 24px' }}>
                 <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18 }}>
                   <label style={s.lbl}>Display name</label>
                   <input style={s.inp2} value={nameEdit} onChange={(e) => setNameEdit(e.target.value)} placeholder="Введите имя" />
-                  <button onClick={() => saveProfileField('name', nameEdit)} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
+                  <label style={{ ...s.lbl, marginTop: 12 }}>Имя пользователя</label>
+                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit} onChange={(e) => setTagEdit(e.target.value)} placeholder="@username" />
+                  <label style={{ ...s.lbl, marginTop: 12 }}>О себе</label>
+                  <textarea style={{ ...s.inp2, minHeight: 90, resize: 'vertical' }} value={bioEdit} onChange={(e) => setBioEdit(e.target.value)} placeholder="Коротко расскажите о себе" />
+                  <button onClick={saveProfileCard} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
                     {settingsSaveState.loading ? 'Сохранение…' : 'Сохранить'}
                   </button>
                   {settingsSaveState.error && <div style={{ marginTop: 10, fontSize: 12, color: '#D5D8DE' }}>{settingsSaveState.error}</div>}
                   {settingsSaveState.ok && <div style={{ marginTop: 10, fontSize: 12, color: '#B8D9C6' }}>{settingsSaveState.ok}</div>}
-                </div>
-              </div>
-            ) : settingsSubpage === 'bio' ? (
-              <div style={{ padding: '20px 16px 24px' }}>
-                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18 }}>
-                  <label style={s.lbl}>О себе</label>
-                  <textarea style={{ ...s.inp2, minHeight: 100, resize: 'vertical' }} value={bioEdit} onChange={(e) => setBioEdit(e.target.value)} placeholder="Коротко расскажите о себе" />
-                  <button onClick={() => saveProfileField('bio', bioEdit)} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
-                    {settingsSaveState.loading ? 'Сохранение…' : 'Сохранить'}
-                  </button>
-                  {settingsSaveState.error && <div style={{ marginTop: 10, fontSize: 12, color: '#D5D8DE' }}>{settingsSaveState.error}</div>}
-                  {settingsSaveState.ok && <div style={{ marginTop: 10, fontSize: 12, color: '#B8D9C6' }}>{settingsSaveState.ok}</div>}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 12, color: '#BFC4D0', fontSize: 12, lineHeight: 1.5 }}>
+                    <Icons.Shield /><span>Публичные поля профиля редактируются в одном месте для удобства.</span>
+                  </div>
                 </div>
               </div>
             ) : settingsSubpage ? (
@@ -1703,8 +1675,6 @@ export default function ChatApp() {
                     id: 'account',
                     rows: [
                       { id: 'profile', title: 'Профиль', subtitle: 'Имя и фото', icon: <Icons.User size={16} /> },
-                      { id: 'username', title: 'Имя пользователя', subtitle: profileData.tag || '@username', icon: <Icons.Tag size={14} /> },
-                      { id: 'bio', title: 'О себе', subtitle: profileData.bio || 'Добавьте описание профиля', icon: <Icons.Edit size={14} /> },
                     ],
                   },
                   {
