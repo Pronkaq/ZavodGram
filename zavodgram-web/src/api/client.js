@@ -156,4 +156,9 @@ export const adminApi = {
   users: (q = '', limit = 30) => api(`/admin/users?q=${encodeURIComponent(q)}&limit=${limit}`),
   setBlocked: (userId, blocked, reason = '') => api(`/admin/users/${userId}/block`, { method: 'PATCH', body: { blocked, reason } }),
   removeUser: (userId) => api(`/admin/users/${userId}`, { method: 'DELETE' }),
+  channels: () => api('/admin/channels'),
+  telegramMirrors: () => api('/admin/telegram-mirrors'),
+  addTelegramMirror: (data) => api('/admin/telegram-mirrors', { method: 'POST', body: data }),
+  updateTelegramMirror: (id, data) => api(`/admin/telegram-mirrors/${id}`, { method: 'PATCH', body: data }),
+  deleteTelegramMirror: (id) => api(`/admin/telegram-mirrors/${id}`, { method: 'DELETE' }),
 };

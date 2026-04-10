@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { adminApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,21 +13,34 @@ export default function AdminPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
+  const [channels, setChannels] = useState([]);
+  const [mirrors, setMirrors] = useState([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyUserId, setBusyUserId] = useState('');
+  const [mirrorForm, setMirrorForm] = useState({ sourceSlug: 'dvachannel', targetChatId: '', enabled: true });
+  const [mirrorBusy, setMirrorBusy] = useState(false);
+
+  const channelOptions = useMemo(() => channels.filter((c) => !!c.channelSlug), [channels]);
 
   const load = async (q = '') => {
     setLoading(true);
     setError('');
     try {
-      const [s, u] = await Promise.all([
+      const [s, u, ch, tm] = await Promise.all([
         adminApi.stats(),
         adminApi.users(q),
+        adminApi.channels(),
+        adminApi.telegramMirrors(),
       ]);
       setStats(s);
       setUsers(u);
+      setChannels(ch);
+      setMirrors(tm);
+      if (!mirrorForm.targetChatId && ch.length > 0) {
+        setMirrorForm((prev) => ({ ...prev, targetChatId: ch[0].id }));
+      }
     } catch (e) {
       setError(e.message || 'Ошибка загрузки админки');
     }
@@ -37,6 +50,55 @@ export default function AdminPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const handleAddMirror = async (e) => {
+    e.preventDefault();
+    if (!mirrorForm.sourceSlug || !mirrorForm.targetChatId) {
+      setError('Укажите sourceSlug и целевой канал');
+      return;
+    }
+
+    setMirrorBusy(true);
+    setError('');
+    try {
+      await adminApi.addTelegramMirror({
+        sourceSlug: mirrorForm.sourceSlug.trim(),
+        targetChatId: mirrorForm.targetChatId,
+        enabled: !!mirrorForm.enabled,
+      });
+      await load(query);
+    } catch (err) {
+      setError(err.message || 'Не удалось добавить зеркало');
+    }
+    setMirrorBusy(false);
+  };
+
+  const handleToggleMirror = async (mirror) => {
+    setMirrorBusy(true);
+    setError('');
+    try {
+      await adminApi.updateTelegramMirror(mirror.id, { enabled: !mirror.enabled });
+      await load(query);
+    } catch (err) {
+      setError(err.message || 'Не удалось изменить состояние зеркала');
+    }
+    setMirrorBusy(false);
+  };
+
+  const handleDeleteMirror = async (mirror) => {
+    const confirmed = window.confirm(`Удалить зеркало ${mirror.sourceSlug} → ${mirror.targetChat?.channelSlug || mirror.targetChatId}?`);
+    if (!confirmed) return;
+
+    setMirrorBusy(true);
+    setError('');
+    try {
+      await adminApi.deleteTelegramMirror(mirror.id);
+      await load(query);
+    } catch (err) {
+      setError(err.message || 'Не удалось удалить зеркало');
+    }
+    setMirrorBusy(false);
+  };
 
   const handleBlockToggle = async (target) => {
     const nextBlocked = !target.blocked;
@@ -93,6 +155,70 @@ export default function AdminPage() {
               <StatItem title='Медиа' value={stats?.totals?.media} />
               <StatItem title='Новых за 24ч' value={stats?.last24h?.users} />
               <StatItem title='Сообщений за 24ч' value={stats?.last24h?.messages} />
+            </div>
+
+            <div style={{ ...card, marginBottom: 16 }}>
+              <h2 style={{ marginTop: 0, marginBottom: 10, fontSize: 18 }}>Зеркала Telegram → ZavodGram</h2>
+              <form onSubmit={handleAddMirror} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.4fr auto auto', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <input
+                  value={mirrorForm.sourceSlug}
+                  onChange={(e) => setMirrorForm((prev) => ({ ...prev, sourceSlug: e.target.value }))}
+                  placeholder='sourceSlug (например, dvachannel)'
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#E8E8ED', padding: '8px 10px' }}
+                />
+                <select
+                  value={mirrorForm.targetChatId}
+                  onChange={(e) => setMirrorForm((prev) => ({ ...prev, targetChatId: e.target.value }))}
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#E8E8ED', padding: '8px 10px' }}
+                >
+                  {channelOptions.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name || 'Без названия'} ({c.channelSlug})</option>
+                  ))}
+                </select>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <input type='checkbox' checked={mirrorForm.enabled} onChange={(e) => setMirrorForm((prev) => ({ ...prev, enabled: e.target.checked }))} />
+                  Активно
+                </label>
+                <button disabled={mirrorBusy} type='submit' style={{ background: '#4A9EE5', color: '#fff', border: 0, borderRadius: 8, padding: '8px 12px', cursor: 'pointer' }}>
+                  Добавить
+                </button>
+              </form>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ color: '#8B93A8', textAlign: 'left' }}>
+                      <th style={{ paddingBottom: 8 }}>Источник</th>
+                      <th style={{ paddingBottom: 8 }}>Канал</th>
+                      <th style={{ paddingBottom: 8 }}>Последний пост</th>
+                      <th style={{ paddingBottom: 8 }}>Синк</th>
+                      <th style={{ paddingBottom: 8 }}>Статус</th>
+                      <th style={{ paddingBottom: 8 }}>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mirrors.map((m) => (
+                      <tr key={m.id} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        <td style={{ padding: '10px 0' }}>{m.sourceSlug}</td>
+                        <td>{m.targetChat?.name || 'Канал удалён'} <span style={{ color: '#7F869B' }}>({m.targetChat?.channelSlug || m.targetChatId})</span></td>
+                        <td>{m.lastImportedPostId || 0}</td>
+                        <td>{m.lastSyncAt ? new Date(m.lastSyncAt).toLocaleString() : '—'}</td>
+                        <td style={{ color: m.enabled ? '#88D498' : '#FFB366' }}>{m.enabled ? 'Включено' : 'Отключено'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button disabled={mirrorBusy} onClick={() => handleToggleMirror(m)} style={{ background: 'rgba(255,255,255,0.12)', color: '#E8E8ED', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer' }}>
+                              {m.enabled ? 'Выключить' : 'Включить'}
+                            </button>
+                            <button disabled={mirrorBusy} onClick={() => handleDeleteMirror(m)} style={{ background: 'rgba(255,138,138,0.2)', color: '#FF8A8A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer' }}>
+                              Удалить
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div style={card}>
