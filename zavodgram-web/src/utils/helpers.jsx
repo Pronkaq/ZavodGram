@@ -19,6 +19,7 @@ export function formatTimeShort(dateStr) {
 
 export function getChatName(chat, myId) {
   if (chat.name) return chat.name;
+  if (chat.peer?.name) return chat.peer.name;
   // Private chat — show other person's name
   const other = chat.members?.find((m) => m.userId !== myId);
   return other?.user?.name || 'Чат';
@@ -28,11 +29,15 @@ export function getChatAvatar(chat, myId) {
   if (chat.name) {
     return chat.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   }
+  if (chat.peer?.name) {
+    return chat.peer.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  }
   const other = chat.members?.find((m) => m.userId !== myId);
   return other?.user?.name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
 }
 
 export function getOtherUser(chat, myId) {
+  if (chat.peer) return chat.peer;
   return chat.members?.find((m) => m.userId !== myId)?.user || null;
 }
 
@@ -43,6 +48,7 @@ export function isOnline(chat, myId) {
 }
 
 export function getLastMessage(chat) {
+  if (chat.lastMessagePreview) return chat.lastMessagePreview;
   const msg = chat.messages?.[0];
   if (!msg) return '';
   const prefix = chat.type === 'GROUP' && msg.from ? `${msg.from.name}: ` : '';

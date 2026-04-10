@@ -252,6 +252,7 @@ export default function ChatApp() {
   const [activeTopicId, setActiveTopicId] = useState(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [topicError, setTopicError] = useState('');
+  const [virtualRange, setVirtualRange] = useState({ start: 0, end: 0 });
   const endRef = useRef(null);
   const messagesScrollRef = useRef(null);
   const inpRef = useRef(null);
@@ -266,6 +267,23 @@ export default function ChatApp() {
   const topicMessageKey = activeTopicId ? `${activeChat}::${activeTopicId}` : activeChat;
   const cms = messages[topicMessageKey] || [];
   const paging = messagePaging[topicMessageKey] || { hasMore: false, loadingMore: false };
+  const isActiveChannel = acd?.type === 'CHANNEL';
+  const VIRTUAL_ROW_HEIGHT = isActiveChannel ? 220 : 110;
+  const VIRTUAL_THRESHOLD = 80;
+  const VIRTUAL_OVERSCAN = 12;
+  const shouldVirtualize = !isActiveChannel && cms.length > VIRTUAL_THRESHOLD;
+
+  const visibleMessages = useMemo(() => {
+    if (!shouldVirtualize) return cms;
+    const safeStart = Math.max(0, Math.min(virtualRange.start, cms.length - 1));
+    const safeEnd = Math.max(safeStart, Math.min(virtualRange.end, cms.length - 1));
+    return cms.slice(safeStart, safeEnd + 1);
+  }, [cms, shouldVirtualize, virtualRange.end, virtualRange.start]);
+
+  const topSpacerHeight = shouldVirtualize ? Math.max(0, virtualRange.start * VIRTUAL_ROW_HEIGHT) : 0;
+  const bottomSpacerHeight = shouldVirtualize
+    ? Math.max(0, (cms.length - (virtualRange.end + 1)) * VIRTUAL_ROW_HEIGHT)
+    : 0;
 
   const filteredChats = useMemo(() => chats.filter((c) => {
     if (!search) return true;
@@ -312,6 +330,15 @@ export default function ChatApp() {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [cms.length, activeChat]);
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => {
+    if (!shouldVirtualize) {
+      setVirtualRange({ start: 0, end: Math.max(0, cms.length - 1) });
+      return;
+    }
+    const end = cms.length - 1;
+    const start = Math.max(0, end - 40);
+    setVirtualRange({ start, end });
+  }, [cms.length, shouldVirtualize]);
+  useEffect(() => {
     if (!activeChat || acd?.type !== 'GROUP' || !acd?.topicsEnabled) {
       setChatTopics([]);
       setActiveTopicId(null);
@@ -346,6 +373,17 @@ export default function ChatApp() {
     const topicId = (acd?.type === 'GROUP' && acd?.topicsEnabled) ? activeTopicId : undefined;
     loadMoreMessages(activeChat, topicId);
   }, [activeChat, paging.loadingMore, paging.hasMore, acd?.type, acd?.topicsEnabled, activeTopicId, loadMoreMessages]);
+
+  const onMessagesViewportScroll = useCallback((e) => {
+    onMessagesScroll(e);
+    if (!shouldVirtualize) return;
+    const el = e.currentTarget;
+    const viewportItems = Math.max(8, Math.ceil(el.clientHeight / VIRTUAL_ROW_HEIGHT));
+    const anchor = Math.floor(el.scrollTop / VIRTUAL_ROW_HEIGHT);
+    const start = Math.max(0, anchor - VIRTUAL_OVERSCAN);
+    const end = Math.min(cms.length - 1, anchor + viewportItems + VIRTUAL_OVERSCAN);
+    setVirtualRange((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+  }, [cms.length, onMessagesScroll, shouldVirtualize, VIRTUAL_ROW_HEIGHT]);
 
   // ── Handlers ──
   const handleSend = () => {
@@ -514,6 +552,7 @@ export default function ChatApp() {
 
     const existingDirect = chats.find((chat) => {
       if (chat.type !== 'PRIVATE' && chat.type !== 'SECRET') return false;
+      if (chat.peer?.id) return chat.peer.id === targetId;
       const memberIds = new Set((chat.members || []).map((member) => member.userId));
       return memberIds.has(user.id) && memberIds.has(targetId);
     });
@@ -1105,14 +1144,15 @@ export default function ChatApp() {
             {topicError && <div style={{ padding: '0 14px 8px', color: '#D5D8DE', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
-            <div ref={messagesScrollRef} onScroll={onMessagesScroll} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+            <div ref={messagesScrollRef} onScroll={onMessagesViewportScroll} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
               <div style={{ ...s.chatInner, display: 'flex', flexDirection: 'column', gap: isChannel ? 10 : 3 }}>
                 {paging.loadingMore && (
                   <div style={{ alignSelf: 'center', fontSize: 12, color: '#8E95A3', padding: '4px 0 8px' }}>
                     Загружаем историю…
                   </div>
                 )}
-                {(isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
+                {shouldVirtualize && topSpacerHeight > 0 && <div style={{ height: topSpacerHeight }} />}
+                {(isChannel ? visibleMessages.filter((m) => !m.replyToId) : visibleMessages).map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
@@ -1235,6 +1275,7 @@ export default function ChatApp() {
                   </div>
                 );
                 })}
+                {shouldVirtualize && bottomSpacerHeight > 0 && <div style={{ height: bottomSpacerHeight }} />}
                 <div ref={endRef} />
               </div>
             </div>
