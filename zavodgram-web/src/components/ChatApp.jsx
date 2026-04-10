@@ -2,236 +2,18 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
-import { chatsApi, usersApi, mediaApi, messagesApi, getAccessToken } from '../api/client';
+import { chatsApi, usersApi, mediaApi, messagesApi } from '../api/client';
 import { ws } from '../api/socket';
 import { Icons, typeColors } from './Icons';
+import { ChatToasts } from './ChatToasts';
+import { ChatSidebar } from './ChatSidebar';
+import { ChatListPanel } from './ChatListPanel';
+import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
+import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
+import { useChatToasts } from './useChatToasts';
 
 const tc = typeColors;
-
-function mediaUrlById(id) {
-  const token = getAccessToken();
-  return token ? `/api/media/${id}/download?token=${encodeURIComponent(token)}` : '';
-}
-
-function resolveAvatarSrc(src) {
-  if (!src) return '';
-  if (src.startsWith('http')) return src;
-  if (src.startsWith('media:')) return mediaUrlById(src.slice(6));
-  if (src.startsWith('/uploads/')) {
-    const token = getAccessToken();
-    return token ? `/api/media/legacy?path=${encodeURIComponent(src)}&token=${encodeURIComponent(token)}` : '';
-  }
-  return src;
-}
-
-function formatAudioTime(totalSeconds) {
-  const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0;
-  const minutes = Math.floor(safe / 60);
-  const seconds = safe % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-const ALLOWED_RICH_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'A', 'BR']);
-
-function sanitizeRichHtml(html = '') {
-  if (!html) return '';
-  if (typeof window === 'undefined' || !window.DOMParser) return html;
-  const parser = new window.DOMParser();
-  const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
-  const root = doc.body.firstElementChild;
-  if (!root) return '';
-
-  const sanitizeNode = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return doc.createTextNode(node.textContent || '');
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return doc.createTextNode('');
-    const tag = node.tagName?.toUpperCase();
-    if (!ALLOWED_RICH_TAGS.has(tag)) {
-      const fragment = doc.createDocumentFragment();
-      Array.from(node.childNodes).forEach((child) => fragment.appendChild(sanitizeNode(child)));
-      return fragment;
-    }
-    if (tag === 'BR') return doc.createElement('br');
-    const safeEl = doc.createElement(tag.toLowerCase());
-    if (tag === 'A') {
-      const href = node.getAttribute('href') || '';
-      if (/^https?:\/\//i.test(href)) {
-        safeEl.setAttribute('href', href);
-        safeEl.setAttribute('target', '_blank');
-        safeEl.setAttribute('rel', 'noreferrer');
-      }
-    }
-    Array.from(node.childNodes).forEach((child) => safeEl.appendChild(sanitizeNode(child)));
-    return safeEl;
-  };
-
-  const fragment = doc.createDocumentFragment();
-  Array.from(root.childNodes).forEach((child) => fragment.appendChild(sanitizeNode(child)));
-  const holder = doc.createElement('div');
-  holder.appendChild(fragment);
-  return holder.innerHTML
-    .replace(/<div><br><\/div>/gi, '<br>')
-    .replace(/<\/div><div>/gi, '<br>')
-    .replace(/<\/?div>/gi, '');
-}
-
-function richTextToPlain(text = '') {
-  if (!text) return '';
-  if (typeof window === 'undefined' || !window.DOMParser) return text.replace(/<[^>]*>/g, '').trim();
-  const parser = new window.DOMParser();
-  const doc = parser.parseFromString(`<div>${text}</div>`, 'text/html');
-  return (doc.body.textContent || '').replace(/\u00A0/g, ' ').trim();
-}
-
-// Avatar component — shows image or initials, clickable
-function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: extraStyle }) {
-  const initials = name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
-  const bg = src ? 'transparent' : (color || '#E9EBEF');
-  return (
-    <div onClick={onClick} style={{ width: size, height: size, borderRadius: radius, background: bg, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: onClick ? 'pointer' : 'default', overflow: 'hidden', ...extraStyle }}>
-      {src ? <img src={resolveAvatarSrc(src)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> :
-        <span style={{ fontSize: size * 0.34, fontWeight: 600, color: '#fff', fontFamily: "'JetBrains Mono', monospace" }}>{initials}</span>}
-      {online && <div style={{ position: 'absolute', bottom: size > 40 ? 1 : 0, right: size > 40 ? 1 : 0, width: size > 40 ? 10 : 8, height: size > 40 ? 10 : 8, background: '#EDEFF3', borderRadius: '50%', border: '2px solid #131720' }} />}
-    </div>
-  );
-}
-
-// Media attachment in message bubble
-function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true }) {
-  if (!media || media.length === 0) return null;
-  return media.map((m) => {
-    if (m.type === 'AUDIO') {
-      return (
-        <VoiceAttachment
-          key={m.id}
-          mediaItem={m}
-          onTranscribe={onTranscribe}
-          transcriptions={transcriptions}
-          transcriptionLoading={transcriptionLoading}
-          transcriptionAvailable={transcriptionAvailable}
-        />
-      );
-    }
-    if (m.type === 'IMAGE') {
-      return (
-        <div key={m.id} style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260 }}>
-          <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
-          {m.originalName && <div style={{ fontSize: 11, color: '#8E95A3', marginTop: 4 }}>{m.originalName}</div>}
-        </div>
-      );
-    }
-    if (m.type === 'VIDEO') {
-      return (
-        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(231,234,240,0.1)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(231,234,240,0.15)' }}>
-          <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(231,234,240,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C8CCD4', flexShrink: 0 }}><Icons.Video /></div>
-          <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#7C8392', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
-        </div>
-      );
-    }
-    return (
-      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 6, border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ width: 38, height: 38, borderRadius: 9, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#E9EBEF', flexShrink: 0 }}><Icons.File /></div>
-        <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#7C8392', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
-      </div>
-    );
-  });
-}
-
-function VoiceAttachment({ mediaItem, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true }) {
-  const audioRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return undefined;
-
-    const onLoaded = () => setDuration(audio.duration || 0);
-    const onTime = () => setCurrentTime(audio.currentTime || 0);
-    const onEnded = () => setIsPlaying(false);
-
-    audio.addEventListener('loadedmetadata', onLoaded);
-    audio.addEventListener('timeupdate', onTime);
-    audio.addEventListener('ended', onEnded);
-    return () => {
-      audio.removeEventListener('loadedmetadata', onLoaded);
-      audio.removeEventListener('timeupdate', onTime);
-      audio.removeEventListener('ended', onEnded);
-    };
-  }, []);
-
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  const togglePlayback = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (isPlaying) {
-      audio.pause();
-      setIsPlaying(false);
-      return;
-    }
-    try {
-      await audio.play();
-      setIsPlaying(true);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', background: 'linear-gradient(145deg, rgba(59,64,79,0.7), rgba(42,46,60,0.72))', borderRadius: 14, marginBottom: 6, border: '1px solid rgba(255,255,255,0.16)', minWidth: 250 }}>
-      <audio ref={audioRef} preload="metadata" src={mediaUrlById(mediaItem.id)} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          type="button"
-          onClick={togglePlayback}
-          style={{ width: 48, height: 48, borderRadius: '50%', border: 'none', background: 'linear-gradient(135deg, #9480FF, #7464EC)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <span style={{ fontSize: isPlaying ? 14 : 16, lineHeight: 1, marginLeft: isPlaying ? 0 : 2 }}>{isPlaying ? '❚❚' : '▶'}</span>
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ height: 22, borderRadius: 999, position: 'relative', overflow: 'hidden', background: 'rgba(20,23,31,0.6)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
-            onClick={(e) => {
-              const audio = audioRef.current;
-              if (!audio || !duration) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-              audio.currentTime = ratio * duration;
-              setCurrentTime(audio.currentTime);
-            }}>
-            <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(90deg, rgba(140,126,255,0.8) 0 3px, transparent 3px 7px)', opacity: 0.45 }} />
-            <div style={{ position: 'absolute', inset: 0, width: `${progress}%`, background: 'linear-gradient(90deg, rgba(164,150,255,0.8), rgba(132,116,244,0.9))', boxShadow: '0 0 10px rgba(132,116,244,0.5)' }} />
-          </div>
-          <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#B9BFCC', fontFamily: 'mono' }}>
-            <span>{formatAudioTime(currentTime)}</span>
-            <span>{formatAudioTime(duration)}</span>
-          </div>
-        </div>
-      </div>
-      {transcriptionAvailable ? (
-        <button
-          style={{ ...s.ib, alignSelf: 'flex-start', fontSize: 12, padding: '6px 10px', height: 'auto' }}
-          onClick={() => onTranscribe?.(mediaItem.id)}
-          disabled={!!transcriptionLoading[mediaItem.id]}
-        >
-          <Icons.Wave /> {transcriptionLoading[mediaItem.id] ? 'Расшифровка…' : 'Расшифровать'}
-        </button>
-      ) : (
-        <div style={{ fontSize: 12, color: '#A3A8B4' }}>
-          Расшифровка временно недоступна
-        </div>
-      )}
-      {transcriptions[mediaItem.id] && (
-        <div style={{ fontSize: 12, lineHeight: 1.45, color: '#F0F2F6', background: 'rgba(0,0,0,0.18)', borderRadius: 8, padding: '8px 10px', whiteSpace: 'pre-wrap' }}>
-          {transcriptions[mediaItem.id]}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function ChatApp() {
   const { user, logout, updateUser } = useAuth();
@@ -829,16 +611,7 @@ export default function ChatApp() {
     return names.length === 1 ? `${names[0]} печатает...` : `${names.join(', ')} печатают...`;
   }, [typingUsers, activeChat, acd]);
 
-  const [toasts, setToasts] = useState([]);
-  useEffect(() => {
-    if (notifications.length > 0) {
-      const latest = notifications[0];
-      if (!toasts.some(t => t.id === latest.id)) {
-        setToasts(p => [latest, ...p].slice(0, 3));
-        setTimeout(() => setToasts(p => p.filter(t => t.id !== latest.id)), 4000);
-      }
-    }
-  }, [notifications]);
+  const { toasts, dismissToast } = useChatToasts(notifications);
 
   useEffect(() => {
     if (profilePanel || newChatModal || groupSettingsModal || memberListModal || forwardMsg || avatarView || channelInfoModal || channelManageModal || attachmentsModal) {
@@ -1133,73 +906,51 @@ export default function ChatApp() {
     <div className="zg-root" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
 
       {/* ── Toasts ── */}
-      <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
-        {toasts.map(n => (
-          <div key={n.id} style={{ pointerEvents: 'auto', background: '#20232A', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 14, padding: '12px 16px', minWidth: 260, maxWidth: 340, boxShadow: '0 8px 32px rgba(0,0,0,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, animation: 'slideDown .3s ease' }}
-            onClick={() => { selectChat(n.chatId); setShowMobileChat(true); setToasts(p => p.filter(t => t.id !== n.id)); }}>
-            <Icons.Bell size={16} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{n.chatName}</div><div style={{ fontSize: 12, color: '#9CA3B1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div></div>
-          </div>
-        ))}
-      </div>
+      <ChatToasts
+        toasts={toasts}
+        onOpenToast={(toast) => {
+          selectChat(toast.chatId);
+          setShowMobileChat(true);
+          dismissToast(toast.id);
+        }}
+      />
 
       {/* ── Sidebar ── */}
-      <div style={{ ...s.sb, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => { setSidebarOpen(false); openProfile(user.id); }}>
-            <Av src={user.avatar} name={user.name} size={42} />
-            <div><div style={{ fontSize: 15, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{user.tag}</div></div>
-          </div>
-        </div>
-        <div style={{ flex: 1, padding: '6px 0' }}>
-          {[
-            { l: 'Мой профиль', a: () => { setSidebarOpen(false); openProfile(user.id); } },
-            { l: 'Настройки', a: openSettingsPanel },
-            { l: 'Уведомления', a: openNotificationsPanel },
-          ].map((it, i) => <div key={i} style={s.mi} onClick={it.a}>{it.l}</div>)}
-          <div style={{ ...s.mi, color: '#D5D8DE' }} onClick={() => { setSidebarOpen(false); logout(); }}>Выйти</div>
-        </div>
-        <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.06)', opacity: 0.3, fontSize: 11, fontFamily: 'mono' }}>ZavodGram v0.4.0</div>
-      </div>
+      <ChatSidebar
+        user={user}
+        sidebarOpen={sidebarOpen}
+        styles={s}
+        onOpenProfile={() => openProfile(user.id)}
+        onOpenSettings={openSettingsPanel}
+        onOpenNotifications={openNotificationsPanel}
+        onLogout={() => { setSidebarOpen(false); logout(); }}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* ── Chat List ── */}
-      <div style={s.cl} className="zg-chatlist">
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 12px', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <button style={s.ib} onClick={e => { e.stopPropagation(); setNotifPanel(false); setSidebarOpen(true); }}><Icons.Menu /></button>
-          <h1 style={s.title}>ZavodGram</h1>
-          <button style={s.ib} onClick={e => { e.stopPropagation(); notifPanel ? setNotifPanel(false) : openNotificationsPanel(); }}><Icons.Bell /></button>
-          <button style={s.ib} onClick={() => setNewChatModal(true)}><Icons.Plus /></button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 10, color: '#686F7F' }}>
-          <Icons.Search /><input style={s.si} placeholder="Поиск чатов..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filteredChats.map(c => {
-            const name = getChatName(c, user.id);
-            const other = getOtherUser(c, user.id);
-            const on = isOnline(c, user.id);
-            return (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.025)', ...(activeChat === c.id ? { background: 'rgba(255,255,255,0.1)', borderLeft: '3px solid #E9EBEF' } : {}) }}
-                onClick={() => { selectChat(c.id); setShowMobileChat(true); }}>
-                <Av src={getAvatarSourceForChat(c)} name={name} color={tc[c.type]} online={on} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {c.type === 'SECRET' && <Icons.Lock />}{c.type === 'GROUP' && <Icons.Group />}{c.type === 'CHANNEL' && <Icons.Channel />}
-                      {c.muted && <Icons.BellOff size={12} />} {name}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#686F7F', flexShrink: 0, fontFamily: 'mono' }}>{formatTime(c.messages?.[0]?.createdAt || c.updatedAt)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: '#7C8392', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getLastMessage(c)}</span>
-                    {c.unreadCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', padding: '2px 7px', borderRadius: 10, background: c.muted ? '#686F7F' : tc[c.type], fontFamily: 'mono' }}>{c.unreadCount}</span>}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          {filteredChats.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: '#686F7F', fontSize: 14 }}>Нет чатов</div>}
-        </div>
-      </div>
+      <ChatListPanel
+        styles={s}
+        search={search}
+        onSearchChange={setSearch}
+        onOpenSidebar={(e) => {
+          e.stopPropagation();
+          setNotifPanel(false);
+          setSidebarOpen(true);
+        }}
+        onToggleNotifications={(e) => {
+          e.stopPropagation();
+          notifPanel ? setNotifPanel(false) : openNotificationsPanel();
+        }}
+        onOpenNewChat={() => setNewChatModal(true)}
+        filteredChats={filteredChats}
+        userId={user.id}
+        activeChat={activeChat}
+        onSelectChat={(chatId) => {
+          selectChat(chatId);
+          setShowMobileChat(true);
+        }}
+        getAvatarSourceForChat={getAvatarSourceForChat}
+      />
 
       {/* ── Chat Area ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(16,19,25,0.86)', backdropFilter: 'blur(24px)' }} className="zg-chatarea">
@@ -1257,6 +1008,7 @@ export default function ChatApp() {
                     transcriptions={transcriptions}
                     transcriptionLoading={transcriptionLoading}
                     transcriptionAvailable={transcriptionAvailable}
+                    actionButtonStyle={s.ib}
                   />
                   {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
                   {!!Object.keys(groupReactions(msg)).length && (
@@ -1425,6 +1177,7 @@ export default function ChatApp() {
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
                         transcriptionAvailable={transcriptionAvailable}
+                        actionButtonStyle={s.ib}
                       />
                       {isChannel ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
