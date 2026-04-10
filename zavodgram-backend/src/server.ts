@@ -18,6 +18,7 @@ import messagesRoutes from './modules/messages/messages.routes';
 import mediaRoutes from './modules/media/media.routes';
 import notificationsRoutes from './modules/notifications/notifications.routes';
 import adminRoutes from './modules/admin/admin.routes';
+import { startTelegramChannelMirror } from './modules/messages/telegramChannelMirror';
 
 async function bootstrap() {
   const app = express();
@@ -60,6 +61,8 @@ async function bootstrap() {
 
   // ── WebSocket ──
   setupWebSocket(httpServer);
+
+  startTelegramChannelMirror();
 
   // ── Start server ──
   httpServer.listen(config.port, () => {
