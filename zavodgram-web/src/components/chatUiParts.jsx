@@ -37,9 +37,53 @@ export function Av({ src, name, size = 46, radius = 12, color, online, onClick, 
   );
 }
 
-export function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia }) {
+export function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia, showMeta = true, carouselImages = false, mediaMaxWidth = 260 }) {
   if (!media || media.length === 0) return null;
-  return media.map((m) => {
+  const imageItems = media.filter((m) => m.type === 'IMAGE');
+  const nonImageItems = media.filter((m) => m.type !== 'IMAGE');
+
+  const parts = [];
+
+  if (carouselImages && imageItems.length > 1) {
+    parts.push(
+      <div key="image-carousel" style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', overflowX: 'auto', gap: 8, scrollSnapType: 'x mandatory', borderRadius: 12 }}>
+          {imageItems.map((m, idx) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => onOpenMedia?.({ type: 'IMAGE', src: mediaUrlById(m.id), title: m.originalName })}
+              style={{ flex: '0 0 100%', borderRadius: 12, overflow: 'hidden', border: 'none', background: 'transparent', padding: 0, textAlign: 'left', scrollSnapAlign: 'start' }}
+              aria-label={`Открыть изображение ${idx + 1}`}
+            >
+              <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 340, objectFit: 'cover', display: 'block', borderRadius: 12 }} alt={m.originalName} />
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: 6, display: 'flex', gap: 5, justifyContent: 'center' }}>
+          {imageItems.map((m, idx) => (
+            <span key={`${m.id}-dot`} style={{ width: 6, height: 6, borderRadius: '50%', background: idx === 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.28)' }} />
+          ))}
+        </div>
+      </div>
+    );
+  } else {
+    imageItems.forEach((m) => {
+      parts.push(
+        <button
+          key={m.id}
+          type="button"
+          onClick={() => onOpenMedia?.({ type: 'IMAGE', src: mediaUrlById(m.id), title: m.originalName })}
+          style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: mediaMaxWidth, border: 'none', background: 'transparent', padding: 0, textAlign: 'left' }}
+        >
+          <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
+          {showMeta && m.originalName && <div style={{ fontSize: 11, color: '#8E95A3', marginTop: 4 }}>{m.originalName}</div>}
+        </button>
+      );
+    });
+  }
+
+  return [...parts, ...nonImageItems.map((m) => {
     if (m.type === 'AUDIO') {
       return (
         <VoiceAttachment
@@ -54,17 +98,7 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
       );
     }
     if (m.type === 'IMAGE') {
-      return (
-        <button
-          key={m.id}
-          type="button"
-          onClick={() => onOpenMedia?.({ type: 'IMAGE', src: mediaUrlById(m.id), title: m.originalName })}
-          style={{ marginBottom: 6, borderRadius: 10, overflow: 'hidden', maxWidth: 260, border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in', textAlign: 'left' }}
-        >
-          <img src={mediaUrlById(m.id)} style={{ width: '100%', maxHeight: 300, objectFit: 'cover', display: 'block', borderRadius: 10 }} alt={m.originalName} />
-          {m.originalName && <div style={{ fontSize: 11, color: '#8E95A3', marginTop: 4 }}>{m.originalName}</div>}
-        </button>
-      );
+      return null;
     }
     if (m.type === 'VIDEO') {
       return (
@@ -72,7 +106,7 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
           key={m.id}
           type="button"
           onClick={() => onOpenMedia?.({ type: 'VIDEO', src: mediaUrlById(m.id), title: m.originalName })}
-          style={{ marginBottom: 8, border: '1px solid rgba(231,234,240,0.2)', borderRadius: 12, background: 'rgba(20,23,31,0.55)', width: 'min(100%, 360px)', padding: 0, overflow: 'hidden', cursor: 'pointer', textAlign: 'left' }}
+          style={{ marginBottom: 8, border: '1px solid rgba(231,234,240,0.2)', borderRadius: 12, background: 'rgba(20,23,31,0.55)', width: 'min(100%, 360px)', padding: 0, overflow: 'hidden', textAlign: 'left' }}
         >
           <div style={{ position: 'relative', background: 'rgba(10,12,18,0.85)' }}>
             <video
@@ -86,10 +120,12 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
               <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, border: '1px solid rgba(255,255,255,0.3)' }}>▶</div>
             </div>
           </div>
-          <div style={{ padding: '8px 10px' }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#E8ECF4' }}>{m.originalName || 'Видео'}</div>
-            <div style={{ fontSize: 11, color: '#93A0B7', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div>
-          </div>
+          {showMeta && (
+            <div style={{ padding: '8px 10px' }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#E8ECF4' }}>{m.originalName || 'Видео'}</div>
+              <div style={{ fontSize: 11, color: '#93A0B7', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div>
+            </div>
+          )}
         </button>
       );
     }
@@ -99,7 +135,7 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
         <div><div style={{ fontSize: 13, fontWeight: 500 }}>{m.originalName}</div><div style={{ fontSize: 11, color: '#7C8392', fontFamily: 'mono' }}>{(m.size / 1024 / 1024).toFixed(1)} MB</div></div>
       </div>
     );
-  });
+  }).filter(Boolean)];
 }
 
 function VoiceAttachment({ mediaItem, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {} }) {
