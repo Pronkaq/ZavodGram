@@ -85,6 +85,7 @@ export default function ChatApp() {
   const [activeTopicId, setActiveTopicId] = useState(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [topicError, setTopicError] = useState('');
+  const [mediaModal, setMediaModal] = useState(null);
   const endRef = useRef(null);
   const messagesScrollRef = useRef(null);
   const messagesVirtuosoRef = useRef(null);
@@ -140,6 +141,11 @@ export default function ChatApp() {
     } finally {
       setTopicsLoading(false);
     }
+  }, []);
+
+  const openMediaModal = useCallback((payload) => {
+    if (!payload?.src) return;
+    setMediaModal(payload);
   }, []);
 
   useEffect(() => {
@@ -1011,6 +1017,7 @@ export default function ChatApp() {
                     transcriptionLoading={transcriptionLoading}
                     transcriptionAvailable={transcriptionAvailable}
                     actionButtonStyle={s.ib}
+                    onOpenMedia={openMediaModal}
                   />
                   {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
                   {!!Object.keys(groupReactions(msg)).length && (
@@ -1180,6 +1187,7 @@ export default function ChatApp() {
                         transcriptionLoading={transcriptionLoading}
                         transcriptionAvailable={transcriptionAvailable}
                         actionButtonStyle={s.ib}
+                        onOpenMedia={openMediaModal}
                       />
                       {isChannel ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1916,6 +1924,28 @@ export default function ChatApp() {
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button style={{ ...s.saveBtn, flex: 1, opacity: joiningInvite ? 0.7 : 1 }} onClick={joinInviteChannel} disabled={joiningInvite}>{joiningInvite ? 'Подписка...' : 'Подписаться'}</button>
               <button style={{ ...s.ib, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px' }} onClick={() => setInviteChannel(null)}>Позже</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {mediaModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(5,7,12,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 430, padding: 18 }}
+          onClick={() => setMediaModal(null)}
+        >
+          <div style={{ width: 'min(96vw, 980px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', gap: 10 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div style={{ color: '#D9DFEB', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mediaModal.title || (mediaModal.type === 'VIDEO' ? 'Видео' : 'Изображение')}</div>
+              <button type="button" style={s.ib} onClick={() => setMediaModal(null)}><Icons.Close /></button>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, overflow: 'hidden', maxHeight: 'calc(92vh - 54px)' }}>
+              {mediaModal.type === 'VIDEO' ? (
+                <video src={mediaModal.src} controls autoPlay playsInline style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', display: 'block', background: '#000' }} />
+              ) : (
+                <img src={mediaModal.src} alt={mediaModal.title || 'media'} style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', objectFit: 'contain', display: 'block', background: '#000' }} />
+              )}
             </div>
           </div>
         </div>
