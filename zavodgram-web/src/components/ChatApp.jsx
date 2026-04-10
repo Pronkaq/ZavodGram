@@ -260,6 +260,9 @@ export default function ChatApp() {
   const [settingsSubpage, setSettingsSubpage] = useState(null);
   const [tagEdit, setTagEdit] = useState('');
   const [tagError, setTagError] = useState('');
+  const [nameEdit, setNameEdit] = useState('');
+  const [bioEdit, setBioEdit] = useState('');
+  const [settingsSaveState, setSettingsSaveState] = useState({ loading: false, error: '', ok: '' });
   const [newChatMode, setNewChatMode] = useState('search'); // search | GROUP | CHANNEL
   const [newChatType, setNewChatType] = useState('PRIVATE');
   const [groupName, setGroupName] = useState('');
@@ -708,6 +711,22 @@ export default function ChatApp() {
     } catch (e) { setTagError(e.message); }
   };
 
+  const saveProfileField = async (field, value) => {
+    if (!value?.trim()) {
+      setSettingsSaveState({ loading: false, error: 'Поле не может быть пустым', ok: '' });
+      return;
+    }
+    setSettingsSaveState({ loading: true, error: '', ok: '' });
+    try {
+      await usersApi.update({ [field]: value.trim() });
+      updateUser({ [field]: value.trim() });
+      setProfileData((prev) => (prev ? { ...prev, [field]: value.trim() } : prev));
+      setSettingsSaveState({ loading: false, error: '', ok: 'Сохранено' });
+    } catch (err) {
+      setSettingsSaveState({ loading: false, error: err.message || 'Не удалось сохранить', ok: '' });
+    }
+  };
+
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -987,10 +1006,19 @@ export default function ChatApp() {
     setSettingsMode(true);
     setSettingsSubpage(null);
     setTagEdit(user.tag || '');
+    setNameEdit(user.name || '');
+    setBioEdit(user.bio || '');
     setTagError('');
+    setSettingsSaveState({ loading: false, error: '', ok: '' });
     setProfileData({ ...user, online: true });
     setProfilePanel(user.id);
   }, [user]);
+
+  const openSettingsSubpage = useCallback((subpage) => {
+    setSettingsSaveState({ loading: false, error: '', ok: '' });
+    setTagError('');
+    setSettingsSubpage(subpage);
+  }, []);
 
   useEffect(() => {
     const slug = window.location.pathname.replace(/^\/+/, '').trim();
@@ -1597,7 +1625,11 @@ export default function ChatApp() {
               {settingsMode && settingsSubpage ? <Icons.Back /> : <Icons.Close />}
             </button>
             <span style={{ fontSize: 15, fontWeight: 600 }}>
-              {settingsMode ? (settingsSubpage === 'username' ? 'Имя пользователя' : settingsSubpage ? 'Настройки' : 'Настройки') : 'Профиль'}
+              {settingsMode ? ({
+                username: 'Имя пользователя',
+                profile: 'Профиль',
+                bio: 'О себе',
+              }[settingsSubpage] || 'Настройки') : 'Профиль'}
             </span>
           </div>
           {settingsMode ? (
@@ -1611,6 +1643,30 @@ export default function ChatApp() {
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 12, color: '#BFC4D0', fontSize: 12, lineHeight: 1.5 }}>
                     <Icons.Shield /><span>Имя пользователя видно другим. Вы можете поменять его позже.</span>
                   </div>
+                </div>
+              </div>
+            ) : settingsSubpage === 'profile' ? (
+              <div style={{ padding: '20px 16px 24px' }}>
+                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18 }}>
+                  <label style={s.lbl}>Display name</label>
+                  <input style={s.inp2} value={nameEdit} onChange={(e) => setNameEdit(e.target.value)} placeholder="Введите имя" />
+                  <button onClick={() => saveProfileField('name', nameEdit)} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
+                    {settingsSaveState.loading ? 'Сохранение…' : 'Сохранить'}
+                  </button>
+                  {settingsSaveState.error && <div style={{ marginTop: 10, fontSize: 12, color: '#D5D8DE' }}>{settingsSaveState.error}</div>}
+                  {settingsSaveState.ok && <div style={{ marginTop: 10, fontSize: 12, color: '#B8D9C6' }}>{settingsSaveState.ok}</div>}
+                </div>
+              </div>
+            ) : settingsSubpage === 'bio' ? (
+              <div style={{ padding: '20px 16px 24px' }}>
+                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18 }}>
+                  <label style={s.lbl}>О себе</label>
+                  <textarea style={{ ...s.inp2, minHeight: 100, resize: 'vertical' }} value={bioEdit} onChange={(e) => setBioEdit(e.target.value)} placeholder="Коротко расскажите о себе" />
+                  <button onClick={() => saveProfileField('bio', bioEdit)} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
+                    {settingsSaveState.loading ? 'Сохранение…' : 'Сохранить'}
+                  </button>
+                  {settingsSaveState.error && <div style={{ marginTop: 10, fontSize: 12, color: '#D5D8DE' }}>{settingsSaveState.error}</div>}
+                  {settingsSaveState.ok && <div style={{ marginTop: 10, fontSize: 12, color: '#B8D9C6' }}>{settingsSaveState.ok}</div>}
                 </div>
               </div>
             ) : settingsSubpage ? (
@@ -1636,7 +1692,7 @@ export default function ChatApp() {
                       <div style={{ fontSize: 13, color: '#BBC2D1', fontFamily: 'mono', marginTop: 3 }}>{profileData.tag || '@username'}</div>
                       <div style={{ fontSize: 12, color: '#8E96A7', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.bio || 'Расскажите немного о себе'}</div>
                     </div>
-                    <button style={{ ...s.ib, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => setSettingsSubpage('profile')}>
+                    <button style={{ ...s.ib, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => openSettingsSubpage('profile')}>
                       <Icons.Edit />
                     </button>
                   </div>
@@ -1674,7 +1730,7 @@ export default function ChatApp() {
                       <button
                         key={row.id}
                         type="button"
-                        onClick={() => setSettingsSubpage(row.id)}
+                        onClick={() => openSettingsSubpage(row.id)}
                         style={{ width: '100%', border: 'none', background: 'transparent', color: 'inherit', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px', cursor: 'pointer', borderBottom: idx === group.rows.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)', textAlign: 'left' }}
                       >
                         <div style={{ width: 30, height: 30, borderRadius: 10, background: 'rgba(255,255,255,0.07)', color: '#ECEFF5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{row.icon}</div>
