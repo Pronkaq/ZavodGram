@@ -240,6 +240,7 @@ export default function ChatApp() {
   const [postCommentDraft, setPostCommentDraft] = useState('');
   const [postCommentReplyTo, setPostCommentReplyTo] = useState(null);
   const [channelPostCommentsEnabled, setChannelPostCommentsEnabled] = useState(true);
+  const [hoveredPostCommentId, setHoveredPostCommentId] = useState(null);
   const [inviteChannel, setInviteChannel] = useState(null);
   const [joiningInvite, setJoiningInvite] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
@@ -1240,10 +1241,10 @@ export default function ChatApp() {
                       maxWidth: isChannel ? 'min(100%, 620px)' : '72%',
                       width: isChannel ? 'min(100%, 620px)' : 'auto',
                       padding: isChannel ? '0' : '8px 12px',
-                      borderRadius: 14,
+                      borderRadius: isChannel ? 12 : 14,
                       lineHeight: 1.45,
                       ...(isChannel
-                        ? { background: 'linear-gradient(180deg, rgba(34,38,49,0.95), rgba(25,28,37,0.98))', border: '1px solid rgba(220,224,235,0.16)', boxShadow: '0 18px 40px rgba(0,0,0,0.35)', overflow: 'hidden' }
+                        ? { background: 'rgba(27,31,40,0.92)', border: '1px solid rgba(220,224,235,0.07)', boxShadow: 'none', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
                       {isChannel && postImage && (
@@ -1251,11 +1252,11 @@ export default function ChatApp() {
                           <img src={mediaUrlById(postImage.id)} alt={postImage.originalName || 'Пост'} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
                         </div>
                       )}
-                      <div style={{ padding: isChannel ? '14px 16px 12px' : 0 }}>
+                      <div style={{ padding: isChannel ? '13px 15px 10px' : 0 }}>
                         {isChannel && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '3px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.05)' }}>
                             <Icons.Channel />
-                            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.2, color: '#F6F8FB' }}>{postAuthor}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.15, color: '#F6F8FB' }}>{postAuthor}</span>
                           </div>
                         )}
                       {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E9EBEF', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
@@ -1279,14 +1280,14 @@ export default function ChatApp() {
                         transcriptionAvailable={transcriptionAvailable}
                       />
                       {isChannel ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {postTitle && <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.3, color: '#F7F8FB' }}>{renderMessageText(postTitle)}</div>}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {postTitle && <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.35, color: '#F7F8FB', marginBottom: 2 }}>{renderMessageText(postTitle)}</div>}
                           {postParagraphs.length > 0 ? postParagraphs.map((paragraph, idx) => (
-                            <div key={`${msg.id}-p-${idx}`} style={{ fontSize: 15, color: '#DCE1EA', lineHeight: 1.45, wordBreak: 'break-word' }}>
+                            <div key={`${msg.id}-p-${idx}`} style={{ fontSize: 16, color: '#DCE1EA', lineHeight: 1.55, wordBreak: 'break-word' }}>
                               {renderMessageText(paragraph)}
                             </div>
-                          )) : (!postTitle && msg.text ? <span style={{ fontSize: 15, color: '#DCE1EA', wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span> : null)}
-                          <div style={{ fontSize: 15, color: '#E9EDF5', fontStyle: 'italic', marginTop: 2 }}>
+                          )) : (!postTitle && msg.text ? <span style={{ fontSize: 16, color: '#DCE1EA', lineHeight: 1.55, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span> : null)}
+                          <div style={{ fontSize: 14, color: '#E9EDF5', marginTop: 2 }}>
                             Автор: {sender.name || 'Редакция'}
                           </div>
                         </div>
@@ -1318,8 +1319,23 @@ export default function ChatApp() {
                       </div>
                       {isChannel && (
                         <button
-                          style={{ margin: '6px 5px 7px', width: 'calc(100% - 10px)', border: 'none', borderRadius: 11, background: commentsButtonActive ? 'rgba(17,20,27,0.96)' : 'rgba(17,20,27,0.7)', color: commentsButtonActive ? '#8F85E9' : '#6E7482', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', padding: '9px 12px', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+                          style={{
+                            margin: '0 15px 12px',
+                            border: 'none',
+                            borderRadius: 8,
+                            background: hoveredPostCommentId === msg.id && commentsButtonActive ? 'rgba(255,255,255,0.05)' : 'transparent',
+                            color: commentsButtonActive ? '#8F85E9' : '#6E7482',
+                            cursor: commentsButtonActive ? 'pointer' : 'not-allowed',
+                            padding: '6px 8px',
+                            fontSize: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            transition: 'background .15s ease, color .15s ease'
+                          }}
                           onClick={() => commentsButtonActive && openPostComments(msg)}
+                          onMouseEnter={() => setHoveredPostCommentId(msg.id)}
+                          onMouseLeave={() => setHoveredPostCommentId(null)}
                           disabled={!commentsButtonActive}
                           title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
                         >
@@ -1327,7 +1343,6 @@ export default function ChatApp() {
                             <Icons.Reply size={16} />
                             Прокомментировать {postComments.length > 0 ? `(${postComments.length})` : ''}
                           </span>
-                          <span style={{ display: 'inline-flex', transform: 'rotate(-90deg)' }}><Icons.ArrowDown size={16} /></span>
                         </button>
                       )}
                     </div>
