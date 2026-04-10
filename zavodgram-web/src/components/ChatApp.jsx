@@ -6,6 +6,7 @@ import { chatsApi, usersApi, mediaApi, messagesApi } from '../api/client';
 import { ws } from '../api/socket';
 import { Icons, typeColors } from './Icons';
 import { ChatToasts } from './ChatToasts';
+import { ChatSidebar } from './ChatSidebar';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
@@ -914,23 +915,16 @@ export default function ChatApp() {
       />
 
       {/* ── Sidebar ── */}
-      <div style={{ ...s.sb, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => { setSidebarOpen(false); openProfile(user.id); }}>
-            <Av src={user.avatar} name={user.name} size={42} />
-            <div><div style={{ fontSize: 15, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{user.tag}</div></div>
-          </div>
-        </div>
-        <div style={{ flex: 1, padding: '6px 0' }}>
-          {[
-            { l: 'Мой профиль', a: () => { setSidebarOpen(false); openProfile(user.id); } },
-            { l: 'Настройки', a: openSettingsPanel },
-            { l: 'Уведомления', a: openNotificationsPanel },
-          ].map((it, i) => <div key={i} style={s.mi} onClick={it.a}>{it.l}</div>)}
-          <div style={{ ...s.mi, color: '#D5D8DE' }} onClick={() => { setSidebarOpen(false); logout(); }}>Выйти</div>
-        </div>
-        <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.06)', opacity: 0.3, fontSize: 11, fontFamily: 'mono' }}>ZavodGram v0.4.0</div>
-      </div>
+      <ChatSidebar
+        user={user}
+        sidebarOpen={sidebarOpen}
+        styles={s}
+        onOpenProfile={() => openProfile(user.id)}
+        onOpenSettings={openSettingsPanel}
+        onOpenNotifications={openNotificationsPanel}
+        onLogout={() => { setSidebarOpen(false); logout(); }}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* ── Chat List ── */}
       <div style={s.cl} className="zg-chatlist">
