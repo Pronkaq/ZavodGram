@@ -32,13 +32,57 @@ function formatAudioTime(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-function parseChannelPostText(text = '') {
-  const cleaned = (text || '').trim();
-  if (!cleaned) return { title: '', paragraphs: [] };
-  const parts = cleaned.split(/\n{2,}/).map((chunk) => chunk.trim()).filter(Boolean);
-  if (parts.length === 0) return { title: '', paragraphs: [] };
-  const [title, ...rest] = parts;
-  return { title, paragraphs: rest };
+const ALLOWED_RICH_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'A', 'BR']);
+
+function sanitizeRichHtml(html = '') {
+  if (!html) return '';
+  if (typeof window === 'undefined' || !window.DOMParser) return html;
+  const parser = new window.DOMParser();
+  const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+  const root = doc.body.firstElementChild;
+  if (!root) return '';
+
+  const sanitizeNode = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return doc.createTextNode(node.textContent || '');
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return doc.createTextNode('');
+    const tag = node.tagName?.toUpperCase();
+    if (!ALLOWED_RICH_TAGS.has(tag)) {
+      const fragment = doc.createDocumentFragment();
+      Array.from(node.childNodes).forEach((child) => fragment.appendChild(sanitizeNode(child)));
+      return fragment;
+    }
+    if (tag === 'BR') return doc.createElement('br');
+    const safeEl = doc.createElement(tag.toLowerCase());
+    if (tag === 'A') {
+      const href = node.getAttribute('href') || '';
+      if (/^https?:\/\//i.test(href)) {
+        safeEl.setAttribute('href', href);
+        safeEl.setAttribute('target', '_blank');
+        safeEl.setAttribute('rel', 'noreferrer');
+      }
+    }
+    Array.from(node.childNodes).forEach((child) => safeEl.appendChild(sanitizeNode(child)));
+    return safeEl;
+  };
+
+  const fragment = doc.createDocumentFragment();
+  Array.from(root.childNodes).forEach((child) => fragment.appendChild(sanitizeNode(child)));
+  const holder = doc.createElement('div');
+  holder.appendChild(fragment);
+  return holder.innerHTML
+    .replace(/<div><br><\/div>/gi, '<br>')
+    .replace(/<\/div><div>/gi, '<br>')
+    .replace(/<\/?div>/gi, '');
+}
+
+function richTextToPlain(text = '') {
+  if (!text) return '';
+  if (typeof window === 'undefined' || !window.DOMParser) return text.replace(/<[^>]*>/g, '').trim();
+  const parser = new window.DOMParser();
+  const doc = parser.parseFromString(`<div>${text}</div>`, 'text/html');
+  return (doc.body.textContent || '').replace(/\u00A0/g, ' ').trim();
 }
 
 // Avatar component — shows image or initials, clickable
@@ -195,6 +239,7 @@ export default function ChatApp() {
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
+  const [composerToolbar, setComposerToolbar] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [editingMsg, setEditingMsg] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
@@ -257,6 +302,7 @@ export default function ChatApp() {
   const messagesScrollRef = useRef(null);
   const messagesVirtuosoRef = useRef(null);
   const inpRef = useRef(null);
+  const composerRef = useRef(null);
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
   const handledSlugRef = useRef(null);
@@ -350,6 +396,13 @@ export default function ChatApp() {
     return () => clearInterval(timer);
   }, [voiceRecording]);
 
+  useEffect(() => {
+    const editor = composerRef.current;
+    if (!editor) return;
+    const safe = sanitizeRichHtml(input);
+    if (editor.innerHTML !== safe) editor.innerHTML = safe;
+  }, [input]);
+
   const onMessagesScroll = useCallback((e) => {
     if (!activeChat || paging.loadingMore || !paging.hasMore) return;
     const el = e.currentTarget;
@@ -362,10 +415,77 @@ export default function ChatApp() {
     onMessagesScroll(e);
   }, [onMessagesScroll]);
 
+  const refreshComposerSelection = useCallback(() => {
+    const editor = composerRef.current;
+    if (!editor || document.activeElement !== editor) {
+      setComposerToolbar(null);
+      return;
+    }
+    const sel = window.getSelection?.();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      setComposerToolbar(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect || (!rect.width && !rect.height)) {
+      setComposerToolbar(null);
+      return;
+    }
+    setComposerToolbar({
+      top: rect.top + window.scrollY - 40,
+      left: rect.left + window.scrollX + rect.width / 2,
+    });
+  }, []);
+
+  const applyComposerFormat = useCallback((command) => {
+    const editor = composerRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    const html = sanitizeRichHtml(editor.innerHTML);
+    editor.innerHTML = html;
+    setInput(html);
+    setTimeout(refreshComposerSelection, 0);
+  }, [refreshComposerSelection]);
+
+  const applyComposerLink = useCallback(() => {
+    const editor = composerRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection?.();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+    const link = window.prompt('Вставьте ссылку (https://...)');
+    if (!link) return;
+    const normalized = link.trim();
+    if (!/^https?:\/\//i.test(normalized)) return;
+    document.execCommand('createLink', false, normalized);
+    const html = sanitizeRichHtml(editor.innerHTML);
+    editor.innerHTML = html;
+    setInput(html);
+    setTimeout(refreshComposerSelection, 0);
+  }, [refreshComposerSelection]);
+
+  const syncComposerInput = useCallback(() => {
+    const editor = composerRef.current;
+    if (!editor) return;
+    const html = sanitizeRichHtml(editor.innerHTML);
+    if (editor.innerHTML !== html) editor.innerHTML = html;
+    setInput(html);
+    if (!activeChat) return;
+    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
+    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
+    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
+    clearTimeout(typingTimer.current);
+    startTyping(activeChat);
+    typingTimer.current = setTimeout(() => {}, 3000);
+  }, [activeChat, acd, activeTopicId, startTyping, user.id]);
+
   // ── Handlers ──
   const handleSend = () => {
-    const text = input.trim();
-    if (!text || !activeChat) return;
+    const text = sanitizeRichHtml(input);
+    const plainText = richTextToPlain(text);
+    if (!plainText || !activeChat) return;
     if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
@@ -380,6 +500,8 @@ export default function ChatApp() {
       if (acd?.type === 'CHANNEL') setChannelPostCommentsEnabled(true);
     }
     setInput('');
+    if (composerRef.current) composerRef.current.innerHTML = '';
+    setComposerToolbar(null);
   };
 
   const handleTyping = () => {
@@ -904,8 +1026,13 @@ export default function ChatApp() {
 
   const renderMessageText = (text) => {
     if (!text) return null;
-    if (msgSearch) return highlightText(text, msgSearch);
-    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    const safeHtml = sanitizeRichHtml(text);
+    const plain = richTextToPlain(safeHtml);
+    if (msgSearch) return highlightText(plain, msgSearch);
+    if (safeHtml !== plain) {
+      return <span className="zg-rich-text" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtml }} />;
+    }
+    const parts = plain.split(/(https?:\/\/[^\s]+)/g);
     return parts.map((part, idx) => (
       /^https?:\/\/[^\s]+$/.test(part)
         ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#F5F6F8', textDecoration: 'underline' }}>{part}</a>
@@ -1215,10 +1342,8 @@ export default function ChatApp() {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
-                const postAuthor = acd.name || chatName;
                 const postComments = getPostComments(msg);
                 const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin;
-                const { title: postTitle, paragraphs: postParagraphs } = parseChannelPostText(msg.text || '');
                 const postImage = (msg.media || []).find((m) => m.type === 'IMAGE');
                 const postViewsRaw = msg.viewsCount ?? msg.viewCount ?? msg.views ?? msg.channelViews ?? msg._count?.views ?? 0;
                 const postViews = Number.isFinite(Number(postViewsRaw)) ? Number(postViewsRaw) : 0;
@@ -1241,9 +1366,9 @@ export default function ChatApp() {
                       width: isChannel ? 'min(100%, 620px)' : 'auto',
                       padding: isChannel ? '0' : '8px 12px',
                       borderRadius: 14,
-                      lineHeight: 1.45,
+                      lineHeight: isChannel ? 1.48 : 1.45,
                       ...(isChannel
-                        ? { background: 'linear-gradient(180deg, rgba(34,38,49,0.95), rgba(25,28,37,0.98))', border: '1px solid rgba(220,224,235,0.16)', boxShadow: '0 18px 40px rgba(0,0,0,0.35)', overflow: 'hidden' }
+                        ? { background: 'linear-gradient(180deg, rgba(36,42,55,0.95), rgba(27,31,41,0.98))', border: '1px solid rgba(220,224,235,0.13)', boxShadow: '0 10px 26px rgba(0,0,0,0.25)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
                       {isChannel && postImage && (
@@ -1251,13 +1376,7 @@ export default function ChatApp() {
                           <img src={mediaUrlById(postImage.id)} alt={postImage.originalName || 'Пост'} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
                         </div>
                       )}
-                      <div style={{ padding: isChannel ? '14px 16px 12px' : 0 }}>
-                        {isChannel && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                            <Icons.Channel />
-                            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.2, color: '#F6F8FB' }}>{postAuthor}</span>
-                          </div>
-                        )}
+                      <div style={{ padding: isChannel ? '12px 14px 8px' : 0 }}>
                       {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E9EBEF', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
                       {msg.replyTo && (
                         <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #E9EBEF', background: 'rgba(255,255,255,0.08)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
@@ -1279,16 +1398,12 @@ export default function ChatApp() {
                         transcriptionAvailable={transcriptionAvailable}
                       />
                       {isChannel ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {postTitle && <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.3, color: '#F7F8FB' }}>{renderMessageText(postTitle)}</div>}
-                          {postParagraphs.length > 0 ? postParagraphs.map((paragraph, idx) => (
-                            <div key={`${msg.id}-p-${idx}`} style={{ fontSize: 15, color: '#DCE1EA', lineHeight: 1.45, wordBreak: 'break-word' }}>
-                              {renderMessageText(paragraph)}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {msg.text && (
+                            <div style={{ fontSize: 15, color: '#E3E7EF', lineHeight: 1.48, wordBreak: 'break-word', fontWeight: 400 }}>
+                              {renderMessageText(msg.text)}
                             </div>
-                          )) : (!postTitle && msg.text ? <span style={{ fontSize: 15, color: '#DCE1EA', wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span> : null)}
-                          <div style={{ fontSize: 15, color: '#E9EDF5', fontStyle: 'italic', marginTop: 2 }}>
-                            Автор: {sender.name || 'Редакция'}
-                          </div>
+                          )}
                         </div>
                       ) : (
                         msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>
@@ -1302,13 +1417,7 @@ export default function ChatApp() {
                           ))}
                         </div>
                       )}
-                      {isChannel && (
-                        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, color: '#B1B8C8', fontSize: 13 }}>
-                          <span style={{ color: '#9AA2B4' }}>•</span>
-                          <span style={{ color: '#8E96A9', textDecoration: 'underline' }}>{postAuthor}</span>
-                        </div>
-                      )}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#686F7F', marginTop: 8, fontFamily: 'mono' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: isChannel ? '#95A0B3' : '#686F7F', marginTop: 8, fontFamily: 'mono' }}>
                         {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
                         {msg.encrypted && <Icons.Lock />}
                         {isChannel && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 11 }}>👁</span>{postViews}</span>}
@@ -1318,7 +1427,7 @@ export default function ChatApp() {
                       </div>
                       {isChannel && (
                         <button
-                          style={{ margin: '6px 5px 7px', width: 'calc(100% - 10px)', border: 'none', borderRadius: 11, background: commentsButtonActive ? 'rgba(17,20,27,0.96)' : 'rgba(17,20,27,0.7)', color: commentsButtonActive ? '#8F85E9' : '#6E7482', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', padding: '9px 12px', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+                          style={{ margin: '4px 5px 7px', width: 'calc(100% - 10px)', border: 'none', borderRadius: 11, background: commentsButtonActive ? 'rgba(20,24,33,0.88)' : 'rgba(20,24,33,0.62)', color: commentsButtonActive ? '#98A4FF' : '#6E7482', cursor: commentsButtonActive ? 'pointer' : 'not-allowed', padding: '8px 12px', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.05)' }}
                           onClick={() => commentsButtonActive && openPostComments(msg)}
                           disabled={!commentsButtonActive}
                           title={!commentsButtonActive ? 'Комментарии отключены' : undefined}
@@ -1379,14 +1488,60 @@ export default function ChatApp() {
                           </div>
                         )}
                       </div>
-                      <input
-                        ref={inpRef}
-                        style={{ ...s.inp2, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: 'none', padding: '10px 12px' }}
-                        placeholder={isChannel ? 'Опубликовать новость...' : isTopicGroup ? 'Сообщение в тему...' : 'Сообщение...'}
-                        value={input}
-                        onChange={e => { setInput(e.target.value); handleTyping(); }}
-                        onKeyDown={e => e.key === 'Enter' && handleSend()}
-                      />
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        {composerToolbar && (
+                          <div style={{ position: 'fixed', top: composerToolbar.top, left: composerToolbar.left, transform: 'translate(-50%, -100%)', display: 'flex', gap: 4, padding: 4, borderRadius: 9, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(18,21,30,0.96)', zIndex: 250 }}>
+                            <button type="button" style={{ ...s.ib, width: 30, height: 26, fontWeight: 700, fontSize: 13 }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyComposerFormat('bold')}>B</button>
+                            <button type="button" style={{ ...s.ib, width: 30, height: 26, fontStyle: 'italic', fontSize: 13 }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyComposerFormat('italic')}>I</button>
+                            <button type="button" style={{ ...s.ib, width: 30, height: 26, fontSize: 13 }} onMouseDown={(e) => e.preventDefault()} onClick={applyComposerLink}>🔗</button>
+                          </div>
+                        )}
+                        <div
+                          className="zg-composer"
+                          ref={(node) => {
+                            composerRef.current = node;
+                            inpRef.current = node;
+                          }}
+                          contentEditable
+                          suppressContentEditableWarning
+                          data-placeholder={isChannel ? 'Опубликовать сообщение...' : isTopicGroup ? 'Сообщение в тему...' : 'Сообщение...'}
+                          style={{ ...s.inp2, minHeight: 40, maxHeight: 140, overflowY: 'auto', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: 'none', padding: '10px 12px', lineHeight: 1.42, fontSize: 15, color: '#E9EDF5', fontWeight: 400 }}
+                          onInput={syncComposerInput}
+                          onFocus={refreshComposerSelection}
+                          onBlur={() => setTimeout(() => setComposerToolbar(null), 120)}
+                          onMouseUp={refreshComposerSelection}
+                          onKeyUp={refreshComposerSelection}
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+                              e.preventDefault();
+                              applyComposerFormat('bold');
+                              return;
+                            }
+                            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+                              e.preventDefault();
+                              applyComposerFormat('italic');
+                              return;
+                            }
+                            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+                              const sel = window.getSelection?.();
+                              if (sel && !sel.isCollapsed && document.activeElement === composerRef.current) {
+                                e.preventDefault();
+                                applyComposerLink();
+                                return;
+                              }
+                            }
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSend();
+                            }
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                          <button type="button" style={{ ...s.ib, width: 30, height: 24, fontWeight: 700, fontSize: 12 }} onClick={() => applyComposerFormat('bold')} title="Ctrl+B">B</button>
+                          <button type="button" style={{ ...s.ib, width: 30, height: 24, fontStyle: 'italic', fontSize: 12 }} onClick={() => applyComposerFormat('italic')} title="Ctrl+I">I</button>
+                          <button type="button" style={{ ...s.ib, width: 30, height: 24, fontSize: 12 }} onClick={applyComposerLink} title="Выделите текст и добавьте ссылку">🔗</button>
+                        </div>
+                      </div>
                       <button
                         style={{ ...s.ib, color: voiceRecording ? '#D5D8DE' : '#EDEFF3' }}
                         onClick={handleVoiceRecordToggle}
@@ -1394,7 +1549,7 @@ export default function ChatApp() {
                       >
                         <Icons.Mic />
                       </button>
-                      <button style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }} onClick={handleSend} disabled={!input.trim()}><Icons.Send /></button>
+                      <button style={{ ...s.sendBtn, opacity: richTextToPlain(input) ? 1 : 0.3 }} onClick={handleSend} disabled={!richTextToPlain(input)}><Icons.Send /></button>
                     </>
                   ) : (
                     <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#9CA3B1', fontSize: 13 }}>
@@ -2067,6 +2222,16 @@ export default function ChatApp() {
         .zg-root ::-webkit-scrollbar-thumb{
           background: rgba(255,255,255,.22);
           border-radius: 999px;
+        }
+        .zg-composer:empty::before{
+          content: attr(data-placeholder);
+          color: rgba(199,207,219,.7);
+          pointer-events: none;
+        }
+        .zg-rich-text a{
+          color: #8db4ff;
+          text-decoration: underline;
+          text-underline-offset: 2px;
         }
         @media(max-width:700px){
           .zg-chatlist{${showMobileChat ? 'display:none !important' : 'width:100% !important;max-width:100% !important'}}
