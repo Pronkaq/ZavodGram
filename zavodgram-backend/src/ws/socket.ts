@@ -210,21 +210,29 @@ export function setupWebSocket(httpServer: HttpServer) {
         const chat = await prisma.chat.findUnique({ where: { id: data.chatId }, select: { name: true } });
         const senderName = message.from.name;
 
-        for (const member of chatMembers) {
-          await createNotification({
-            userId: member.userId,
-            type: 'NEW_MESSAGE',
-            title: chat?.name || senderName,
-            body: `${senderName}: ${(text || '[медиа]').slice(0, 100)}`,
-            data: { chatId: data.chatId, messageId: message.id },
-          });
+        const BATCH_SIZE = 50;
+        const notificationText = (text || '[медиа]').slice(0, 100);
+        const notificationBody = `${senderName}: ${notificationText}`;
+        for (let i = 0; i < chatMembers.length; i += BATCH_SIZE) {
+          const batch = chatMembers.slice(i, i + BATCH_SIZE);
+          await Promise.allSettled(
+            batch.map(async (member) => {
+              await createNotification({
+                userId: member.userId,
+                type: 'NEW_MESSAGE',
+                title: chat?.name || senderName,
+                body: notificationBody,
+                data: { chatId: data.chatId, messageId: message.id },
+              });
 
-          io.to(`user:${member.userId}`).emit('notification', {
-            chatId: data.chatId,
-            chatName: chat?.name || senderName,
-            fromName: senderName,
-            text: (text || '[медиа]').slice(0, 100),
-          });
+              io.to(`user:${member.userId}`).emit('notification', {
+                chatId: data.chatId,
+                chatName: chat?.name || senderName,
+                fromName: senderName,
+                text: notificationText,
+              });
+            })
+          );
         }
 
         socket.emit('message:sent', { tempId: data.chatId, message });
