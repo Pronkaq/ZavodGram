@@ -86,17 +86,37 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         name: true,
         avatar: true,
         updatedAt: true,
-        messages: {
-          where: { deleted: false },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { id: true, text: true, fromId: true, createdAt: true, media: { select: { id: true } } },
-        },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     const chatIds = chats.map((chat) => chat.id);
+    const lastMessageRows = chatIds.length > 0
+      ? await prisma.$queryRaw<Array<{
+          chatId: string;
+          id: string;
+          text: string | null;
+          fromId: string;
+          createdAt: Date;
+          hasMedia: boolean;
+        }>>(Prisma.sql`
+          SELECT DISTINCT ON (m."chatId")
+            m."chatId",
+            m.id,
+            m.text,
+            m."fromId",
+            m."createdAt",
+            EXISTS (
+              SELECT 1
+              FROM "MediaFile" mf
+              WHERE mf."messageId" = m.id
+            ) AS "hasMedia"
+          FROM "Message" m
+          WHERE m."deleted" = false
+            AND m."chatId" IN (${Prisma.join(chatIds)})
+          ORDER BY m."chatId", m."createdAt" DESC
+        `)
+      : [];
     const privateChatIds = chats.filter((chat) => chat.type === 'PRIVATE' || chat.type === 'SECRET').map((chat) => chat.id);
     const [myMemberships, peers] = await Promise.all([
       chatIds.length > 0
@@ -134,11 +154,11 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
     const unreadMap = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount)]));
     const membershipMap = new Map(myMemberships.map((m) => [m.chatId, m]));
     const peerMap = new Map(peers.map((p) => [p.chatId, p.user]));
+    const lastMessageMap = new Map(lastMessageRows.map((m) => [m.chatId, m]));
     const chatsWithUnread = chats.map((chat) => {
       const myMembership = membershipMap.get(chat.id);
       const peer = (chat.type === 'PRIVATE' || chat.type === 'SECRET') ? (peerMap.get(chat.id) || null) : null;
-      const lastMessage = chat.messages[0];
-      const hasMedia = (lastMessage?.media?.length || 0) > 0;
+      const lastMessage = lastMessageMap.get(chat.id);
       return {
         id: chat.id,
         type: chat.type,
@@ -150,7 +170,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         muted: myMembership?.muted || false,
         myRole: myMembership?.role || 'MEMBER',
         myCommentsMuted: myMembership?.commentsMuted || false,
-        lastMessagePreview: lastMessage ? (lastMessage.text || (hasMedia ? '[медиа]' : '')) : '',
+        lastMessagePreview: lastMessage ? (lastMessage.text || (lastMessage.hasMedia ? '[медиа]' : '')) : '',
         lastMessageAt: lastMessage?.createdAt || null,
         lastMessageFromId: lastMessage?.fromId || null,
       };
