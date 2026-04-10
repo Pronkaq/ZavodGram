@@ -37,6 +37,18 @@ export function ChatProvider({ children }) {
     }
   }, [user]);
 
+  const loadChatDetails = useCallback(async (chatId) => {
+    if (!chatId) return null;
+    try {
+      const details = await chatsApi.get(chatId);
+      setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, ...details } : c)));
+      return details;
+    } catch (e) {
+      console.error('Failed to load chat details', e);
+      return null;
+    }
+  }, []);
+
   const scheduleLoadChats = useCallback((delayMs = 300) => {
     clearTimeout(loadChatsTimerRef.current);
     loadChatsTimerRef.current = setTimeout(() => {
@@ -56,6 +68,33 @@ export function ChatProvider({ children }) {
     const cachedMessages = messagesRef.current[key];
 
     if (!force && meta?.loadedAt && (now - meta.loadedAt) < MESSAGES_CACHE_TTL_MS && Array.isArray(cachedMessages)) {
+      if (!meta?.refreshing) {
+        messageLoadMetaRef.current[key] = { ...(meta || {}), refreshing: true };
+        messagesApi.list(chatId, undefined, topicId)
+          .then((data) => {
+            setMessages((prev) => ({ ...prev, [key]: data.messages }));
+            setMessagePaging((prev) => ({
+              ...prev,
+              [key]: {
+                hasMore: !!data.hasMore,
+                nextCursor: data.nextCursor || null,
+                loadingMore: false,
+              },
+            }));
+            messageLoadMetaRef.current[key] = {
+              ...(messageLoadMetaRef.current[key] || {}),
+              loadedAt: Date.now(),
+              hasMore: data.hasMore,
+              nextCursor: data.nextCursor,
+            };
+          })
+          .catch((e) => console.error('Failed to refresh cached messages', e))
+          .finally(() => {
+            const current = messageLoadMetaRef.current[key] || {};
+            delete current.refreshing;
+            messageLoadMetaRef.current[key] = current;
+          });
+      }
       return {
         messages: cachedMessages,
         hasMore: meta.hasMore ?? false,
@@ -186,7 +225,9 @@ export function ChatProvider({ children }) {
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
-            messages: [msg],
+            lastMessagePreview: msg.text || ((msg.media?.length || 0) > 0 ? '[медиа]' : ''),
+            lastMessageAt: msg.createdAt || new Date().toISOString(),
+            lastMessageFromId: msg.fromId || null,
             updatedAt: new Date().toISOString(),
             unreadCount: (updated[idx].unreadCount || 0) + (msg.fromId !== user.id ? 1 : 0),
           };
@@ -275,6 +316,7 @@ export function ChatProvider({ children }) {
         setChats((prev) =>
           prev.map((c) => ({
             ...c,
+            ...(c.peer?.id === userId ? { peer: { ...c.peer, online } } : {}),
             members: c.members?.map((m) =>
               m.userId === userId ? { ...m, user: { ...m.user, online } } : m
             ),
@@ -359,6 +401,10 @@ export function ChatProvider({ children }) {
   const selectChat = useCallback((chatId) => {
     setActiveChat(chatId);
     if (chatId) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat?.members || chat.members.length === 0) {
+        loadChatDetails(chatId);
+      }
       // Mark as read after short delay
       setTimeout(() => {
         setChats((prev) => {
@@ -370,14 +416,14 @@ export function ChatProvider({ children }) {
         });
       }, 500);
     }
-  }, [markRead]);
+  }, [chats, loadChatDetails, markRead]);
 
   return (
     <ChatContext.Provider value={{
       chats, activeChat, messages, typingUsers, notifications,
       messagePaging,
       setChats, setNotifications,
-      loadChats, loadMessages, loadMoreMessages, selectChat,
+      loadChats, loadChatDetails, loadMessages, loadMoreMessages, selectChat,
       sendMessage, editMessage, deleteMessage, markRead, startTyping,
     }}>
       {children}
