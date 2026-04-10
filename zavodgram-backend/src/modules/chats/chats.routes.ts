@@ -80,10 +80,27 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
     const userId = req.user!.userId;
     const chats = await prisma.chat.findMany({
       where: { members: { some: { userId } } },
-      include: {
-        members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } } } },
-        messages: { where: { deleted: false }, orderBy: { createdAt: 'desc' }, take: 1, include: { from: { select: { id: true, name: true } } } },
-        _count: { select: { members: true } },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+        avatar: true,
+        updatedAt: true,
+        members: {
+          select: {
+            userId: true,
+            role: true,
+            muted: true,
+            commentsMuted: true,
+            user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } },
+          },
+        },
+        messages: {
+          where: { deleted: false },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, text: true, fromId: true, createdAt: true, media: { select: { id: true } } },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -107,12 +124,25 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
     const unreadMap = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount)]));
     const chatsWithUnread = chats.map((chat) => {
       const myMembership = chat.members.find((m) => m.userId === userId);
+      const peer = (chat.type === 'PRIVATE' || chat.type === 'SECRET')
+        ? chat.members.find((m) => m.userId !== userId)?.user || null
+        : null;
+      const lastMessage = chat.messages[0];
+      const hasMedia = (lastMessage?.media?.length || 0) > 0;
       return {
-        ...chat,
+        id: chat.id,
+        type: chat.type,
+        name: chat.name,
+        avatar: chat.avatar,
+        updatedAt: chat.updatedAt,
+        peer,
         unreadCount: unreadMap.get(chat.id) ?? 0,
         muted: myMembership?.muted || false,
         myRole: myMembership?.role || 'MEMBER',
         myCommentsMuted: myMembership?.commentsMuted || false,
+        lastMessagePreview: lastMessage ? (lastMessage.text || (hasMedia ? '[медиа]' : '')) : '',
+        lastMessageAt: lastMessage?.createdAt || null,
+        lastMessageFromId: lastMessage?.fromId || null,
       };
     });
 
