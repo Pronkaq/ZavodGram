@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { chatsApi, usersApi, mediaApi, messagesApi, getAccessToken } from '../api/client';
@@ -252,9 +253,9 @@ export default function ChatApp() {
   const [activeTopicId, setActiveTopicId] = useState(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [topicError, setTopicError] = useState('');
-  const [virtualRange, setVirtualRange] = useState({ start: 0, end: 0 });
   const endRef = useRef(null);
   const messagesScrollRef = useRef(null);
+  const messagesVirtuosoRef = useRef(null);
   const inpRef = useRef(null);
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
@@ -268,22 +269,8 @@ export default function ChatApp() {
   const cms = messages[topicMessageKey] || [];
   const paging = messagePaging[topicMessageKey] || { hasMore: false, loadingMore: false };
   const isActiveChannel = acd?.type === 'CHANNEL';
-  const VIRTUAL_ROW_HEIGHT = isActiveChannel ? 220 : 110;
   const VIRTUAL_THRESHOLD = 80;
-  const VIRTUAL_OVERSCAN = 12;
   const shouldVirtualize = !isActiveChannel && cms.length > VIRTUAL_THRESHOLD;
-
-  const visibleMessages = useMemo(() => {
-    if (!shouldVirtualize) return cms;
-    const safeStart = Math.max(0, Math.min(virtualRange.start, cms.length - 1));
-    const safeEnd = Math.max(safeStart, Math.min(virtualRange.end, cms.length - 1));
-    return cms.slice(safeStart, safeEnd + 1);
-  }, [cms, shouldVirtualize, virtualRange.end, virtualRange.start]);
-
-  const topSpacerHeight = shouldVirtualize ? Math.max(0, virtualRange.start * VIRTUAL_ROW_HEIGHT) : 0;
-  const bottomSpacerHeight = shouldVirtualize
-    ? Math.max(0, (cms.length - (virtualRange.end + 1)) * VIRTUAL_ROW_HEIGHT)
-    : 0;
 
   const filteredChats = useMemo(() => chats.filter((c) => {
     if (!search) return true;
@@ -327,17 +314,14 @@ export default function ChatApp() {
       document.getElementById(`msg-${searchResults[msgSearchIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [msgSearchIdx, searchResults]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [cms.length, activeChat]);
-  useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => {
-    if (!shouldVirtualize) {
-      setVirtualRange({ start: 0, end: Math.max(0, cms.length - 1) });
+    if (shouldVirtualize) {
+      messagesVirtuosoRef.current?.scrollToIndex({ index: Math.max(0, cms.length - 1), align: 'end', behavior: 'smooth' });
       return;
     }
-    const end = cms.length - 1;
-    const start = Math.max(0, end - 40);
-    setVirtualRange({ start, end });
-  }, [cms.length, shouldVirtualize]);
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [cms.length, activeChat, shouldVirtualize]);
+  useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => {
     if (!activeChat || acd?.type !== 'GROUP' || !acd?.topicsEnabled) {
       setChatTopics([]);
@@ -376,14 +360,7 @@ export default function ChatApp() {
 
   const onMessagesViewportScroll = useCallback((e) => {
     onMessagesScroll(e);
-    if (!shouldVirtualize) return;
-    const el = e.currentTarget;
-    const viewportItems = Math.max(8, Math.ceil(el.clientHeight / VIRTUAL_ROW_HEIGHT));
-    const anchor = Math.floor(el.scrollTop / VIRTUAL_ROW_HEIGHT);
-    const start = Math.max(0, anchor - VIRTUAL_OVERSCAN);
-    const end = Math.min(cms.length - 1, anchor + viewportItems + VIRTUAL_OVERSCAN);
-    setVirtualRange((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
-  }, [cms.length, onMessagesScroll, shouldVirtualize, VIRTUAL_ROW_HEIGHT]);
+  }, [onMessagesScroll]);
 
   // ── Handlers ──
   const handleSend = () => {
@@ -1080,6 +1057,71 @@ export default function ChatApp() {
           const canSendInTopicGroup = !isTopicGroup || !!activeTopicId;
           const on = isOnline(acd, user.id);
           const memberCount = acd._count?.members || acd.members?.length || 0;
+          const renderVirtualizedMessage = (msg) => {
+            const isMine = msg.fromId === user.id || msg.from?.id === user.id;
+            const sender = msg.from || {};
+            const isHL = searchResults[msgSearchIdx] === msg.id;
+            return (
+              <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(255,255,255,0.12)' } : {}) }}
+                onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
+                onTouchStart={(e) => {
+                  const t = e.touches?.[0];
+                  if (!t) return;
+                  const timer = setTimeout(() => openReactionPicker(t.clientX, t.clientY - 50, msg.id), 450);
+                  e.currentTarget.__touchTimer = timer;
+                }}
+                onTouchEnd={(e) => { clearTimeout(e.currentTarget.__touchTimer); }}
+                onTouchMove={(e) => { clearTimeout(e.currentTarget.__touchTimer); }}>
+                {!isMine && acd.type === 'GROUP' && (
+                  <Av src={sender.avatar} name={sender.name} size={28} radius={8} color={sender.color} onClick={() => openProfile(msg.fromId || sender.id)} />
+                )}
+                <div style={{
+                  maxWidth: '72%',
+                  padding: '8px 12px',
+                  borderRadius: 14,
+                  lineHeight: 1.45,
+                  ...(isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }),
+                }}>
+                  {msg.forwardedFromName && <div style={{ fontSize: 12, color: '#E9EBEF', marginBottom: 4, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 4 }}><Icons.Forward /> Переслано от {msg.forwardedFromName}</div>}
+                  {msg.replyTo && (
+                    <div style={{ padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #E9EBEF', background: 'rgba(255,255,255,0.08)', borderRadius: '0 6px 6px 0', cursor: 'pointer', fontSize: 12 }}
+                      onClick={() => scrollToMsg(msg.replyTo.id)}>
+                      <span style={{ fontWeight: 600, color: '#E9EBEF', display: 'block', marginBottom: 1 }}>{msg.replyTo.from?.name}</span>
+                      <span style={{ color: '#9CA3B1' }}>{msg.replyTo.text?.slice(0, 60)}</span>
+                    </div>
+                  )}
+                  {!isMine && acd.type === 'GROUP' && !msg.forwardedFromName && (
+                    <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#C8CCD4', marginBottom: 2, cursor: 'pointer' }} onClick={() => openProfile(msg.fromId || sender.id)}>
+                      {sender.name} <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.4, fontFamily: 'mono' }}>{sender.tag}</span>
+                    </span>
+                  )}
+                  <MediaAttachment
+                    media={msg.media}
+                    onTranscribe={handleTranscribe}
+                    transcriptions={transcriptions}
+                    transcriptionLoading={transcriptionLoading}
+                    transcriptionAvailable={transcriptionAvailable}
+                  />
+                  {msg.text && <span style={{ fontSize: 14, wordBreak: 'break-word' }}>{renderMessageText(msg.text)}</span>}
+                  {!!Object.keys(groupReactions(msg)).length && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                      {Object.entries(groupReactions(msg)).map(([emoji, userIds]) => (
+                        <button key={emoji} onClick={() => addReaction(msg.id, emoji)} style={{ border: '1px solid rgba(255,255,255,0.12)', background: userIds.includes(user.id) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)', color: '#F2F4F7', borderRadius: 14, padding: '2px 8px', fontSize: 13, cursor: 'pointer' }}>
+                          {emoji} {userIds.length}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 11, color: '#686F7F', marginTop: 8, fontFamily: 'mono' }}>
+                    {msg.edited && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>ред.</span>}
+                    {msg.encrypted && <Icons.Lock />}
+                    {formatTimeShort(msg.createdAt)}
+                    {isMine && <span style={{ display: 'flex', alignItems: 'center', color: '#E9EBEF' }}><Icons.Check double={msg.status === 'READ'} /></span>}
+                  </span>
+                </div>
+              </div>
+            );
+          };
           return (<>
             {/* Header */}
             <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.92)', backdropFilter: 'blur(12px)' }}>
@@ -1151,8 +1193,25 @@ export default function ChatApp() {
                     Загружаем историю…
                   </div>
                 )}
-                {shouldVirtualize && topSpacerHeight > 0 && <div style={{ height: topSpacerHeight }} />}
-                {(isChannel ? visibleMessages.filter((m) => !m.replyToId) : visibleMessages).map(msg => {
+                {shouldVirtualize ? (
+                  <div style={{ flex: 1, minHeight: 0 }}>
+                    <Virtuoso
+                      ref={messagesVirtuosoRef}
+                      style={{ height: '100%' }}
+                      data={cms}
+                      increaseViewportBy={{ top: 400, bottom: 700 }}
+                      alignToBottom
+                      atTopThreshold={120}
+                      startReached={() => {
+                        if (!activeChat || paging.loadingMore || !paging.hasMore) return;
+                        const topicId = (acd?.type === 'GROUP' && acd?.topicsEnabled) ? activeTopicId : undefined;
+                        loadMoreMessages(activeChat, topicId);
+                      }}
+                      itemContent={(_, msg) => renderVirtualizedMessage(msg)}
+                    />
+                  </div>
+                ) : (
+                  (isChannel ? cms.filter((m) => !m.replyToId) : cms).map(msg => {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
@@ -1274,8 +1333,8 @@ export default function ChatApp() {
                     </div>
                   </div>
                 );
-                })}
-                {shouldVirtualize && bottomSpacerHeight > 0 && <div style={{ height: bottomSpacerHeight }} />}
+                })
+                )}
                 <div ref={endRef} />
               </div>
             </div>
