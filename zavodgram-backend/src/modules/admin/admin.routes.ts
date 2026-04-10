@@ -7,6 +7,7 @@ import { config } from '../../config';
 import { getBlockedUsers, setUserBlocked } from '../../core/redis';
 
 const router = Router();
+const mirrorRepo = (prisma as any).telegramChannelMirrorState as any;
 
 function ensureAdmin(req: Request) {
   const tag = req.user?.tag?.toLowerCase();
@@ -158,18 +159,19 @@ router.get('/channels', authMiddleware, async (req: Request, res: Response, next
 router.get('/telegram-mirrors', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
   try {
     ensureAdmin(req);
-    const mirrors = await prisma.telegramChannelMirrorState.findMany({
+    if (!mirrorRepo) throw new ValidationError('Mirror-модель не доступна в текущей сборке');
+    const mirrors = await mirrorRepo.findMany({
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
 
-    const targetIds = mirrors.map((m) => m.targetChatId);
+    const targetIds = mirrors.map((m: any) => m.targetChatId);
     const chats = targetIds.length > 0
       ? await prisma.chat.findMany({ where: { id: { in: targetIds } }, select: { id: true, name: true, channelSlug: true } })
       : [];
     const chatMap = new Map(chats.map((c) => [c.id, c]));
 
-    res.json({ ok: true, data: mirrors.map((m) => ({ ...m, targetChat: chatMap.get(m.targetChatId) || null })) });
+    res.json({ ok: true, data: mirrors.map((m: any) => ({ ...m, targetChat: chatMap.get(m.targetChatId) || null })) });
   } catch (err) {
     next(err);
   }
@@ -189,7 +191,8 @@ router.post('/telegram-mirrors', authMiddleware, async (req: Request, res: Respo
     const target = await prisma.chat.findFirst({ where: { id: payload.targetChatId, type: 'CHANNEL' }, select: { id: true } });
     if (!target) throw new ValidationError('Целевой канал не найден');
 
-    const created = await prisma.telegramChannelMirrorState.upsert({
+    if (!mirrorRepo) throw new ValidationError('Mirror-модель не доступна в текущей сборке');
+    const created = await mirrorRepo.upsert({
       where: { sourceSlug_targetChatId: { sourceSlug: payload.sourceSlug, targetChatId: payload.targetChatId } },
       create: { sourceSlug: payload.sourceSlug, targetChatId: payload.targetChatId, enabled: payload.enabled ?? true },
       update: { enabled: payload.enabled ?? true },
@@ -214,7 +217,8 @@ router.patch('/telegram-mirrors/:id', authMiddleware, async (req: Request, res: 
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const payload = mirrorUpdateSchema.parse(req.body);
 
-    const existing = await prisma.telegramChannelMirrorState.findUnique({ where: { id } });
+    if (!mirrorRepo) throw new ValidationError('Mirror-модель не доступна в текущей сборке');
+    const existing = await mirrorRepo.findUnique({ where: { id } });
     if (!existing) throw new ValidationError('Правило зеркалирования не найдено');
 
     const targetChatId = payload.targetChatId || existing.targetChatId;
@@ -223,7 +227,7 @@ router.patch('/telegram-mirrors/:id', authMiddleware, async (req: Request, res: 
       if (!target) throw new ValidationError('Целевой канал не найден');
     }
 
-    const updated = await prisma.telegramChannelMirrorState.update({
+    const updated = await mirrorRepo.update({
       where: { id },
       data: {
         ...(payload.sourceSlug !== undefined ? { sourceSlug: payload.sourceSlug } : {}),
@@ -243,7 +247,8 @@ router.delete('/telegram-mirrors/:id', authMiddleware, async (req: Request, res:
   try {
     ensureAdmin(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    await prisma.telegramChannelMirrorState.delete({ where: { id } });
+    if (!mirrorRepo) throw new ValidationError('Mirror-модель не доступна в текущей сборке');
+    await mirrorRepo.delete({ where: { id } });
     res.json({ ok: true, data: { deleted: true, id } });
   } catch (err) {
     if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));

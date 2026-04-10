@@ -29,6 +29,23 @@ type PreparedMedia = {
 
 const ALLOWED_MEDIA_TYPES = new Set<MediaType>(['IMAGE', 'VIDEO']);
 
+
+const mirrorRepo = (prisma as any).telegramChannelMirrorState as {
+  upsert: Function;
+  findMany: Function;
+  update: Function;
+} | undefined;
+
+function mirrorCfg() {
+  return {
+    enabled: (process.env.TELEGRAM_CHANNEL_MIRROR_ENABLED || 'false').toLowerCase() === 'true',
+    sourceSlug: process.env.TELEGRAM_CHANNEL_MIRROR_SOURCE_SLUG || 'dvachannel',
+    targetSlug: process.env.TELEGRAM_CHANNEL_MIRROR_TARGET_SLUG || '',
+    pollIntervalSec: Number.parseInt(process.env.TELEGRAM_CHANNEL_MIRROR_POLL_INTERVAL_SEC || '120', 10),
+    batchSize: Number.parseInt(process.env.TELEGRAM_CHANNEL_MIRROR_BATCH_SIZE || '10', 10),
+  };
+}
+
 function decodeHtml(input: string) {
   return input
     .replace(/<br\s*\/?>/gi, '\n')
@@ -184,7 +201,6 @@ async function importPostWithMedia(params: { targetChatId: string; authorId: str
         chatId: targetChatId,
         fromId: authorId,
         text,
-        commentsEnabled: true,
       },
     });
 
@@ -212,23 +228,26 @@ async function importPostWithMedia(params: { targetChatId: string; authorId: str
 }
 
 async function ensureEnvMirrorState() {
-  if (!config.telegram.channelMirrorEnabled || !config.telegram.channelMirrorTargetSlug) return;
+  const cfg = mirrorCfg();
+  if (!cfg.enabled || !cfg.targetSlug) return;
 
   const targetChannel = await prisma.chat.findFirst({
-    where: { type: 'CHANNEL', channelSlug: config.telegram.channelMirrorTargetSlug },
+    where: { type: 'CHANNEL', channelSlug: cfg.targetSlug },
     select: { id: true },
   });
   if (!targetChannel) return;
 
-  await prisma.telegramChannelMirrorState.upsert({
+  if (!mirrorRepo) return;
+
+  await mirrorRepo.upsert({
     where: {
       sourceSlug_targetChatId: {
-        sourceSlug: config.telegram.channelMirrorSourceSlug,
+        sourceSlug: cfg.sourceSlug,
         targetChatId: targetChannel.id,
       },
     },
     create: {
-      sourceSlug: config.telegram.channelMirrorSourceSlug,
+      sourceSlug: cfg.sourceSlug,
       targetChatId: targetChannel.id,
       enabled: true,
     },
@@ -268,10 +287,10 @@ async function syncMirrorState(state: { id: string; sourceSlug: string; targetCh
   const html = await response.text();
   const parsedPosts = parseTelegramChannelPage(html, state.sourceSlug)
     .filter((post) => post.postId > state.lastImportedPostId)
-    .slice(0, Math.max(1, config.telegram.channelMirrorBatchSize));
+    .slice(0, Math.max(1, mirrorCfg().batchSize));
 
   if (parsedPosts.length === 0) {
-    await prisma.telegramChannelMirrorState.update({ where: { id: state.id }, data: { lastSyncAt: new Date() } });
+    if (mirrorRepo) await mirrorRepo.update({ where: { id: state.id }, data: { lastSyncAt: new Date() } });
     return;
   }
 
@@ -282,7 +301,7 @@ async function syncMirrorState(state: { id: string; sourceSlug: string; targetCh
   }
 
   await prisma.$transaction([
-    prisma.telegramChannelMirrorState.update({
+    mirrorRepo!.update({
       where: { id: state.id },
       data: { lastImportedPostId: lastImported, lastSyncAt: new Date() },
     }),
@@ -305,14 +324,19 @@ async function runMirrorOnce() {
   try {
     await ensureEnvMirrorState();
 
-    const activeMirrors = await prisma.telegramChannelMirrorState.findMany({
+    if (!mirrorRepo) {
+      logger.warn('Telegram mirror skipped: Prisma model TelegramChannelMirrorState is unavailable');
+      return;
+    }
+
+    const activeMirrors = await mirrorRepo.findMany({
       where: { enabled: true },
       orderBy: { updatedAt: 'desc' },
       take: 100,
     });
 
     if (activeMirrors.length === 0) {
-      if (!config.telegram.channelMirrorEnabled) logger.info('Telegram mirror disabled');
+      if (!mirrorCfg().enabled) logger.info('Telegram mirror disabled');
       return;
     }
 
@@ -331,12 +355,13 @@ async function runMirrorOnce() {
 export function startTelegramChannelMirror() {
   runMirrorOnce();
 
-  const intervalMs = Math.max(30, config.telegram.channelMirrorPollIntervalSec) * 1000;
+  const cfg = mirrorCfg();
+  const intervalMs = Math.max(30, cfg.pollIntervalSec) * 1000;
   setInterval(runMirrorOnce, intervalMs);
   logger.info('Telegram mirror scheduler started', {
-    envBootstrapEnabled: config.telegram.channelMirrorEnabled,
-    bootstrapSourceSlug: config.telegram.channelMirrorSourceSlug,
-    bootstrapTargetSlug: config.telegram.channelMirrorTargetSlug,
-    intervalSec: Math.max(30, config.telegram.channelMirrorPollIntervalSec),
+    envBootstrapEnabled: cfg.enabled,
+    bootstrapSourceSlug: cfg.sourceSlug,
+    bootstrapTargetSlug: cfg.targetSlug,
+    intervalSec: Math.max(30, cfg.pollIntervalSec),
   });
 }
