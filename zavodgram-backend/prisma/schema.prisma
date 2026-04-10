@@ -96,6 +96,21 @@ model RegistrationAttempt {
   @@index([expiresAt])
 }
 
+
+model TelegramChannelMirrorState {
+  id                 String   @id @default(uuid())
+  sourceSlug         String
+  targetChatId       String
+  lastImportedPostId Int      @default(0)
+  lastSyncAt         DateTime?
+  enabled            Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([sourceSlug, targetChatId])
+  @@index([targetChatId])
+}
+
 // ── Чат ──
 enum ChatType {
   PRIVATE
