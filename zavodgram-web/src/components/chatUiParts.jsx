@@ -25,6 +25,39 @@ function formatAudioTime(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+// Telegram-like media album tuneables:
+const MEDIA_GROUP_MAX_WIDTH = 360; // <- max bubble width for media groups
+const MEDIA_GROUP_GAP = 3; // <- inner gap between media tiles
+const MEDIA_GROUP_RADIUS = 14; // <- outer border radius
+
+// Layout presets can be adjusted here without touching rendering logic.
+const MEDIA_GROUP_PRESETS = {
+  1: { cols: 1, rows: 1, ratio: 1.25, cells: [{ c: 1, r: 1, cs: 1, rs: 1 }] },
+  2: { cols: 2, rows: 1, ratio: 1.95, cells: [{ c: 1, r: 1, cs: 1, rs: 1 }, { c: 2, r: 1, cs: 1, rs: 1 }] },
+  3: { cols: 2, rows: 2, ratio: 1.05, cells: [{ c: 1, r: 1, cs: 2, rs: 1 }, { c: 1, r: 2, cs: 1, rs: 1 }, { c: 2, r: 2, cs: 1, rs: 1 }] },
+  4: { cols: 2, rows: 2, ratio: 1, cells: [{ c: 1, r: 1, cs: 1, rs: 1 }, { c: 2, r: 1, cs: 1, rs: 1 }, { c: 1, r: 2, cs: 1, rs: 1 }, { c: 2, r: 2, cs: 1, rs: 1 }] },
+  5: { cols: 6, rows: 4, ratio: 1.14, cells: [{ c: 1, r: 1, cs: 3, rs: 2 }, { c: 4, r: 1, cs: 3, rs: 2 }, { c: 1, r: 3, cs: 2, rs: 2 }, { c: 3, r: 3, cs: 2, rs: 2 }, { c: 5, r: 3, cs: 2, rs: 2 }] },
+  6: { cols: 6, rows: 4, ratio: 1.16, cells: [{ c: 1, r: 1, cs: 3, rs: 2 }, { c: 4, r: 1, cs: 3, rs: 2 }, { c: 1, r: 3, cs: 2, rs: 2 }, { c: 3, r: 3, cs: 2, rs: 2 }, { c: 5, r: 3, cs: 2, rs: 1 }, { c: 5, r: 4, cs: 2, rs: 1 }] },
+};
+
+function buildCompactPreset(count) {
+  const cols = count <= 8 ? 4 : 5;
+  const rows = Math.ceil(count / cols);
+  const cells = Array.from({ length: count }, (_, i) => ({
+    c: (i % cols) + 1,
+    r: Math.floor(i / cols) + 1,
+    cs: 1,
+    rs: 1,
+  }));
+  return { cols, rows, ratio: 1.04, cells };
+}
+
+/** Telegram-style media collage layout by number of images. */
+export function getMediaGroupLayout(count) {
+  const safeCount = Math.max(1, Math.min(10, Number(count) || 1));
+  return MEDIA_GROUP_PRESETS[safeCount] || buildCompactPreset(safeCount);
+}
+
 export function Av({ src, name, size = 46, radius = 12, color, online, onClick, style: extraStyle }) {
   const initials = name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
   const bg = src ? 'transparent' : (color || '#E9EBEF');
@@ -37,9 +70,143 @@ export function Av({ src, name, size = 46, radius = 12, color, online, onClick, 
   );
 }
 
+function MediaGroupTile({ item, index, overflowCount = 0, layoutCell, onOpenImage, onOpenMedia }) {
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const src = item.url || mediaUrlById(item.id);
+  const isVideo = item.type === 'VIDEO';
+
+  return (
+    <button
+      type="button"
+      onClick={() => (isVideo ? onOpenMedia?.({ type: 'VIDEO', src, title: item.originalName }) : onOpenImage?.(index))}
+      style={{
+        gridColumn: `${layoutCell.c} / span ${layoutCell.cs}`,
+        gridRow: `${layoutCell.r} / span ${layoutCell.rs}`,
+        position: 'relative',
+        border: 'none',
+        background: '#0B0E14',
+        padding: 0,
+        margin: 0,
+        overflow: 'hidden',
+        cursor: 'pointer',
+        minHeight: 52,
+      }}
+      aria-label={`Открыть медиа ${index + 1}`}
+    >
+      {failed ? (
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#AAB2C2', fontSize: 12, background: 'linear-gradient(150deg, rgba(29,34,45,0.92), rgba(18,21,29,0.92))' }}>
+          Не удалось загрузить
+        </div>
+      ) : (
+        <>
+          {isVideo ? (
+            <video
+              src={src}
+              preload="metadata"
+              playsInline
+              muted
+              onLoadedData={() => setLoading(false)}
+              onError={() => { setFailed(true); setLoading(false); }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', filter: loading ? 'blur(8px)' : 'none', transform: loading ? 'scale(1.04)' : 'none' }}
+            />
+          ) : (
+            <img
+              src={src}
+              alt={item.alt || item.originalName || `photo-${index + 1}`}
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setLoading(false)}
+              onError={() => { setFailed(true); setLoading(false); }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', filter: loading ? 'blur(8px)' : 'none', transform: loading ? 'scale(1.04)' : 'none', transition: 'filter .15s ease, transform .15s ease' }}
+            />
+          )}
+          {loading && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(120deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02), rgba(255,255,255,0.06))' }} />}
+        </>
+      )}
+
+      {isVideo && !failed && (
+        <div style={{ position: 'absolute', right: 6, bottom: 6, padding: '2px 6px', borderRadius: 999, fontSize: 10, fontWeight: 600, color: '#F4F7FD', background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,255,255,0.22)' }}>
+          VIDEO
+        </div>
+      )}
+      {overflowCount > 0 && (
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(8,11,16,0.56)', color: '#F1F4FA', fontSize: 23, fontWeight: 700 }}>
+          +{overflowCount}
+        </div>
+      )}
+    </button>
+  );
+}
+
+/**
+ * MediaGroupMessage
+ * Props are kept close to future TS shape:
+ * items: [{ id, url?, alt?, width?, height?, type? }]
+ *
+ * Example:
+ * <MediaGroupMessage
+ *   items={[{ id: '1', url: '/img/1.jpg' }, { id: '2', url: '/img/2.jpg' }]}
+ *   caption="Подпись к альбому"
+ *   time="13:24"
+ *   status="read"
+ *   isOutgoing
+ *   onOpenImage={(idx) => console.log('open', idx)}
+ * />
+ */
+export function MediaGroupMessage({ items, caption, time, status = 'sent', isOutgoing = false, onOpenImage, onOpenMedia, maxWidth = MEDIA_GROUP_MAX_WIDTH, borderRadius = MEDIA_GROUP_RADIUS, gap = MEDIA_GROUP_GAP }) {
+  const visibleItems = (items || []).slice(0, 10);
+  if (!visibleItems.length) return null;
+
+  const layout = getMediaGroupLayout(visibleItems.length);
+  const overflow = Math.max(0, (items?.length || 0) - visibleItems.length);
+  const statusMap = { sending: '🕓', sent: '✓', delivered: '✓✓', read: '✓✓' };
+
+  return (
+    <div style={{ width: `min(100%, ${maxWidth}px)` }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
+          gap,
+          borderRadius,
+          overflow: 'hidden',
+          background: 'rgba(255,255,255,0.05)',
+          aspectRatio: `${layout.ratio}`,
+        }}
+      >
+        {visibleItems.map((item, index) => (
+          <MediaGroupTile
+            key={item.id}
+            item={item}
+            index={index}
+            layoutCell={layout.cells[index]}
+            overflowCount={overflow > 0 && index === visibleItems.length - 1 ? overflow : 0}
+            onOpenImage={(openIndex) => onOpenImage?.(openIndex)}
+            onOpenMedia={onOpenMedia}
+          />
+        ))}
+      </div>
+      {(caption || time) && (
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.4, color: '#E4E9F2', whiteSpace: 'pre-wrap' }}>{caption || ''}</div>
+          {time && (
+            <div style={{ fontSize: 11, color: isOutgoing ? '#AEB9D2' : '#9EA7B8', fontFamily: 'mono', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+              {time}
+              <span style={{ color: status === 'read' ? '#9EA5FF' : 'inherit' }}>{statusMap[status] || ''}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia, showMeta = true, carouselImages = false, mediaMaxWidth = 260 }) {
   if (!media || media.length === 0) return null;
   const imageItems = media.filter((m) => m.type === 'IMAGE');
+  const visualItems = media.filter((m) => m.type === 'IMAGE' || m.type === 'VIDEO');
   const nonImageItems = media.filter((m) => m.type !== 'IMAGE');
 
   const parts = [];
@@ -67,6 +234,20 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
         </div>
       </div>
     );
+  } else if (visualItems.length > 1) {
+    parts.push(
+      <MediaGroupMessage
+        key="media-group"
+        items={visualItems}
+        onOpenImage={(index) => {
+          const mediaItem = visualItems[index];
+          if (!mediaItem) return;
+          onOpenMedia?.({ type: mediaItem.type || 'IMAGE', src: mediaUrlById(mediaItem.id), title: mediaItem.originalName });
+        }}
+        onOpenMedia={onOpenMedia}
+        maxWidth={Math.max(mediaMaxWidth, 320)}
+      />
+    );
   } else {
     imageItems.forEach((m) => {
       parts.push(
@@ -84,6 +265,9 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
   }
 
   return [...parts, ...nonImageItems.map((m) => {
+    if (visualItems.length > 1 && m.type === 'VIDEO') {
+      return null;
+    }
     if (m.type === 'AUDIO') {
       return (
         <VoiceAttachment
