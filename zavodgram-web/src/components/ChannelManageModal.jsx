@@ -6,7 +6,7 @@ const tc = typeColors;
 export function ChannelManageModal({
   open,
   chat,
-  isOwner,
+  isOwnerOrAdmin,
   tab,
   setTab,
   onLoadBans,
@@ -28,7 +28,7 @@ export function ChannelManageModal({
   onUnbanMember,
   styles,
 }) {
-  if (!open || chat?.type !== 'CHANNEL' || !isOwner) return null;
+  if (!open || chat?.type !== 'CHANNEL' || !isOwnerOrAdmin) return null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 362, backdropFilter: 'blur(4px)' }} onClick={onClose}>

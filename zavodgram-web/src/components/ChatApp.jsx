@@ -431,7 +431,7 @@ export default function ChatApp() {
   } = useChannelManagement({
     activeChat,
     acd,
-    isOwner,
+    isOwnerOrAdmin,
     channelManageModal,
     channelSlugEdit,
     editGroupName,
@@ -1095,7 +1095,6 @@ export default function ChatApp() {
       <ChannelInfoModal
         open={channelInfoModal}
         channel={acd}
-        isOwner={isOwner}
         isOwnerOrAdmin={isOwnerOrAdmin}
         channelPublicLink={channelPublicLink}
         styles={s}
@@ -1109,7 +1108,7 @@ export default function ChatApp() {
       <ChannelManageModal
         open={channelManageModal}
         chat={acd}
-        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
         tab={channelManageTab}
         setTab={setChannelManageTab}
         onLoadBans={loadChannelBans}
