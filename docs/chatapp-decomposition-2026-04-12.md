@@ -139,6 +139,7 @@ src/components/chat-app/
 - Вынесен fullscreen-просмотр медиа в `ChatMediaModal` (image/video + close), чтобы убрать ещё один modal-рендер из `ChatApp`.
 - Вынесен fullscreen-просмотр аватара в `AvatarFullscreenModal`, чтобы отделить отдельный viewer-сценарий от основного контейнера.
 - Вынесена модалка настроек группы/канала в `GroupSettingsModal` (аватар, поля редактирования, темы, переход к участникам), чтобы разгрузить admin-настройки в `ChatApp`.
+- Вынесена модалка списка участников в `MemberListModal` (добавление участников, роли/moderation actions), чтобы изолировать member-management UI от корневого компонента.
 
 ## Критерии готовности
 

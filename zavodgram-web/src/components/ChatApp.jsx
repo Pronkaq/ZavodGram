@@ -21,6 +21,7 @@ import { ChannelInfoModal } from './ChannelInfoModal';
 import { ChatMediaModal } from './ChatMediaModal';
 import { AvatarFullscreenModal } from './AvatarFullscreenModal';
 import { GroupSettingsModal } from './GroupSettingsModal';
+import { MemberListModal } from './MemberListModal';
 import { Av, MediaAttachment, mediaUrlById } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
@@ -1318,92 +1319,26 @@ export default function ChatApp() {
         onOpenMembers={() => { setGroupSettingsModal(false); setMemberListModal(true); }}
       />
 
-      {/* ── Member List Modal ── */}
-      {memberListModal && acd && isGroupOrChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <button style={s.ib} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}><Icons.Close /></button>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Участники ({acd.members?.length || 0})</h3>
-              {isOwnerOrAdmin && <button style={{ ...s.ib, color: '#E9EBEF', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
-                onClick={() => { setGroupSettingsModal(true); setMemberListModal(false); }}><Icons.Edit /> Управление</button>}
-            </div>
-
-            {/* Add member (owner/admin) */}
-            {isOwnerOrAdmin && (
-              <div style={{ marginBottom: 12 }}>
-                <input style={s.inp2} placeholder="Добавить участника..." value={addMemberSearch} onChange={e => searchAddMember(e.target.value)} />
-                {addMemberResults.length > 0 && (
-                  <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6, background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 4 }}>
-                    {addMemberResults.filter(u => !acd.members?.some(m => m.userId === u.id)).map(u => (
-                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', borderRadius: 6 }} onClick={() => handleAddMember(u.id)}>
-                        <Av src={u.avatar} name={u.name} size={28} radius={7} />
-                        <span style={{ fontSize: 13 }}>{u.name}</span>
-                        <span style={{ fontSize: 11, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#EDEFF3' }}>+ Добавить</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Member list */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {(acd.members || [])
-                .sort((a, b) => { const order = { OWNER: 0, ADMIN: 1, MEMBER: 2 }; return (order[a.role] || 2) - (order[b.role] || 2); })
-                .map(member => {
-                  const u = member.user;
-                  const isMe = member.userId === user.id;
-                  const roleLabel = member.role === 'OWNER' ? 'Создатель' : member.role === 'ADMIN' ? 'Модератор' : null;
-                  const roleColor = member.role === 'OWNER' ? '#D3D6DC' : member.role === 'ADMIN' ? '#C8CCD4' : null;
-                  const canManage = isOwner && !isMe && member.role !== 'OWNER';
-                  const canAdminManage = isOwnerOrAdmin && !isMe && member.role === 'MEMBER';
-
-                  return (
-                    <div key={member.userId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <Av src={u?.avatar} name={u?.name} size={38} radius={10} onClick={() => { setMemberListModal(false); openProfile(member.userId); }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {u?.name}
-                          {roleLabel && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: roleColor + '22', color: roleColor, fontFamily: 'mono', fontWeight: 600 }}>{roleLabel}</span>}
-                          {isMe && <span style={{ fontSize: 10, color: '#7C8392' }}>(вы)</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{u?.tag}</div>
-                      </div>
-
-                      {/* Actions dropdown */}
-                      {(canManage || canAdminManage) && (
-                        <div style={{ position: 'relative' }}>
-                          <select
-                            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#AAB0BD', fontSize: 11, padding: '4px 6px', cursor: 'pointer', fontFamily: 'mono' }}
-                            value=""
-                            onChange={e => {
-                              const action = e.target.value;
-                              if (action === 'make_admin') handleSetRole(member.userId, 'ADMIN');
-                              if (action === 'remove_admin') handleSetRole(member.userId, 'MEMBER');
-                              if (action === 'kick') handleKickMember(member.userId);
-                              if (action === 'ban') handleBanMember(member.userId);
-                              if (action === 'transfer') handleTransferOwnership(member.userId);
-                              e.target.value = '';
-                            }}
-                          >
-                            <option value="" disabled>···</option>
-                            {isOwner && member.role === 'MEMBER' && <option value="make_admin">Назначить модератором</option>}
-                            {isOwner && member.role === 'ADMIN' && <option value="remove_admin">Снять модератора</option>}
-                            {(canManage || canAdminManage) && <option value="kick">{acd.type === 'CHANNEL' ? 'Удалить из канала' : 'Удалить из группы'}</option>}
-                            {(canManage || canAdminManage) && acd.type === 'CHANNEL' && <option value="ban">Забанить в канале</option>}
-                            {isOwner && <option value="transfer">Передать права создателя</option>}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
+      <MemberListModal
+        open={memberListModal}
+        chat={acd}
+        isGroupOrChannel={isGroupOrChannel}
+        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        userId={user.id}
+        styles={s}
+        addMemberSearch={addMemberSearch}
+        addMemberResults={addMemberResults}
+        onClose={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}
+        onOpenManagement={() => { setGroupSettingsModal(true); setMemberListModal(false); }}
+        onSearchAddMember={searchAddMember}
+        onAddMember={handleAddMember}
+        onOpenProfile={(memberUserId) => { setMemberListModal(false); openProfile(memberUserId); }}
+        onSetRole={handleSetRole}
+        onKickMember={handleKickMember}
+        onBanMember={handleBanMember}
+        onTransferOwnership={handleTransferOwnership}
+      />
 
       <style>{`
         @keyframes slideDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
