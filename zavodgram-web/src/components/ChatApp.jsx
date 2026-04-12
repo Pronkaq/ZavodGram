@@ -27,6 +27,8 @@ import { usePostCommentsFlow } from './usePostCommentsFlow';
 import { useChannelAttachments } from './useChannelAttachments';
 import { useMessageReactions } from './useMessageReactions';
 import { useMessageTextRenderer } from './useMessageTextRenderer';
+import { useChannelInviteFlow } from './useChannelInviteFlow';
+import { useSettingsPanelFlow } from './useSettingsPanelFlow';
 
 const tc = typeColors;
 
@@ -86,8 +88,6 @@ export default function ChatApp() {
   const [postCommentDraft, setPostCommentDraft] = useState('');
   const [postCommentReplyTo, setPostCommentReplyTo] = useState(null);
   const [channelPostCommentsEnabled, setChannelPostCommentsEnabled] = useState(true);
-  const [inviteChannel, setInviteChannel] = useState(null);
-  const [joiningInvite, setJoiningInvite] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceRecorderState, setVoiceRecorderState] = useState({ startedAt: 0, error: '' });
   const [recordingNowTs, setRecordingNowTs] = useState(Date.now());
@@ -108,7 +108,6 @@ export default function ChatApp() {
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
   const mediaExtraRef = useRef(null);
-  const handledSlugRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
@@ -433,65 +432,27 @@ export default function ChatApp() {
     setReactionPicker,
   });
 
-  const openSettingsPanel = useCallback(() => {
-    setSidebarOpen(false);
-    setNotifPanel(false);
-    setSettingsMode(true);
-    setSettingsSubpage(null);
-    setTagEdit(user.tag || '');
-    setNameEdit(user.name || '');
-    setBioEdit(user.bio || '');
-    setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setProfileData({ ...user, online: true });
-    setProfilePanel(user.id);
-  }, [user]);
+  const { openSettingsPanel, openSettingsSubpage } = useSettingsPanelFlow({
+    user,
+    setSidebarOpen,
+    setNotifPanel,
+    setSettingsMode,
+    setSettingsSubpage,
+    setTagEdit,
+    setNameEdit,
+    setBioEdit,
+    setSettingsSaveState,
+    setProfileData,
+    setProfilePanel,
+  });
 
-  const openSettingsSubpage = useCallback((subpage) => {
-    setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setSettingsSubpage(subpage);
-  }, []);
-
-  useEffect(() => {
-    const slug = window.location.pathname.replace(/^\/+/, '').trim();
-    if (!slug || ['auth', 'login'].includes(slug.toLowerCase())) return;
-    if (slug.includes('/')) return;
-    if (handledSlugRef.current === slug) return;
-    handledSlugRef.current = slug;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const channel = await chatsApi.getBySlug(slug);
-        if (cancelled) return;
-        const existing = chats.find((c) => c.id === channel.id);
-        if (existing) {
-          selectChat(existing.id);
-          setShowMobileChat(true);
-          window.history.replaceState({}, '', '/');
-          return;
-        }
-        setInviteChannel(channel);
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [chats, selectChat]);
-
-  const joinInviteChannel = async () => {
-    if (!inviteChannel?.channelSlug) return;
-    setJoiningInvite(true);
-    try {
-      const joined = await chatsApi.joinBySlug(inviteChannel.channelSlug);
-      await loadChats();
-      selectChat(joined.id);
-      setShowMobileChat(true);
-      setInviteChannel(null);
-      window.history.replaceState({}, '', '/');
-    } catch (err) {
-      alert(err.message || 'Не удалось подписаться');
-    } finally {
-      setJoiningInvite(false);
-    }
-  };
+  const { inviteChannel, joiningInvite, setInviteChannel, joinInviteChannel } = useChannelInviteFlow({
+    chats,
+    selectChat,
+    loadChats,
+    chatsApi,
+    setShowMobileChat,
+  });
 
   const renderMessageText = useMessageTextRenderer({ msgSearch });
 

@@ -121,6 +121,11 @@ src/components/chat-app/
   - sanitize rich text;
   - fallback в plain text + распознавание URL;
   - подсветка совпадений при поиске по сообщениям.
+- Вынесен flow приглашений в каналы в `useChannelInviteFlow`:
+  - разбор slug из URL;
+  - сценарий join по публичной ссылке;
+  - локальные состояния invite/joining.
+- Вынесен flow открытия панели настроек в `useSettingsPanelFlow`, чтобы убрать настройку профиля/подстраниц из корня `ChatApp`.
 
 ## Критерии готовности
 
