@@ -34,6 +34,7 @@ import { useMessageReactions } from './useMessageReactions';
 import { useMessageTextRenderer } from './useMessageTextRenderer';
 import { useChannelInviteFlow } from './useChannelInviteFlow';
 import { useSettingsPanelFlow } from './useSettingsPanelFlow';
+import { useComposerSendState } from './useComposerSendState';
 
 const tc = typeColors;
 
@@ -220,6 +221,11 @@ export default function ChatApp() {
     startTyping,
     mediaApi,
     messagesApi,
+  });
+
+  const { canSend: canSendComposerMessage, sendButtonOpacity } = useComposerSendState({
+    input,
+    pendingMedia,
   });
 
   const { handleVoiceRecordToggle, handleTranscribe } = useVoiceMessaging({
@@ -975,7 +981,7 @@ export default function ChatApp() {
                       >
                         <Icons.Mic />
                       </button>
-                      <button style={{ ...s.sendBtn, opacity: (richTextToPlain(input) || pendingMedia.length > 0) ? 1 : 0.3 }} onClick={handleSend} disabled={!richTextToPlain(input) && pendingMedia.length === 0}><Icons.Send /></button>
+                      <button style={{ ...s.sendBtn, opacity: sendButtonOpacity }} onClick={handleSend} disabled={!canSendComposerMessage}><Icons.Send /></button>
                     </>
                   ) : (
                     <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#9CA3B1', fontSize: 13 }}>

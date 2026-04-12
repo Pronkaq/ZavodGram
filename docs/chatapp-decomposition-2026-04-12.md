@@ -132,6 +132,7 @@ src/components/chat-app/
 - Дополнительно вынесен `ChannelAttachmentsModal` (список медиа/ссылок канала), чтобы убрать ещё один крупный JSX-блок из `ChatApp`.
 - Вынесена тяжелая модалка комментариев поста в `PostCommentsModal`, чтобы изолировать thread-UI и сценарии reply/moderation от корневого контейнера.
 - Вынесена модалка управления каналом в `ChannelManageModal` (tabs main/bans, редактирование slug/описания, разбан), чтобы разгрузить админский блок в `ChatApp`.
+- Вынесена логика доступности отправки в `useComposerSendState` (text/media -> canSend + opacity кнопки), чтобы убрать прямую зависимость `ChatApp` от `richTextToPlain` и локальных условий кнопки отправки.
 
 ## Критерии готовности
 
