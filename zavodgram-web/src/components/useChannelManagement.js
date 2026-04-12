@@ -8,6 +8,7 @@ export function useChannelManagement({
   channelSlugEdit,
   editGroupName,
   editGroupDesc,
+  editContentProtection,
   setChannelSlugEdit,
   setChannelSlugError,
   setChannelInfoModal,
@@ -15,6 +16,7 @@ export function useChannelManagement({
   setBannedUsers,
   setEditGroupName,
   setEditGroupDesc,
+  setEditContentProtection,
   setChannelManageTab,
   setChannelManageModal,
   chatsApi,
@@ -80,12 +82,13 @@ export function useChannelManagement({
     if (!acd || acd.type !== 'CHANNEL' || !isOwner) return;
     setEditGroupName(acd.name || '');
     setEditGroupDesc(acd.description || '');
+    setEditContentProtection(!!acd.contentProtectionEnabled);
     setChannelSlugEdit(acd.channelSlug || '');
     setChannelSlugError('');
     setChannelManageTab('main');
     setChannelManageModal(true);
     await loadChannelBans();
-  }, [acd, isOwner, setEditGroupName, setEditGroupDesc, setChannelSlugEdit, setChannelSlugError, setChannelManageTab, setChannelManageModal, loadChannelBans]);
+  }, [acd, isOwner, setEditGroupName, setEditGroupDesc, setEditContentProtection, setChannelSlugEdit, setChannelSlugError, setChannelManageTab, setChannelManageModal, loadChannelBans]);
 
   const saveChannelManagement = useCallback(async () => {
     if (!activeChat || !acd || acd.type !== 'CHANNEL' || !isOwner) return;
@@ -95,13 +98,18 @@ export function useChannelManagement({
       return;
     }
     try {
-      await chatsApi.update(activeChat, { name: editGroupName.trim(), description: editGroupDesc, channelSlug: slug });
+      await chatsApi.update(activeChat, {
+        name: editGroupName.trim(),
+        description: editGroupDesc,
+        channelSlug: slug,
+        contentProtectionEnabled: editContentProtection,
+      });
       await loadChats();
       setChannelManageModal(false);
     } catch (err) {
       setChannelSlugError(err.message || 'Не удалось сохранить настройки канала');
     }
-  }, [activeChat, acd, isOwner, normalizedSlug, channelSlugEdit, setChannelSlugError, chatsApi, editGroupName, editGroupDesc, loadChats, setChannelManageModal]);
+  }, [activeChat, acd, isOwner, normalizedSlug, channelSlugEdit, setChannelSlugError, chatsApi, editGroupName, editGroupDesc, editContentProtection, loadChats, setChannelManageModal]);
 
   const handleBanMember = useCallback(async (targetId) => {
     if (!activeChat || !targetId) return;

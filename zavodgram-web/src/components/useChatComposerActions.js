@@ -30,6 +30,10 @@ export function useChatComposerActions({
   messagesApi,
 }) {
   const enqueuePendingMedia = useCallback((fileList) => {
+    if (acd?.contentProtectionEnabled) {
+      alert('В этом чате медиа отключены защитой контента');
+      return;
+    }
     const files = Array.from(fileList || []).filter((f) => f instanceof File);
     if (!files.length) return;
     setPendingMedia((prev) => ([
@@ -41,13 +45,17 @@ export function useChatComposerActions({
         previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/') ? URL.createObjectURL(file) : '',
       })),
     ]));
-  }, [setPendingMedia]);
+  }, [acd?.contentProtectionEnabled, setPendingMedia]);
 
   const handleSend = useCallback(async () => {
     const text = sanitizeRichHtml(input);
     const plainText = richTextToPlain(text);
     if (!plainText && pendingMedia.length === 0) return;
     if (!activeChat) return;
+    if (acd?.contentProtectionEnabled && pendingMedia.length > 0) {
+      alert('В этом чате медиа отключены защитой контента');
+      return;
+    }
     if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
     const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === userId)?.role || 'MEMBER';
     if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;

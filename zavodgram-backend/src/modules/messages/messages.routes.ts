@@ -133,7 +133,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     const membership = await requireChatMembership(prisma, chatId, req.user!.userId);
     const chat = await prisma.chat.findUnique({
       where: { id: chatId },
-      select: { type: true, topicsEnabled: true },
+      select: { type: true, topicsEnabled: true, contentProtectionEnabled: true },
     });
     if (!chat) throw new NotFoundError('Чат');
     if (chat.type === 'GROUP' && chat.topicsEnabled) {
@@ -178,6 +178,9 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     }
 
     const inputMediaIds = ensureUuidArray(data.mediaIds || [], 'mediaIds');
+    if (chat.contentProtectionEnabled && inputMediaIds.length > 0) {
+      throw new ForbiddenError('В этом чате отправка медиа отключена защитой контента');
+    }
 
     const message = await prisma.$transaction(async (tx) => {
       const created = await tx.message.create({
