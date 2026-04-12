@@ -16,7 +16,15 @@ import { ChannelAttachmentsModal } from './ChannelAttachmentsModal';
 import { PostCommentsModal } from './PostCommentsModal';
 import { ChannelManageModal } from './ChannelManageModal';
 import { ForwardMessageModal } from './ForwardMessageModal';
-import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
+import { NewChatModal } from './NewChatModal';
+import { ChannelInfoModal } from './ChannelInfoModal';
+import { ChatMediaModal } from './ChatMediaModal';
+import { AvatarFullscreenModal } from './AvatarFullscreenModal';
+import { GroupSettingsModal } from './GroupSettingsModal';
+import { MemberListModal } from './MemberListModal';
+import { ChatAppGlobalStyles } from './ChatAppGlobalStyles';
+import { ProfilePanel } from './ProfilePanel';
+import { Av, MediaAttachment, mediaUrlById } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
 import { useChatAppDerivedState } from './useChatAppDerivedState';
@@ -1002,153 +1010,27 @@ export default function ChatApp() {
         )}
       </div>
 
-      {/* ── Profile Panel ── */}
-      {profilePanel && profileData && (
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#171A20', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 90, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <button
-              style={s.ib}
-              onClick={() => {
-                if (settingsMode && settingsSubpage) {
-                  setSettingsSubpage(null);
-                  return;
-                }
-                setProfilePanel(null);
-                setSettingsSubpage(null);
-              }}
-            >
-              {settingsMode && settingsSubpage ? <Icons.Back /> : <Icons.Close />}
-            </button>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>
-              {settingsMode ? ({
-                profile: 'Профиль',
-              }[settingsSubpage] || 'Настройки') : 'Профиль'}
-            </span>
-          </div>
-          {settingsMode ? (
-            settingsSubpage === 'profile' ? (
-              <div style={{ padding: '20px 16px 24px' }}>
-                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18 }}>
-                  <label style={s.lbl}>Display name</label>
-                  <input style={s.inp2} value={nameEdit} onChange={(e) => setNameEdit(e.target.value)} placeholder="Введите имя" />
-                  <label style={{ ...s.lbl, marginTop: 12 }}>Имя пользователя</label>
-                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit} onChange={(e) => setTagEdit(e.target.value)} placeholder="@username" />
-                  <label style={{ ...s.lbl, marginTop: 12 }}>О себе</label>
-                  <textarea style={{ ...s.inp2, minHeight: 90, resize: 'vertical' }} value={bioEdit} onChange={(e) => setBioEdit(e.target.value)} placeholder="Коротко расскажите о себе" />
-                  <button onClick={saveProfileCard} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
-                    {settingsSaveState.loading ? 'Сохранение…' : 'Сохранить'}
-                  </button>
-                  {settingsSaveState.error && <div style={{ marginTop: 10, fontSize: 12, color: '#D5D8DE' }}>{settingsSaveState.error}</div>}
-                  {settingsSaveState.ok && <div style={{ marginTop: 10, fontSize: 12, color: '#B8D9C6' }}>{settingsSaveState.ok}</div>}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 12, color: '#BFC4D0', fontSize: 12, lineHeight: 1.5 }}>
-                    <Icons.Shield /><span>Публичные поля профиля редактируются в одном месте для удобства.</span>
-                  </div>
-                </div>
-              </div>
-            ) : settingsSubpage ? (
-              <div style={{ padding: '20px 16px 24px' }}>
-                <div style={{ padding: 18, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>Скоро</h3>
-                  <p style={{ fontSize: 13, color: '#99A1B2', lineHeight: 1.5 }}>Этот раздел уже подготовлен в интерфейсе. Функциональность появится в одном из следующих обновлений.</p>
-                </div>
-              </div>
-            ) : (
-              <div style={{ padding: '14px 14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ background: 'linear-gradient(150deg, rgba(35,40,51,0.96), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, padding: 14, boxShadow: '0 12px 30px rgba(0,0,0,0.28)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ position: 'relative' }}>
-                      <Av src={profileData.avatar} name={profileData.name} size={72} radius={18} />
-                      <label style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #171A20' }}>
-                        <Icons.Edit />
-                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-                      </label>
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#F3F5F9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.name}</div>
-                      <div style={{ fontSize: 13, color: '#BBC2D1', fontFamily: 'mono', marginTop: 3 }}>{profileData.tag || '@username'}</div>
-                      <div style={{ fontSize: 12, color: '#8E96A7', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.bio || 'Расскажите немного о себе'}</div>
-                    </div>
-                    <button style={{ ...s.ib, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => openSettingsSubpage('profile')}>
-                      <Icons.Edit />
-                    </button>
-                  </div>
-                </div>
-
-                {[
-                  {
-                    id: 'account',
-                    rows: [
-                      { id: 'profile', title: 'Профиль', subtitle: 'Имя и фото', icon: <Icons.User size={16} /> },
-                    ],
-                  },
-                  {
-                    id: 'privacy',
-                    rows: [
-                      { id: 'notifications', title: 'Уведомления', subtitle: 'Звуки и предпросмотр', icon: <Icons.Bell size={15} /> },
-                      { id: 'privacy', title: 'Конфиденциальность', subtitle: 'Доступ и безопасность', icon: <Icons.Lock size={14} /> },
-                      { id: 'data', title: 'Данные и память', subtitle: 'Кэш и медиа', icon: <Icons.File size={14} /> },
-                      { id: 'devices', title: 'Устройства', subtitle: 'Активные сессии', icon: <Icons.Group size={14} /> },
-                    ],
-                  },
-                  {
-                    id: 'appearance',
-                    rows: [
-                      { id: 'language', title: 'Язык', subtitle: 'Русский', icon: <Icons.Copy size={14} /> },
-                      { id: 'stickers', title: 'Стикеры и эмодзи', subtitle: 'Наборы и реакции', icon: <Icons.Smile size={14} /> },
-                      { id: 'folders', title: 'Папки чатов', subtitle: 'Организация диалогов', icon: <Icons.Channel size={14} /> },
-                    ],
-                  },
-                ].map((group) => (
-                  <div key={group.id} style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 18, overflow: 'hidden' }}>
-                    {group.rows.map((row, idx) => (
-                      <button
-                        key={row.id}
-                        type="button"
-                        onClick={() => openSettingsSubpage(row.id)}
-                        style={{ width: '100%', border: 'none', background: 'transparent', color: 'inherit', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px', cursor: 'pointer', borderBottom: idx === group.rows.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)', textAlign: 'left' }}
-                      >
-                        <div style={{ width: 30, height: 30, borderRadius: 10, background: 'rgba(255,255,255,0.07)', color: '#ECEFF5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{row.icon}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#F2F4F8' }}>{row.title}</div>
-                          {row.subtitle && <div style={{ fontSize: 12, color: '#8F98A9', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.subtitle}</div>}
-                        </div>
-                        <div style={{ transform: 'rotate(180deg)', color: '#7D8799', display: 'flex' }}>
-                          <Icons.Back size={14} />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '2px 2px 6px' }}>
-                  <div style={{ fontSize: 12, color: '#717A8B', textAlign: 'center' }}>ZavodGram Web · v1.0</div>
-                  <button onClick={logout} style={{ ...s.saveBtn, width: '100%', background: 'rgba(255,255,255,0.07)', color: '#F3F4F7', border: '1px solid rgba(255,255,255,0.11)' }}>
-                    <Icons.Logout /> Выйти
-                  </button>
-                </div>
-              </div>
-            )
-          ) : (
-            <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div style={{ position: 'relative', marginBottom: 14 }}>
-                <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
-                  onClick={() => setAvatarView({ url: profileData.avatar, name: profileData.name })} />
-              </div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(255,255,255,0.1)', borderRadius: 20, color: '#E9EBEF', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
-              <p style={{ fontSize: 14, color: '#A2A8B6', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
-              <div style={{ width: '100%' }}>
-                {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#E9EBEF']].map(([l, v, c], i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    <span style={{ fontSize: 13, color: '#7C8392' }}>{l}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, fontFamily: 'mono', color: c || '#F2F4F7' }}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      <ProfilePanel
+        open={profilePanel}
+        profileData={profileData}
+        settingsMode={settingsMode}
+        settingsSubpage={settingsSubpage}
+        nameEdit={nameEdit}
+        tagEdit={tagEdit}
+        bioEdit={bioEdit}
+        settingsSaveState={settingsSaveState}
+        styles={s}
+        onClose={() => setProfilePanel(null)}
+        onSetSettingsSubpage={setSettingsSubpage}
+        onSetNameEdit={setNameEdit}
+        onSetTagEdit={setTagEdit}
+        onSetBioEdit={setBioEdit}
+        onSaveProfileCard={saveProfileCard}
+        onAvatarUpload={handleAvatarUpload}
+        onOpenSettingsSubpage={openSettingsSubpage}
+        onLogout={logout}
+        onOpenAvatar={() => setAvatarView({ url: profileData?.avatar, name: profileData?.name })}
+      />
 
       {/* ── Notification Panel ── */}
       <ChatNotificationsPanel
@@ -1193,93 +1075,41 @@ export default function ChatApp() {
         onClose={() => setForwardMsg(null)}
       />
 
-      {/* ── New Chat Modal ── */}
-      {newChatModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => { setNewChatModal(false); setNewChatMode('search'); }}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 400, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            {newChatMode === 'search' ? (<>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Новый чат</h3>
-              {/* Type selector */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-                {[['Личный','PRIVATE','#E9EBEF'],['Группа','GROUP','#C8CCD4'],['Канал','CHANNEL','#D3D6DC'],['Секретный','SECRET','#EDEFF3']].map(([l,t,c]) => (
-                  <button key={t} onClick={() => (t === 'GROUP' || t === 'CHANNEL') ? setNewChatMode(t) : setNewChatType(t)}
-                    style={{ flex: 1, padding: '8px 4px', background: newChatType === t ? c+'22' : 'rgba(255,255,255,0.04)', border: `1px solid ${newChatType === t ? c : 'rgba(255,255,255,0.06)'}`, borderRadius: 8, color: newChatType === t ? c : '#9CA3B1', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'mono' }}>{l}</button>
-                ))}
-              </div>
-              <input style={s.inp2} placeholder="Поиск по имени или @тегу..." value={newChatSearch} onChange={e => searchNewChat(e.target.value)} autoFocus />
-              <div style={{ maxHeight: 280, overflowY: 'auto', marginTop: 12 }}>
-                {newChatResults.map(u => (
-                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => handleNewChat(u.id, newChatType)}>
-                    <Av src={u.avatar} name={u.name} size={36} radius={10} online={u.online} />
-                    <div><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</div></div>
-                  </div>
-                ))}
-                {newChatSearch.length >= 2 && newChatResults.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: '#686F7F', fontSize: 13 }}>Никого не найдено</div>}
-              </div>
-            </>) : (<>
-              {/* Group / Channel creation */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <button style={s.ib} onClick={() => setNewChatMode('search')}><Icons.Back /></button>
-                <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono' }}>{newChatMode === 'GROUP' ? 'Новая группа' : 'Новый канал'}</h3>
-              </div>
-              <input style={{ ...s.inp2, marginBottom: 8 }} placeholder="Название" value={groupName} onChange={e => setGroupName(e.target.value)} autoFocus />
-              <textarea style={{ ...s.inp2, minHeight: 50, resize: 'vertical', marginBottom: 12 }} placeholder="Описание (необязательно)" value={groupDesc} onChange={e => setGroupDesc(e.target.value)} />
-              <input style={s.inp2} placeholder="Добавить участников..." value={newChatSearch} onChange={e => searchNewChat(e.target.value)} />
-              {groupMembers.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0' }}>
-                  {groupMembers.map(m => (
-                    <span key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'rgba(255,255,255,0.1)', borderRadius: 20, fontSize: 12, color: '#E9EBEF' }}>
-                      {m.name} <span style={{ cursor: 'pointer', opacity: 0.6, fontSize: 14 }} onClick={() => setGroupMembers(p => p.filter(x => x.id !== m.id))}>×</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 8 }}>
-                {newChatResults.filter(u => !groupMembers.some(m => m.id === u.id)).map(u => (
-                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => setGroupMembers(p => [...p, u])}>
-                    <Av src={u.avatar} name={u.name} size={30} radius={8} />
-                    <span style={{ fontSize: 13 }}>{u.name}</span>
-                    <span style={{ fontSize: 11, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</span>
-                  </div>
-                ))}
-              </div>
-              <button style={{ ...s.saveBtn, width: '100%', marginTop: 14, opacity: groupName.trim() ? 1 : 0.4 }} disabled={!groupName.trim()} onClick={createGroupOrChannel}>
-                Создать {newChatMode === 'GROUP' ? 'группу' : 'канал'}
-              </button>
-            </>)}
-          </div>
-        </div>
-      )}
+      <NewChatModal
+        open={newChatModal}
+        mode={newChatMode}
+        chatType={newChatType}
+        search={newChatSearch}
+        results={newChatResults}
+        groupName={groupName}
+        groupDesc={groupDesc}
+        groupMembers={groupMembers}
+        styles={s}
+        onClose={() => { setNewChatModal(false); setNewChatMode('search'); }}
+        onModeChange={setNewChatMode}
+        onChatTypeChange={setNewChatType}
+        onSearch={searchNewChat}
+        onPickUser={handleNewChat}
+        onGroupNameChange={setGroupName}
+        onGroupDescChange={setGroupDesc}
+        onGroupMemberAdd={(member) => setGroupMembers((prev) => [...prev, member])}
+        onGroupMemberRemove={(memberId) => setGroupMembers((prev) => prev.filter((item) => item.id !== memberId))}
+        onCreate={createGroupOrChannel}
+      />
 
-
-      {channelInfoModal && acd?.type === 'CHANNEL' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setChannelInfoModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>О канале</h3>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-              <div style={{ position: 'relative' }}>
-                <Av src={acd.avatar} name={acd.name} size={78} radius={20} color={tc[acd.type]} />
-                {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1D2128' }}>
-                    <Icons.Edit />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
-                  </label>
-                )}
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: '#A2A8B6', marginBottom: 6 }}>Публичная ссылка</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input style={s.inp2} value={channelPublicLink || 'Ссылка не настроена'} readOnly />
-              <button style={s.ib} onClick={() => navigator.clipboard?.writeText(channelPublicLink)} disabled={!channelPublicLink}><Icons.Copy /></button>
-              <button style={s.ib} onClick={shareChannelLink} disabled={!channelPublicLink}><Icons.Share /></button>
-            </div>
-            {isOwner && <button style={{ ...s.saveBtn, width: '100%' }} onClick={() => { setChannelInfoModal(false); openChannelManagement(); }}><Icons.Edit /> Управление</button>}
-            <button style={{ ...s.ib, marginTop: 14, width: '100%', justifyContent: 'center', padding: 10, border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}>
-              <Icons.Image /> Вложения канала
-            </button>
-          </div>
-        </div>
-      )}
+      <ChannelInfoModal
+        open={channelInfoModal}
+        channel={acd}
+        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        channelPublicLink={channelPublicLink}
+        styles={s}
+        onClose={() => setChannelInfoModal(false)}
+        onAvatarUpload={handleGroupAvatarUpload}
+        onShare={shareChannelLink}
+        onOpenManagement={() => { setChannelInfoModal(false); openChannelManagement(); }}
+        onOpenAttachments={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}
+      />
 
       <ChannelManageModal
         open={channelManageModal}
@@ -1336,224 +1166,57 @@ export default function ChatApp() {
         onClose={() => setInviteChannel(null)}
       />
 
+      <ChatMediaModal
+        media={mediaModal}
+        styles={s}
+        onClose={() => setMediaModal(null)}
+      />
 
-      {mediaModal && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(5,7,12,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 430, padding: 18 }}
-          onClick={() => setMediaModal(null)}
-        >
-          <div style={{ width: 'min(96vw, 980px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', gap: 10 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
-              <button type="button" style={s.ib} onClick={() => setMediaModal(null)} aria-label="Закрыть медиа"><Icons.Close /></button>
-            </div>
-            <div style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, overflow: 'hidden', maxHeight: 'calc(92vh - 54px)' }}>
-              {mediaModal.type === 'VIDEO' ? (
-                <video src={mediaModal.src} controls autoPlay playsInline style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', display: 'block', background: '#000' }} />
-              ) : (
-                <img src={mediaModal.src} alt={mediaModal.title || 'media'} style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', objectFit: 'contain', display: 'block', background: '#000' }} />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <AvatarFullscreenModal
+        avatarView={avatarView}
+        onClose={() => setAvatarView(null)}
+      />
 
-      {/* ── Avatar Fullscreen ── */}
-      {avatarView && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, cursor: 'pointer' }} onClick={() => setAvatarView(null)}>
-          {avatarView.url ? (
-            <img src={resolveAvatarSrc(avatarView.url)} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 16 }} alt="" />
-          ) : (
-            <div style={{ width: 240, height: 240, borderRadius: 32, background: '#E9EBEF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 96, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>
-              {avatarView.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
-            </div>
-          )}
-        </div>
-      )}
+      <GroupSettingsModal
+        open={groupSettingsModal}
+        chat={acd}
+        isGroupOrChannel={isGroupOrChannel}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        editGroupName={editGroupName}
+        setEditGroupName={setEditGroupName}
+        editGroupDesc={editGroupDesc}
+        setEditGroupDesc={setEditGroupDesc}
+        editTopicsEnabled={editTopicsEnabled}
+        setEditTopicsEnabled={setEditTopicsEnabled}
+        styles={s}
+        onClose={() => setGroupSettingsModal(false)}
+        onAvatarUpload={handleGroupAvatarUpload}
+        onSave={saveGroupSettings}
+        onOpenMembers={() => { setGroupSettingsModal(false); setMemberListModal(true); }}
+      />
 
-      {/* ── Group Settings Modal ── */}
-      {groupSettingsModal && acd && isGroupOrChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => setGroupSettingsModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 400, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <button style={s.ib} onClick={() => setGroupSettingsModal(false)}><Icons.Close /></button>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono' }}>{acd.type === 'GROUP' ? 'Настройки группы' : 'Настройки канала'}</h3>
-            </div>
+      <MemberListModal
+        open={memberListModal}
+        chat={acd}
+        isGroupOrChannel={isGroupOrChannel}
+        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        userId={user.id}
+        styles={s}
+        addMemberSearch={addMemberSearch}
+        addMemberResults={addMemberResults}
+        onClose={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}
+        onOpenManagement={() => { setGroupSettingsModal(true); setMemberListModal(false); }}
+        onSearchAddMember={searchAddMember}
+        onAddMember={handleAddMember}
+        onOpenProfile={(memberUserId) => { setMemberListModal(false); openProfile(memberUserId); }}
+        onSetRole={handleSetRole}
+        onKickMember={handleKickMember}
+        onBanMember={handleBanMember}
+        onTransferOwnership={handleTransferOwnership}
+      />
 
-            {/* Group avatar */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-              <div style={{ position: 'relative' }}>
-                <Av src={acd.avatar} name={acd.name} size={90} radius={22} color={tc[acd.type]} />
-                {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1D2128' }}>
-                    <Icons.Edit />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            {isOwnerOrAdmin ? (<>
-              <label style={s.lbl}>Название</label>
-              <input style={s.inp2} value={editGroupName} onChange={e => setEditGroupName(e.target.value)} />
-
-              <label style={{ ...s.lbl, marginTop: 12 }}>Описание</label>
-              <textarea style={{ ...s.inp2, minHeight: 60, resize: 'vertical' }} value={editGroupDesc} onChange={e => setEditGroupDesc(e.target.value)} />
-              {acd.type === 'GROUP' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: '#D6DAE2' }}>
-                  <input
-                    type="checkbox"
-                    checked={editTopicsEnabled}
-                    onChange={(e) => setEditTopicsEnabled(e.target.checked)}
-                    disabled={!isOwnerOrAdmin}
-                  />
-                  Группа с темами (отдельные ветки)
-                </label>
-              )}
-
-              <button style={{ ...s.saveBtn, width: '100%', marginTop: 16 }} onClick={saveGroupSettings}>Сохранить</button>
-            </>) : (<>
-              <h2 style={{ fontSize: 20, fontWeight: 700, textAlign: 'center', marginBottom: 6 }}>{acd.name}</h2>
-              {acd.description && <p style={{ fontSize: 14, color: '#A2A8B6', textAlign: 'center', lineHeight: 1.5 }}>{acd.description}</p>}
-            </>)}
-
-            {/* Quick member count */}
-            <div style={{ marginTop: 20, padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-              onClick={() => { setGroupSettingsModal(false); setMemberListModal(true); }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Icons.Group />
-                <span style={{ fontSize: 14 }}>{acd._count?.members || acd.members?.length} участников</span>
-              </div>
-              <span style={{ color: '#E9EBEF', fontSize: 13 }}>Показать →</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Member List Modal ── */}
-      {memberListModal && acd && isGroupOrChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <button style={s.ib} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}><Icons.Close /></button>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Участники ({acd.members?.length || 0})</h3>
-              {isOwnerOrAdmin && <button style={{ ...s.ib, color: '#E9EBEF', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
-                onClick={() => { setGroupSettingsModal(true); setMemberListModal(false); }}><Icons.Edit /> Управление</button>}
-            </div>
-
-            {/* Add member (owner/admin) */}
-            {isOwnerOrAdmin && (
-              <div style={{ marginBottom: 12 }}>
-                <input style={s.inp2} placeholder="Добавить участника..." value={addMemberSearch} onChange={e => searchAddMember(e.target.value)} />
-                {addMemberResults.length > 0 && (
-                  <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6, background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 4 }}>
-                    {addMemberResults.filter(u => !acd.members?.some(m => m.userId === u.id)).map(u => (
-                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', borderRadius: 6 }} onClick={() => handleAddMember(u.id)}>
-                        <Av src={u.avatar} name={u.name} size={28} radius={7} />
-                        <span style={{ fontSize: 13 }}>{u.name}</span>
-                        <span style={{ fontSize: 11, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#EDEFF3' }}>+ Добавить</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Member list */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {(acd.members || [])
-                .sort((a, b) => { const order = { OWNER: 0, ADMIN: 1, MEMBER: 2 }; return (order[a.role] || 2) - (order[b.role] || 2); })
-                .map(member => {
-                  const u = member.user;
-                  const isMe = member.userId === user.id;
-                  const roleLabel = member.role === 'OWNER' ? 'Создатель' : member.role === 'ADMIN' ? 'Модератор' : null;
-                  const roleColor = member.role === 'OWNER' ? '#D3D6DC' : member.role === 'ADMIN' ? '#C8CCD4' : null;
-                  const canManage = isOwner && !isMe && member.role !== 'OWNER';
-                  const canAdminManage = isOwnerOrAdmin && !isMe && member.role === 'MEMBER';
-
-                  return (
-                    <div key={member.userId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <Av src={u?.avatar} name={u?.name} size={38} radius={10} onClick={() => { setMemberListModal(false); openProfile(member.userId); }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {u?.name}
-                          {roleLabel && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: roleColor + '22', color: roleColor, fontFamily: 'mono', fontWeight: 600 }}>{roleLabel}</span>}
-                          {isMe && <span style={{ fontSize: 10, color: '#7C8392' }}>(вы)</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{u?.tag}</div>
-                      </div>
-
-                      {/* Actions dropdown */}
-                      {(canManage || canAdminManage) && (
-                        <div style={{ position: 'relative' }}>
-                          <select
-                            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#AAB0BD', fontSize: 11, padding: '4px 6px', cursor: 'pointer', fontFamily: 'mono' }}
-                            value=""
-                            onChange={e => {
-                              const action = e.target.value;
-                              if (action === 'make_admin') handleSetRole(member.userId, 'ADMIN');
-                              if (action === 'remove_admin') handleSetRole(member.userId, 'MEMBER');
-                              if (action === 'kick') handleKickMember(member.userId);
-                              if (action === 'ban') handleBanMember(member.userId);
-                              if (action === 'transfer') handleTransferOwnership(member.userId);
-                              e.target.value = '';
-                            }}
-                          >
-                            <option value="" disabled>···</option>
-                            {isOwner && member.role === 'MEMBER' && <option value="make_admin">Назначить модератором</option>}
-                            {isOwner && member.role === 'ADMIN' && <option value="remove_admin">Снять модератора</option>}
-                            {(canManage || canAdminManage) && <option value="kick">{acd.type === 'CHANNEL' ? 'Удалить из канала' : 'Удалить из группы'}</option>}
-                            {(canManage || canAdminManage) && acd.type === 'CHANNEL' && <option value="ban">Забанить в канале</option>}
-                            {isOwner && <option value="transfer">Передать права создателя</option>}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes slideDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
-        .zg-root{
-          background:
-            radial-gradient(1000px 550px at 15% 12%, rgba(255,255,255,.18), transparent 62%),
-            radial-gradient(1200px 700px at 85% 88%, rgba(0,0,0,.45), transparent 64%),
-            linear-gradient(155deg, #0f1319 0%, #151922 52%, #1d2129 100%);
-        }
-        .zg-root button,
-        .zg-root input,
-        .zg-root textarea,
-        .zg-root select{
-          transition: all .22s ease;
-        }
-        .zg-root button:hover{
-          filter: brightness(1.08);
-        }
-        .zg-root ::-webkit-scrollbar{width:8px;height:8px}
-        .zg-root ::-webkit-scrollbar-thumb{
-          background: rgba(255,255,255,.22);
-          border-radius: 999px;
-        }
-        .zg-composer:empty::before{
-          content: attr(data-placeholder);
-          color: rgba(199,207,219,.7);
-          pointer-events: none;
-        }
-        .zg-rich-text a{
-          color: #8db4ff;
-          text-decoration: underline;
-          text-underline-offset: 2px;
-        }
-        @media(max-width:700px){
-          .zg-chatlist{${showMobileChat ? 'display:none !important' : 'width:100% !important;max-width:100% !important'}}
-          .zg-chatarea{${showMobileChat ? 'display:flex !important;width:100% !important' : 'display:none !important'}}
-          .zg-back{display:flex !important}
-        }
-      `}</style>
+      <ChatAppGlobalStyles showMobileChat={showMobileChat} />
     </div>
   );
 }
