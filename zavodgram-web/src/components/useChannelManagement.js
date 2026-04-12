@@ -125,6 +125,7 @@ export function useChannelManagement({
   }, [activeChat, chatsApi, loadChannelBans]);
 
   return {
+    loadChannelBans,
     channelPublicLink,
     openChannelInfo,
     shareChannelLink,

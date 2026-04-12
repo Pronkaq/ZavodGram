@@ -425,6 +425,7 @@ export default function ChatApp() {
 
 
   const {
+    loadChannelBans,
     channelPublicLink,
     openChannelInfo,
     shareChannelLink,
