@@ -18,7 +18,9 @@ import { ChannelManageModal } from './ChannelManageModal';
 import { ForwardMessageModal } from './ForwardMessageModal';
 import { NewChatModal } from './NewChatModal';
 import { ChannelInfoModal } from './ChannelInfoModal';
-import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
+import { ChatMediaModal } from './ChatMediaModal';
+import { AvatarFullscreenModal } from './AvatarFullscreenModal';
+import { Av, MediaAttachment, mediaUrlById } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
 import { useChatAppDerivedState } from './useChatAppDerivedState';
@@ -1286,39 +1288,16 @@ export default function ChatApp() {
         onClose={() => setInviteChannel(null)}
       />
 
+      <ChatMediaModal
+        media={mediaModal}
+        styles={s}
+        onClose={() => setMediaModal(null)}
+      />
 
-      {mediaModal && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(5,7,12,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 430, padding: 18 }}
-          onClick={() => setMediaModal(null)}
-        >
-          <div style={{ width: 'min(96vw, 980px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', gap: 10 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
-              <button type="button" style={s.ib} onClick={() => setMediaModal(null)} aria-label="Закрыть медиа"><Icons.Close /></button>
-            </div>
-            <div style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, overflow: 'hidden', maxHeight: 'calc(92vh - 54px)' }}>
-              {mediaModal.type === 'VIDEO' ? (
-                <video src={mediaModal.src} controls autoPlay playsInline style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', display: 'block', background: '#000' }} />
-              ) : (
-                <img src={mediaModal.src} alt={mediaModal.title || 'media'} style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', objectFit: 'contain', display: 'block', background: '#000' }} />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Avatar Fullscreen ── */}
-      {avatarView && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, cursor: 'pointer' }} onClick={() => setAvatarView(null)}>
-          {avatarView.url ? (
-            <img src={resolveAvatarSrc(avatarView.url)} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 16 }} alt="" />
-          ) : (
-            <div style={{ width: 240, height: 240, borderRadius: 32, background: '#E9EBEF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 96, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>
-              {avatarView.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
-            </div>
-          )}
-        </div>
-      )}
+      <AvatarFullscreenModal
+        avatarView={avatarView}
+        onClose={() => setAvatarView(null)}
+      />
 
       {/* ── Group Settings Modal ── */}
       {groupSettingsModal && acd && isGroupOrChannel && (
