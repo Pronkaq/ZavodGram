@@ -7,6 +7,20 @@ const ChatContext = createContext(null);
 
 const topicKey = (chatId, topicId) => (topicId ? `${chatId}::${topicId}` : chatId);
 
+const mergeMessagesUnique = (existing = [], incoming = []) => {
+  const byId = new Map();
+  [...existing, ...incoming].forEach((msg) => {
+    if (!msg?.id) return;
+    byId.set(msg.id, msg);
+  });
+  return Array.from(byId.values()).sort((a, b) => {
+    const at = new Date(a.createdAt || 0).getTime();
+    const bt = new Date(b.createdAt || 0).getTime();
+    if (at === bt) return String(a.id).localeCompare(String(b.id));
+    return at - bt;
+  });
+};
+
 export function ChatProvider({ children }) {
   const { user } = useAuth();
   const [chats, setChats] = useState([]);
@@ -41,7 +55,11 @@ export function ChatProvider({ children }) {
     if (!chatId) return null;
     try {
       const details = await chatsApi.get(chatId);
-      setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, ...details } : c)));
+      setChats((prev) => {
+        const existingIndex = prev.findIndex((c) => c.id === chatId);
+        if (existingIndex === -1) return [...prev, details];
+        return prev.map((c) => (c.id === chatId ? { ...c, ...details } : c));
+      });
       return details;
     } catch (e) {
       console.error('Failed to load chat details', e);
@@ -72,7 +90,10 @@ export function ChatProvider({ children }) {
         messageLoadMetaRef.current[key] = { ...(meta || {}), refreshing: true };
         messagesApi.list(chatId, undefined, topicId)
           .then((data) => {
-            setMessages((prev) => ({ ...prev, [key]: data.messages }));
+            setMessages((prev) => ({
+              ...prev,
+              [key]: mergeMessagesUnique(prev[key], data.messages || []),
+            }));
             setMessagePaging((prev) => ({
               ...prev,
               [key]: {
@@ -107,7 +128,10 @@ export function ChatProvider({ children }) {
 
     const pending = messagesApi.list(chatId, undefined, topicId)
       .then((data) => {
-        setMessages((prev) => ({ ...prev, [key]: data.messages }));
+        setMessages((prev) => ({
+          ...prev,
+          [key]: mergeMessagesUnique(prev[key], data.messages || []),
+        }));
         setMessagePaging((prev) => ({
           ...prev,
           [key]: {
