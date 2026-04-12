@@ -119,6 +119,7 @@ export default function ChatApp() {
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [topicError, setTopicError] = useState('');
   const [mediaModal, setMediaModal] = useState(null);
+  const [shieldActivationNotice, setShieldActivationNotice] = useState('');
   const endRef = useRef(null);
   const messagesScrollRef = useRef(null);
   const messagesVirtuosoRef = useRef(null);
