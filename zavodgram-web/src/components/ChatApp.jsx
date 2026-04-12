@@ -20,6 +20,7 @@ import { NewChatModal } from './NewChatModal';
 import { ChannelInfoModal } from './ChannelInfoModal';
 import { ChatMediaModal } from './ChatMediaModal';
 import { AvatarFullscreenModal } from './AvatarFullscreenModal';
+import { GroupSettingsModal } from './GroupSettingsModal';
 import { Av, MediaAttachment, mediaUrlById } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
@@ -1299,64 +1300,23 @@ export default function ChatApp() {
         onClose={() => setAvatarView(null)}
       />
 
-      {/* ── Group Settings Modal ── */}
-      {groupSettingsModal && acd && isGroupOrChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => setGroupSettingsModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 400, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <button style={s.ib} onClick={() => setGroupSettingsModal(false)}><Icons.Close /></button>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono' }}>{acd.type === 'GROUP' ? 'Настройки группы' : 'Настройки канала'}</h3>
-            </div>
-
-            {/* Group avatar */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-              <div style={{ position: 'relative' }}>
-                <Av src={acd.avatar} name={acd.name} size={90} radius={22} color={tc[acd.type]} />
-                {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1D2128' }}>
-                    <Icons.Edit />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            {isOwnerOrAdmin ? (<>
-              <label style={s.lbl}>Название</label>
-              <input style={s.inp2} value={editGroupName} onChange={e => setEditGroupName(e.target.value)} />
-
-              <label style={{ ...s.lbl, marginTop: 12 }}>Описание</label>
-              <textarea style={{ ...s.inp2, minHeight: 60, resize: 'vertical' }} value={editGroupDesc} onChange={e => setEditGroupDesc(e.target.value)} />
-              {acd.type === 'GROUP' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: '#D6DAE2' }}>
-                  <input
-                    type="checkbox"
-                    checked={editTopicsEnabled}
-                    onChange={(e) => setEditTopicsEnabled(e.target.checked)}
-                    disabled={!isOwnerOrAdmin}
-                  />
-                  Группа с темами (отдельные ветки)
-                </label>
-              )}
-
-              <button style={{ ...s.saveBtn, width: '100%', marginTop: 16 }} onClick={saveGroupSettings}>Сохранить</button>
-            </>) : (<>
-              <h2 style={{ fontSize: 20, fontWeight: 700, textAlign: 'center', marginBottom: 6 }}>{acd.name}</h2>
-              {acd.description && <p style={{ fontSize: 14, color: '#A2A8B6', textAlign: 'center', lineHeight: 1.5 }}>{acd.description}</p>}
-            </>)}
-
-            {/* Quick member count */}
-            <div style={{ marginTop: 20, padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-              onClick={() => { setGroupSettingsModal(false); setMemberListModal(true); }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Icons.Group />
-                <span style={{ fontSize: 14 }}>{acd._count?.members || acd.members?.length} участников</span>
-              </div>
-              <span style={{ color: '#E9EBEF', fontSize: 13 }}>Показать →</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <GroupSettingsModal
+        open={groupSettingsModal}
+        chat={acd}
+        isGroupOrChannel={isGroupOrChannel}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        editGroupName={editGroupName}
+        setEditGroupName={setEditGroupName}
+        editGroupDesc={editGroupDesc}
+        setEditGroupDesc={setEditGroupDesc}
+        editTopicsEnabled={editTopicsEnabled}
+        setEditTopicsEnabled={setEditTopicsEnabled}
+        styles={s}
+        onClose={() => setGroupSettingsModal(false)}
+        onAvatarUpload={handleGroupAvatarUpload}
+        onSave={saveGroupSettings}
+        onOpenMembers={() => { setGroupSettingsModal(false); setMemberListModal(true); }}
+      />
 
       {/* ── Member List Modal ── */}
       {memberListModal && acd && isGroupOrChannel && (
