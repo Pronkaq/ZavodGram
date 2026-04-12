@@ -16,6 +16,8 @@ import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
 import { useChatToasts } from './useChatToasts';
 import { useChatAppDerivedState } from './useChatAppDerivedState';
 import { useComposerFormatting } from './useComposerFormatting';
+import { useChatTopicFlow } from './useChatTopicFlow';
+import { useChatMessageViewport } from './useChatMessageViewport';
 
 const tc = typeColors;
 
@@ -141,61 +143,23 @@ export default function ChatApp() {
     startTyping,
   });
 
-  const loadTopics = useCallback(async (chatId) => {
-    if (!chatId) return;
-    setTopicsLoading(true);
-    try {
-      const data = await chatsApi.listTopics(chatId);
-      setChatTopics(data);
-      if (data.length > 0) {
-        setActiveTopicId((prev) => (prev && data.some((t) => t.id === prev) ? prev : data[0].id));
-      } else {
-        setActiveTopicId(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setChatTopics([]);
-      setActiveTopicId(null);
-    } finally {
-      setTopicsLoading(false);
-    }
-  }, []);
+  const { loadTopics } = useChatTopicFlow({
+    chatsApi,
+    activeChat,
+    acd,
+    activeTopicId,
+    setTopicsLoading,
+    setChatTopics,
+    setActiveTopicId,
+    loadMessages,
+  });
 
   const openMediaModal = useCallback((payload) => {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
 
-  useEffect(() => {
-    if (searchResults.length > 0 && msgSearchIdx >= 0)
-      document.getElementById(`msg-${searchResults[msgSearchIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [msgSearchIdx, searchResults]);
-
-  useEffect(() => {
-    if (shouldVirtualize) {
-      messagesVirtuosoRef.current?.scrollToIndex({ index: Math.max(0, cms.length - 1), align: 'end', behavior: 'smooth' });
-      return;
-    }
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [cms.length, activeChat, shouldVirtualize]);
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
-  useEffect(() => {
-    if (!activeChat || acd?.type !== 'GROUP' || !acd?.topicsEnabled) {
-      setChatTopics([]);
-      setActiveTopicId(null);
-      return;
-    }
-    loadTopics(activeChat);
-  }, [activeChat, acd?.type, acd?.topicsEnabled, loadTopics]);
-
-  useEffect(() => {
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled) {
-      if (activeTopicId) loadMessages(activeChat, activeTopicId);
-      return;
-    }
-    loadMessages(activeChat);
-  }, [activeChat, activeTopicId, acd?.type, acd?.topicsEnabled, loadMessages]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
@@ -207,17 +171,19 @@ export default function ChatApp() {
     return () => clearInterval(timer);
   }, [voiceRecording]);
 
-  const onMessagesScroll = useCallback((e) => {
-    if (!activeChat || paging.loadingMore || !paging.hasMore) return;
-    const el = e.currentTarget;
-    if (el.scrollTop > 120) return;
-    const topicId = (acd?.type === 'GROUP' && acd?.topicsEnabled) ? activeTopicId : undefined;
-    loadMoreMessages(activeChat, topicId);
-  }, [activeChat, paging.loadingMore, paging.hasMore, acd?.type, acd?.topicsEnabled, activeTopicId, loadMoreMessages]);
-
-  const onMessagesViewportScroll = useCallback((e) => {
-    onMessagesScroll(e);
-  }, [onMessagesScroll]);
+  const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
+    activeChat,
+    activeTopicId,
+    acd,
+    paging,
+    loadMoreMessages,
+    shouldVirtualize,
+    cmsLength: cms.length,
+    searchResults,
+    msgSearchIdx,
+    endRef,
+    messagesVirtuosoRef,
+  });
 
   // ── Handlers ──
   const enqueuePendingMedia = useCallback((fileList) => {
