@@ -129,6 +129,7 @@ src/components/chat-app/
 - Вынесены отдельные UI-компоненты:
   - `ChatReactionPicker` (popover выбора реакции);
   - `ChannelInviteModal` (модалка приглашения в канал по slug).
+- Дополнительно вынесен `ChannelAttachmentsModal` (список медиа/ссылок канала), чтобы убрать ещё один крупный JSX-блок из `ChatApp`.
 
 ## Критерии готовности
 
