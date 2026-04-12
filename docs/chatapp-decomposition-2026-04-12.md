@@ -142,6 +142,8 @@ src/components/chat-app/
 - Вынесена модалка списка участников в `MemberListModal` (добавление участников, роли/moderation actions), чтобы изолировать member-management UI от корневого компонента.
 - Вынесен inline-блок глобальных стилей в `ChatAppGlobalStyles`, чтобы убрать инфраструктурный CSS-шум из render-дерева `ChatApp`.
 - Вынесена правая панель профиля/настроек в `ProfilePanel`, чтобы отделить settings-profile UI и подпотоки редактирования от `ChatApp`.
+- Вынесен `ChatMessageSearchBar` (UI поиска по сообщениям + навигация по match-ам), чтобы убрать локальный блок поиска из `ChatApp`.
+- Вынесен `ChatTopicsBar` (topic tabs + создание темы для admin/owner), чтобы отделить topic-navigation UI от основного render-потока.
 
 ## Критерии готовности
 
