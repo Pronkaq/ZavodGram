@@ -46,6 +46,7 @@ import { useMessageTextRenderer } from './useMessageTextRenderer';
 import { useChannelInviteFlow } from './useChannelInviteFlow';
 import { useSettingsPanelFlow } from './useSettingsPanelFlow';
 import { useComposerSendState } from './useComposerSendState';
+import { useDirectContentProtection } from './useDirectContentProtection';
 
 const tc = typeColors;
 
@@ -185,31 +186,12 @@ export default function ChatApp() {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
-  const protectedDirectChat = (acd?.type === 'PRIVATE' || acd?.type === 'SECRET') && !!acd?.contentProtectionEnabled;
 
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
-  useEffect(() => {
-    if (!protectedDirectChat) return undefined;
-    const onKeyDown = (event) => {
-      const key = (event.key || '').toLowerCase();
-      const isPrintScreen = key === 'printscreen';
-      const isWinSnip = event.ctrlKey && event.shiftKey && key === 's';
-      const isWinSnipMeta = event.metaKey && event.shiftKey && key === 's';
-      const isMacAreaShot = event.metaKey && event.shiftKey && key === '4';
-      const isMacWindowShot = event.metaKey && event.shiftKey && key === '3';
-      if (isPrintScreen || isWinSnip || isWinSnipMeta || isMacAreaShot || isMacWindowShot) {
-        event.preventDefault();
-        event.stopPropagation();
-        alert('Скриншоты в защищённом личном чате запрещены');
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [protectedDirectChat]);
 
   const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
     activeChat,
@@ -357,34 +339,16 @@ export default function ChatApp() {
     try { await chatsApi.mute(chatId, !chat?.muted); loadChats(); } catch {}
   };
 
-  const toggleDirectContentProtection = useCallback(async () => {
-    const isDirect = acd?.type === 'PRIVATE' || acd?.type === 'SECRET';
-    if (!activeChat || !isDirect) return;
-    try {
-      const willEnableProtection = !acd?.contentProtectionRequestedByMe;
-      const updated = await chatsApi.update(activeChat, { contentProtectionEnabled: willEnableProtection });
-      await loadChats();
-      if (willEnableProtection) {
-        setShieldActivationNotice(updated?.contentProtectionEnabled
-          ? 'Щит контента включён'
-          : 'Запрос на щит отправлен — ждём подтверждение второй стороны');
-      }
-    } catch (err) {
-      alert(err.message || 'Не удалось переключить защиту контента');
-    }
-  }, [activeChat, acd?.type, acd?.contentProtectionRequestedByMe, chatsApi, loadChats]);
-
-  useEffect(() => {
-    if (!shieldActivationNotice) return undefined;
-    const timer = setTimeout(() => setShieldActivationNotice(''), 2200);
-    return () => clearTimeout(timer);
-  }, [shieldActivationNotice]);
-
-  useEffect(() => {
-    if (!shieldActivationNotice) return undefined;
-    const timer = setTimeout(() => setShieldActivationNotice(false), 2200);
-    return () => clearTimeout(timer);
-  }, [shieldActivationNotice]);
+  const {
+    protectedDirectChat,
+    shieldActivationNotice,
+    toggleDirectContentProtection,
+  } = useDirectContentProtection({
+    activeChat,
+    acd,
+    chatsApi,
+    loadChats,
+  });
 
   const doForward = (chatId) => {
     if (!forwardMsg) return;
