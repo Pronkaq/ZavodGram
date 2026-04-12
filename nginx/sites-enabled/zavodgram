@@ -1,0 +1,47 @@
+server {
+    server_name zavodgram.spronka.ru;
+    client_max_body_size 100m;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 100m;
+
+    }
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:4000/socket.io/;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:4000/uploads/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3081;
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/zavodgram.spronka.ru/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/zavodgram.spronka.ru/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+server {
+    if ($host = zavodgram.spronka.ru) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name zavodgram.spronka.ru;
+    return 404; # managed by Certbot
+
+
+}
