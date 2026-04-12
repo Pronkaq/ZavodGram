@@ -1,0 +1,123 @@
+.bubble {
+  /* easy tune: bubble max width */
+  max-width: min(100%, var(--media-group-max-width, 360px));
+  border-radius: var(--media-group-bubble-radius, 16px); /* easy tune */
+  padding: var(--media-group-bubble-padding, 6px); /* easy tune */
+  background: var(--media-group-bubble-bg, rgba(255, 255, 255, 0.07));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.grid {
+  display: grid;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--media-group-grid-radius, 12px);
+  gap: var(--media-group-gap, 3px); /* easy tune */
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tile {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: #0e1218;
+  cursor: pointer;
+}
+
+.tile img,
+.tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tile:hover .media {
+  transform: scale(1.02);
+}
+
+.media {
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.loading .media {
+  filter: blur(8px);
+  transform: scale(1.04);
+}
+
+.skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.08));
+}
+
+.errorState {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #c7cfdd;
+  font-size: 12px;
+  background: linear-gradient(150deg, rgba(34, 39, 50, 0.95), rgba(20, 24, 33, 0.95));
+}
+
+.videoBadge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #f4f7ff;
+  background: rgba(0, 0, 0, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.overflowOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: #f3f6fd;
+  background: rgba(9, 12, 18, 0.58);
+}
+
+.caption {
+  margin: 8px 2px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  color: #e8edf7;
+}
+
+.meta {
+  margin: 6px 2px 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #b6bfd2;
+  font-family: monospace;
+}
+
+.metaOutgoing {
+  color: #c1c9d9;
+}
+
+.metaRead {
+  color: #8f9cff;
+}
+
+@media (max-width: 700px) {
+  .bubble {
+    max-width: min(100%, var(--media-group-max-width-mobile, 310px));
+    border-radius: 14px;
+  }
+}

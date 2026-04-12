@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icons } from './Icons';
 import { getAccessToken } from '../api/client';
+import MediaGroupMessage from './media/MediaGroupMessage';
 
 export function mediaUrlById(id) {
   const token = getAccessToken();
@@ -40,6 +41,7 @@ export function Av({ src, name, size = 46, radius = 12, color, online, onClick, 
 export function MediaAttachment({ media, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia, showMeta = true, carouselImages = false, mediaMaxWidth = 260 }) {
   if (!media || media.length === 0) return null;
   const imageItems = media.filter((m) => m.type === 'IMAGE');
+  const visualItems = media.filter((m) => m.type === 'IMAGE' || m.type === 'VIDEO');
   const nonImageItems = media.filter((m) => m.type !== 'IMAGE');
 
   const parts = [];
@@ -67,6 +69,23 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
         </div>
       </div>
     );
+  } else if (visualItems.length > 1) {
+    parts.push(
+      <MediaGroupMessage
+        key="media-group"
+        items={visualItems.map((item) => ({
+          id: item.id,
+          url: mediaUrlById(item.id),
+          alt: item.originalName,
+          type: item.type === 'VIDEO' ? 'video' : 'image',
+        }))}
+        onOpenImage={(index) => {
+          const mediaItem = visualItems[index];
+          if (!mediaItem) return;
+          onOpenMedia?.({ type: mediaItem.type || 'IMAGE', src: mediaUrlById(mediaItem.id), title: mediaItem.originalName });
+        }}
+      />
+    );
   } else {
     imageItems.forEach((m) => {
       parts.push(
@@ -84,6 +103,9 @@ export function MediaAttachment({ media, onTranscribe, transcriptions = {}, tran
   }
 
   return [...parts, ...nonImageItems.map((m) => {
+    if (visualItems.length > 1 && m.type === 'VIDEO') {
+      return null;
+    }
     if (m.type === 'AUDIO') {
       return (
         <VoiceAttachment
