@@ -19,6 +19,8 @@ import { useComposerFormatting } from './useComposerFormatting';
 import { useChatTopicFlow } from './useChatTopicFlow';
 import { useChatMessageViewport } from './useChatMessageViewport';
 import { useChatComposerActions } from './useChatComposerActions';
+import { useVoiceMessaging } from './useVoiceMessaging';
+import { useChannelManagement } from './useChannelManagement';
 
 const tc = typeColors;
 
@@ -166,12 +168,6 @@ export default function ChatApp() {
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
 
-  useEffect(() => {
-    if (!voiceRecording) return undefined;
-    const timer = setInterval(() => setRecordingNowTs(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [voiceRecording]);
-
   const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
     activeChat,
     activeTopicId,
@@ -216,6 +212,28 @@ export default function ChatApp() {
     messagesApi,
   });
 
+  const { handleVoiceRecordToggle, handleTranscribe } = useVoiceMessaging({
+    activeChat,
+    acd,
+    userId: user.id,
+    voiceRecording,
+    transcriptionLoading,
+    transcriptionAvailable,
+    mediaRecorderRef,
+    mediaStreamRef,
+    voiceChunksRef,
+    setVoiceRecorderState,
+    setRecordingNowTs,
+    setVoiceRecording,
+    setTranscriptionLoading,
+    setTranscriptions,
+    setTranscriptionAvailable,
+    mediaApi,
+    messagesApi,
+    loadMessages,
+    loadChats,
+  });
+
   const handleComposerPaste = useCallback((e) => {
     const files = Array.from(e.clipboardData?.items || [])
       .filter((item) => item.kind === 'file')
@@ -242,107 +260,6 @@ export default function ChatApp() {
       return next;
     });
   }, []);
-
-  const handleVoiceRecordToggle = async () => {
-    if (!activeChat) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-
-    if (voiceRecording) {
-      mediaRecorderRef.current?.stop?.();
-      return;
-    }
-
-    try {
-      if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        setVoiceRecorderState({ startedAt: 0, error: 'Запись голоса не поддерживается в этом браузере' });
-        return;
-      }
-      setVoiceRecorderState({ startedAt: 0, error: '' });
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-      const isAppleDevice = /iPad|iPhone|iPod|Macintosh/i.test(navigator.userAgent || '');
-      const mimeTypes = [
-        ...(isAppleDevice ? ['audio/mp4'] : []),
-        'audio/webm;codecs=opus',
-        'audio/ogg;codecs=opus',
-        'audio/mp4',
-        'audio/webm',
-      ];
-      const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      voiceChunksRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data?.size > 0) voiceChunksRef.current.push(event.data);
-      };
-      recorder.onstop = async () => {
-        setVoiceRecording(false);
-        mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-
-        const chunks = voiceChunksRef.current;
-        voiceChunksRef.current = [];
-        if (!chunks.length || !activeChat) {
-          if (!chunks.length) {
-            setVoiceRecorderState({ startedAt: 0, error: 'Не удалось записать аудио. Попробуйте ещё раз' });
-          }
-          return;
-        }
-
-        try {
-          const audioType = chunks[0]?.type || 'audio/webm';
-          const ext = audioType.includes('ogg')
-            ? 'ogg'
-            : audioType.includes('mpeg')
-              ? 'mp3'
-              : audioType.includes('mp4')
-                ? 'm4a'
-                : 'webm';
-          const voiceFile = new File(chunks, `voice-${Date.now()}.${ext}`, { type: audioType });
-          const media = await mediaApi.upload(voiceFile);
-          await messagesApi.send(activeChat, { mediaIds: [media.id] });
-          await loadMessages(activeChat);
-          await loadChats();
-        } catch (err) {
-          console.error('Voice upload failed', err);
-          setVoiceRecorderState({ startedAt: 0, error: 'Не удалось отправить голосовое сообщение' });
-        }
-      };
-
-      recorder.start(1000);
-      setVoiceRecorderState({ startedAt: Date.now(), error: '' });
-      setRecordingNowTs(Date.now());
-      setVoiceRecording(true);
-    } catch (err) {
-      console.error('Voice recording failed', err);
-      const errorText = err?.name === 'NotFoundError'
-        ? 'Микрофон не найден. Подключите устройство ввода и попробуйте снова'
-        : err?.name === 'NotAllowedError'
-          ? 'Нет доступа к микрофону. Разрешите доступ в браузере'
-          : 'Не удалось получить доступ к микрофону';
-      setVoiceRecorderState({ startedAt: 0, error: errorText });
-      setVoiceRecording(false);
-    }
-  };
-
-  const handleTranscribe = async (mediaId) => {
-    if (!mediaId || transcriptionLoading[mediaId] || !transcriptionAvailable) return;
-    setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: true }));
-    try {
-      const result = await mediaApi.transcribe(mediaId);
-      setTranscriptions((prev) => ({ ...prev, [mediaId]: result.text || '' }));
-    } catch (err) {
-      const message = err?.message || 'Не удалось получить расшифровку';
-      if (message.toLowerCase().includes('не настроен провайдер')) {
-        setTranscriptionAvailable(false);
-      }
-      setTranscriptions((prev) => ({ ...prev, [mediaId]: message }));
-    } finally {
-      setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: false }));
-    }
-  };
 
   const openProfile = async (userId) => {
     if (userId === user.id) { setProfileData({ ...user, online: true }); }
@@ -556,108 +473,35 @@ export default function ChatApp() {
   }, []);
 
 
-  const normalizedSlug = (slug) => (slug || '').trim().toLowerCase();
-  const channelPublicLink = useMemo(() => {
-    if (!acd?.channelSlug) return '';
-    return `${window.location.origin}/${acd.channelSlug}`;
-  }, [acd?.channelSlug]);
-
-  const openChannelInfo = useCallback(() => {
-    if (!acd || acd.type !== 'CHANNEL') return;
-    setChannelSlugEdit(acd.channelSlug || '');
-    setChannelSlugError('');
-    setChannelInfoModal(true);
-  }, [acd]);
-
-  const shareChannelLink = async () => {
-    if (!channelPublicLink) return;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: acd?.name || 'Канал', url: channelPublicLink });
-      } else {
-        await navigator.clipboard?.writeText(channelPublicLink);
-      }
-    } catch {}
-  };
-
-  const saveChannelSlug = async () => {
-    if (!activeChat || !acd || acd.type !== 'CHANNEL') return;
-    const slug = normalizedSlug(channelSlugEdit);
-    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
-      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
-      return;
-    }
-    try {
-      await chatsApi.update(activeChat, { channelSlug: slug });
-      await loadChats();
-      setChannelSlugError('');
-      setChannelInfoModal(false);
-    } catch (err) {
-      setChannelSlugError(err.message || 'Не удалось сохранить ссылку');
-    }
-  };
-
-  const loadChannelBans = useCallback(async () => {
-    if (!activeChat) return;
-    setBansLoading(true);
-    try {
-      const bans = await chatsApi.listBans(activeChat);
-      setBannedUsers(bans || []);
-    } catch (err) {
-      setBannedUsers([]);
-      alert(err.message || 'Не удалось загрузить список заблокированных');
-    } finally {
-      setBansLoading(false);
-    }
-  }, [activeChat]);
-
-  const openChannelManagement = useCallback(async () => {
-    if (!acd || acd.type !== 'CHANNEL' || !isOwner) return;
-    setEditGroupName(acd.name || '');
-    setEditGroupDesc(acd.description || '');
-    setChannelSlugEdit(acd.channelSlug || '');
-    setChannelSlugError('');
-    setChannelManageTab('main');
-    setChannelManageModal(true);
-    await loadChannelBans();
-  }, [acd, isOwner, loadChannelBans]);
-
-  const saveChannelManagement = async () => {
-    if (!activeChat || !acd || acd.type !== 'CHANNEL' || !isOwner) return;
-    const slug = normalizedSlug(channelSlugEdit);
-    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
-      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
-      return;
-    }
-    try {
-      await chatsApi.update(activeChat, { name: editGroupName.trim(), description: editGroupDesc, channelSlug: slug });
-      await loadChats();
-      setChannelManageModal(false);
-    } catch (err) {
-      setChannelSlugError(err.message || 'Не удалось сохранить настройки канала');
-    }
-  };
-
-  const handleBanMember = async (targetId) => {
-    if (!activeChat || !targetId) return;
-    try {
-      await chatsApi.banMember(activeChat, targetId);
-      await loadChats();
-      if (channelManageModal) await loadChannelBans();
-    } catch (err) {
-      alert(err.message || 'Не удалось заблокировать пользователя');
-    }
-  };
-
-  const handleUnbanMember = async (targetId) => {
-    if (!activeChat || !targetId) return;
-    try {
-      await chatsApi.unbanMember(activeChat, targetId);
-      await loadChannelBans();
-    } catch (err) {
-      alert(err.message || 'Не удалось разблокировать пользователя');
-    }
-  };
+  const {
+    channelPublicLink,
+    openChannelInfo,
+    shareChannelLink,
+    saveChannelSlug,
+    openChannelManagement,
+    saveChannelManagement,
+    handleBanMember,
+    handleUnbanMember,
+  } = useChannelManagement({
+    activeChat,
+    acd,
+    isOwner,
+    channelManageModal,
+    channelSlugEdit,
+    editGroupName,
+    editGroupDesc,
+    setChannelSlugEdit,
+    setChannelSlugError,
+    setChannelInfoModal,
+    setBansLoading,
+    setBannedUsers,
+    setEditGroupName,
+    setEditGroupDesc,
+    setChannelManageTab,
+    setChannelManageModal,
+    chatsApi,
+    loadChats,
+  });
 
   const extractLinks = (text) => {
     if (!text) return [];
