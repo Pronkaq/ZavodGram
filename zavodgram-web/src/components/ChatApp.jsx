@@ -10,6 +10,7 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatListPanel } from './ChatListPanel';
 import { ChatNotificationsPanel } from './ChatNotificationsPanel';
 import { ChatMessageContextMenu } from './ChatMessageContextMenu';
+import { ChatReactionPicker } from './ChatReactionPicker';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
@@ -1661,13 +1662,14 @@ export default function ChatApp() {
       />
 
 
-      {reactionPicker && (
-        <div style={{ position: 'fixed', top: reactionPicker.y, left: reactionPicker.x, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '8px 10px', zIndex: 240, display: 'flex', gap: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-          {REACTION_SET.map((emoji) => (
-            <button key={emoji} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer' }} onClick={() => { addReaction(reactionPicker.msgId, emoji); setReactionPicker(null); }}>{emoji}</button>
-          ))}
-        </div>
-      )}
+      <ChatReactionPicker
+        picker={reactionPicker}
+        reactionSet={REACTION_SET}
+        onSelectReaction={(emoji) => {
+          addReaction(reactionPicker.msgId, emoji);
+          setReactionPicker(null);
+        }}
+      />
 
       {/* ── Forward Modal ── */}
       {forwardMsg && (
