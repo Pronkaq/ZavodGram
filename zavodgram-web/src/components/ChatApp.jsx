@@ -10,9 +10,12 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatListPanel } from './ChatListPanel';
 import { ChatNotificationsPanel } from './ChatNotificationsPanel';
 import { ChatMessageContextMenu } from './ChatMessageContextMenu';
+import { ChatReactionPicker } from './ChatReactionPicker';
+import { ChannelInviteModal } from './ChannelInviteModal';
+import { ChannelAttachmentsModal } from './ChannelAttachmentsModal';
+import { PostCommentsModal } from './PostCommentsModal';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
-import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
-import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
+import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
 import { useChatAppDerivedState } from './useChatAppDerivedState';
 import { useComposerFormatting } from './useComposerFormatting';
@@ -24,6 +27,12 @@ import { useChannelManagement } from './useChannelManagement';
 import { useProfileSettings } from './useProfileSettings';
 import { useChatCreation } from './useChatCreation';
 import { useGroupManagement } from './useGroupManagement';
+import { usePostCommentsFlow } from './usePostCommentsFlow';
+import { useChannelAttachments } from './useChannelAttachments';
+import { useMessageReactions } from './useMessageReactions';
+import { useMessageTextRenderer } from './useMessageTextRenderer';
+import { useChannelInviteFlow } from './useChannelInviteFlow';
+import { useSettingsPanelFlow } from './useSettingsPanelFlow';
 
 const tc = typeColors;
 
@@ -83,8 +92,6 @@ export default function ChatApp() {
   const [postCommentDraft, setPostCommentDraft] = useState('');
   const [postCommentReplyTo, setPostCommentReplyTo] = useState(null);
   const [channelPostCommentsEnabled, setChannelPostCommentsEnabled] = useState(true);
-  const [inviteChannel, setInviteChannel] = useState(null);
-  const [joiningInvite, setJoiningInvite] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceRecorderState, setVoiceRecorderState] = useState({ startedAt: 0, error: '' });
   const [recordingNowTs, setRecordingNowTs] = useState(Date.now());
@@ -105,7 +112,6 @@ export default function ChatApp() {
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
   const mediaExtraRef = useRef(null);
-  const handledSlugRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
@@ -422,177 +428,53 @@ export default function ChatApp() {
     loadChats,
   });
 
-  const extractLinks = (text) => {
-    if (!text) return [];
-    const matches = text.match(/https?:\/\/[^\s]+/g);
-    return matches || [];
-  };
+  const channelAttachments = useChannelAttachments({ acd, cms });
 
-  const channelAttachments = useMemo(() => {
-    if (!acd || acd.type !== 'CHANNEL') return [];
-    const list = [];
-    cms.forEach((msg) => {
-      (msg.media || []).forEach((m) => list.push({ kind: 'media', msgId: msg.id, createdAt: msg.createdAt, media: m }));
-      extractLinks(msg.text).forEach((url, idx) => list.push({ kind: 'link', msgId: msg.id, createdAt: msg.createdAt, id: `${msg.id}-${idx}`, url }));
-    });
-    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [acd, cms]);
+  const { REACTION_SET, addReaction, groupReactions, openReactionPicker } = useMessageReactions({
+    activeChat,
+    ws,
+    setReactionPicker,
+  });
 
-  const REACTION_SET = ['👍', '❤️', '🔥', '👏', '😂', '😮', '😢', '😡'];
+  const { openSettingsPanel, openSettingsSubpage } = useSettingsPanelFlow({
+    user,
+    setSidebarOpen,
+    setNotifPanel,
+    setSettingsMode,
+    setSettingsSubpage,
+    setTagEdit,
+    setNameEdit,
+    setBioEdit,
+    setSettingsSaveState,
+    setProfileData,
+    setProfilePanel,
+  });
 
-  const addReaction = (msgId, emoji) => {
-    if (!activeChat) return;
-    ws.reactMessage({ chatId: activeChat, messageId: msgId, emoji });
-  };
+  const { inviteChannel, joiningInvite, setInviteChannel, joinInviteChannel } = useChannelInviteFlow({
+    chats,
+    selectChat,
+    loadChats,
+    chatsApi,
+    setShowMobileChat,
+  });
 
-  const groupReactions = (msg) => {
-    const grouped = {};
-    (msg.reactions || []).forEach((r) => {
-      if (!grouped[r.emoji]) grouped[r.emoji] = [];
-      grouped[r.emoji].push(r.userId);
-    });
-    return grouped;
-  };
+  const renderMessageText = useMessageTextRenderer({ msgSearch });
 
-  const openReactionPicker = (x, y, msgId) => {
-    setReactionPicker({ x: Math.min(x, window.innerWidth - 270), y: Math.min(y, window.innerHeight - 80), msgId });
-  };
-
-  const openSettingsPanel = useCallback(() => {
-    setSidebarOpen(false);
-    setNotifPanel(false);
-    setSettingsMode(true);
-    setSettingsSubpage(null);
-    setTagEdit(user.tag || '');
-    setNameEdit(user.name || '');
-    setBioEdit(user.bio || '');
-    setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setProfileData({ ...user, online: true });
-    setProfilePanel(user.id);
-  }, [user]);
-
-  const openSettingsSubpage = useCallback((subpage) => {
-    setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setSettingsSubpage(subpage);
-  }, []);
-
-  useEffect(() => {
-    const slug = window.location.pathname.replace(/^\/+/, '').trim();
-    if (!slug || ['auth', 'login'].includes(slug.toLowerCase())) return;
-    if (slug.includes('/')) return;
-    if (handledSlugRef.current === slug) return;
-    handledSlugRef.current = slug;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const channel = await chatsApi.getBySlug(slug);
-        if (cancelled) return;
-        const existing = chats.find((c) => c.id === channel.id);
-        if (existing) {
-          selectChat(existing.id);
-          setShowMobileChat(true);
-          window.history.replaceState({}, '', '/');
-          return;
-        }
-        setInviteChannel(channel);
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [chats, selectChat]);
-
-  const joinInviteChannel = async () => {
-    if (!inviteChannel?.channelSlug) return;
-    setJoiningInvite(true);
-    try {
-      const joined = await chatsApi.joinBySlug(inviteChannel.channelSlug);
-      await loadChats();
-      selectChat(joined.id);
-      setShowMobileChat(true);
-      setInviteChannel(null);
-      window.history.replaceState({}, '', '/');
-    } catch (err) {
-      alert(err.message || 'Не удалось подписаться');
-    } finally {
-      setJoiningInvite(false);
-    }
-  };
-
-  const renderMessageText = (text) => {
-    if (!text) return null;
-    const safeHtml = sanitizeRichHtml(text);
-    const plain = richTextToPlain(safeHtml);
-    if (msgSearch) return highlightText(plain, msgSearch);
-    if (safeHtml !== plain) {
-      return <span className="zg-rich-text" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtml }} />;
-    }
-    const parts = plain.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, idx) => (
-      /^https?:\/\/[^\s]+$/.test(part)
-        ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#F5F6F8', textDecoration: 'underline' }}>{part}</a>
-        : <span key={idx}>{part}</span>
-    ));
-  };
-
-  const getPostComments = useCallback((msg) => {
-    if (!msg?.id) return [];
-    const children = new Map();
-    cms.forEach((m) => {
-      if (m.deleted || !m.replyToId) return;
-      if (!children.has(m.replyToId)) children.set(m.replyToId, []);
-      children.get(m.replyToId).push(m);
-    });
-
-    const result = [];
-    const walk = (parentId, depth = 0) => {
-      const list = (children.get(parentId) || []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      list.forEach((item) => {
-        result.push({ ...item, depth });
-        walk(item.id, depth + 1);
-      });
-    };
-
-    walk(msg.id, 0);
-    return result;
-  }, [cms]);
-
-  const openPostComments = useCallback((msg) => {
-    if (!msg) return;
-    setPostCommentsModal(msg);
-    setPostCommentDraft('');
-    setPostCommentReplyTo(null);
-  }, []);
-
-  const sendPostComment = useCallback(async () => {
-    if (!postCommentsModal) return;
-    const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
-    if (!commentsAllowed) return;
-    const text = postCommentDraft.trim();
-    if (!text) return;
-    sendMessage(activeChat, text, postCommentReplyTo?.id || postCommentsModal.id, null);
-    setPostCommentDraft('');
-    setPostCommentReplyTo(null);
-  }, [activeChat, isOwnerOrAdmin, postCommentDraft, postCommentReplyTo, postCommentsModal, sendMessage]);
-
-
-  const handleModerateComment = useCallback(async (comment, action) => {
-    if (!activeChat || !comment) return;
-    try {
-      if (action === 'delete') {
-        deleteMessage(activeChat, comment.id);
-      }
-      if (action === 'mute') {
-        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, true);
-        await loadChats();
-      }
-      if (action === 'unmute') {
-        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, false);
-        await loadChats();
-      }
-    } catch (err) {
-      alert(err.message || 'Не удалось выполнить действие');
-    }
-  }, [activeChat, deleteMessage, loadChats]);
+  const { getPostComments, openPostComments, sendPostComment, handleModerateComment } = usePostCommentsFlow({
+    cms,
+    activeChat,
+    isOwnerOrAdmin,
+    postCommentsModal,
+    postCommentDraft,
+    postCommentReplyTo,
+    setPostCommentsModal,
+    setPostCommentDraft,
+    setPostCommentReplyTo,
+    sendMessage,
+    deleteMessage,
+    chatsApi,
+    loadChats,
+  });
 
   return (
     <div className="zg-root" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setMediaComposerMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
@@ -1287,13 +1169,12 @@ export default function ChatApp() {
       />
 
 
-      {reactionPicker && (
-        <div style={{ position: 'fixed', top: reactionPicker.y, left: reactionPicker.x, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '8px 10px', zIndex: 240, display: 'flex', gap: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-          {REACTION_SET.map((emoji) => (
-            <button key={emoji} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer' }} onClick={() => { addReaction(reactionPicker.msgId, emoji); setReactionPicker(null); }}>{emoji}</button>
-          ))}
-        </div>
-      )}
+      <ChatReactionPicker
+        reactionPicker={reactionPicker}
+        reactionSet={REACTION_SET}
+        onReact={addReaction}
+        onClose={() => setReactionPicker(null)}
+      />
 
       {/* ── Forward Modal ── */}
       {forwardMsg && (
@@ -1454,231 +1335,36 @@ export default function ChatApp() {
         </div>
       )}
 
-      {attachmentsModal && acd?.type === 'CHANNEL' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setAttachmentsModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Вложения канала</h3>
-            {channelAttachments.length === 0 && <div style={{ color: '#A2A8B6', fontSize: 13 }}>Пока нет вложений или ссылок.</div>}
-            {channelAttachments.map((item) => (
-              <div key={`${item.msgId}-${item.kind}-${item.id || item.media?.id}`} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                {item.kind === 'link' ? (
-                  <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#E9EBEF', wordBreak: 'break-all' }}>{item.url}</a>
-                ) : item.media?.type === 'IMAGE' ? (
-                  <img src={mediaUrlById(item.media.id)} alt={item.media.originalName} style={{ maxWidth: '100%', borderRadius: 10 }} />
-                ) : (
-                  <a href={mediaUrlById(item.media.id)} target="_blank" rel="noreferrer" style={{ color: '#E9EBEF' }}>{item.media?.originalName || 'Файл'}</a>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ChannelAttachmentsModal
+        open={attachmentsModal && acd?.type === 'CHANNEL'}
+        channelAttachments={channelAttachments}
+        onClose={() => setAttachmentsModal(false)}
+      />
 
-      {postCommentsModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}>
-          <div style={{ background: 'linear-gradient(180deg, rgba(31,35,46,0.98), rgba(24,27,36,0.98))', borderRadius: 20, padding: 20, width: 580, maxWidth: '96vw', maxHeight: '86vh', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px rgba(0,0,0,0.45)', gap: 12 }} onClick={e => e.stopPropagation()}>
-            {(() => {
-              const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
-              const modalComments = getPostComments(postCommentsModal);
-              const hasLongPost = (postCommentsModal.text || '').length > 330;
-              const commentsCount = modalComments.length;
-              const commentsWord = (n) => {
-                const abs = Math.abs(n) % 100;
-                const last = abs % 10;
-                if (abs > 10 && abs < 20) return 'комментариев';
-                if (last > 1 && last < 5) return 'комментария';
-                if (last === 1) return 'комментарий';
-                return 'комментариев';
-              };
-              return (
-                <>
-                  <h3 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: 0.2, color: '#F7F8FB', fontFamily: 'mono' }}>Комментарии к посту</h3>
-                  {!commentsAllowed && (
-                    <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(238,240,244,0.12)', border: '1px solid rgba(238,240,244,0.4)', color: '#F0F1F4', fontSize: 12 }}>
-                      Комментарии отключены для этого поста.
-                    </div>
-                  )}
+      <PostCommentsModal
+        post={postCommentsModal}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        userId={user.id}
+        members={acd?.members}
+        getPostComments={getPostComments}
+        onOpenDirectChat={openDirectChatWithUser}
+        onModerateComment={handleModerateComment}
+        replyTo={postCommentReplyTo}
+        setReplyTo={setPostCommentReplyTo}
+        draft={postCommentDraft}
+        setDraft={setPostCommentDraft}
+        onSend={sendPostComment}
+        styles={s}
+        onClose={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}
+      />
 
-                  <div style={{ position: 'relative', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', padding: '12px 14px' }}>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: '#C5CBD6',
-                        lineHeight: 1.58,
-                        maxHeight: 132,
-                        overflow: 'hidden',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 6,
-                        WebkitBoxOrient: 'vertical',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word'
-                      }}
-                    >
-                      {postCommentsModal.text || '[медиа-пост]'}
-                    </div>
-                    {hasLongPost && (
-                      <div style={{ position: 'absolute', left: 1, right: 1, bottom: 1, height: 28, borderRadius: '0 0 13px 13px', background: 'linear-gradient(180deg, rgba(26,30,39,0), rgba(26,30,39,0.94))', pointerEvents: 'none' }} />
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-                    <button
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#8F97A6',
-                        fontSize: 12,
-                        fontWeight: 500,
-                        lineHeight: 1,
-                        padding: '2px 0',
-                        height: 'auto',
-                        opacity: commentsAllowed ? 1 : 0.75,
-                        borderRadius: 0,
-                        fontFamily: 'Inter, system-ui, sans-serif'
-                      }}
-                      onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
-                      disabled={!commentsAllowed}
-                    >
-                      {`${commentsCount} ${commentsWord(commentsCount)}`}
-                    </button>
-                  </div>
-
-                  <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2, marginTop: 2 }}>
-                    {modalComments.length === 0 ? (
-                      <div style={{ color: '#A2A8B6', fontSize: 13, paddingTop: 6 }}>Пока комментариев нет. Будьте первым.</div>
-                    ) : modalComments.map((comment) => {
-                      const canModerate = isOwnerOrAdmin && (comment.fromId || comment.from?.id) !== user.id;
-                      const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
-                      const commentAuthor = comment.from || null;
-                      const canOpenAuthorChat = Boolean(commentAuthor?.id) && commentAuthor.id !== user.id;
-                      const isMyComment = (comment.fromId || comment.from?.id) === user.id;
-                      const commentBody = `${comment.text || ''}`.trim();
-                      return (
-                        <div
-                          key={comment.id}
-                          style={{
-                            marginLeft: Math.min((comment.depth || 0) * 16, 64),
-                            marginBottom: 6,
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 10,
-                            padding: '4px 6px',
-                            borderRadius: 10,
-                            transition: 'background 160ms ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                            const replyBtn = e.currentTarget.querySelector('[data-reply-btn="true"]');
-                            if (replyBtn) {
-                              replyBtn.style.opacity = '0.95';
-                              replyBtn.style.color = '#BCC3CF';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent';
-                            const replyBtn = e.currentTarget.querySelector('[data-reply-btn="true"]');
-                            if (replyBtn) {
-                              replyBtn.style.opacity = '0.5';
-                              replyBtn.style.color = '#8D95A4';
-                            }
-                          }}
-                        >
-                          <Av
-                            src={commentAuthor?.avatar}
-                            name={commentAuthor?.name || 'Пользователь'}
-                            size={34}
-                            radius={999}
-                            onClick={canOpenAuthorChat ? () => openDirectChatWithUser(commentAuthor) : undefined}
-                            style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
-                          />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                                <button
-                                  type="button"
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    fontSize: 14,
-                                    padding: 0,
-                                    height: 'auto',
-                                    color: canOpenAuthorChat ? (isMyComment ? '#9FD3FF' : '#58C8E8') : '#C1C7D2',
-                                    cursor: canOpenAuthorChat ? 'pointer' : 'default',
-                                    fontWeight: 700,
-                                    fontFamily: 'Inter, system-ui, sans-serif',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis'
-                                  }}
-                                  onClick={() => canOpenAuthorChat && openDirectChatWithUser(commentAuthor)}
-                                  disabled={!canOpenAuthorChat}
-                                  title={canOpenAuthorChat ? 'Открыть чат' : undefined}
-                                >
-                                  {commentAuthor?.name || 'Пользователь'}
-                                </button>
-                                <span style={{ color: '#8790A0', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                <button data-reply-btn="true" style={{ background: 'transparent', border: 'none', fontSize: 12, padding: 0, height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#8D95A4', cursor: 'pointer', fontWeight: 500, opacity: 0.5, transition: 'opacity 160ms ease, color 160ms ease' }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
-                                {canModerate && (
-                                  <>
-                                    <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
-                                    <button style={{ ...s.ib, fontSize: 11, color: '#D5D8DE' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <div style={{ borderRadius: 10, background: isMyComment ? 'rgba(68,86,115,0.36)' : 'rgba(255,255,255,0.03)', padding: '7px 9px', transition: 'background 160ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.44)' : 'rgba(255,255,255,0.045)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.36)' : 'rgba(255,255,255,0.03)'; }}>
-                              <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.42, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                {commentBody || '…'}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {postCommentReplyTo && (
-                    <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', fontSize: 12, color: '#D6DAE2', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ответ для {postCommentReplyTo.from?.name || 'пользователя'}: {(postCommentReplyTo.text || '').slice(0, 90)}</span>
-                      <button style={s.ib} onClick={() => setPostCommentReplyTo(null)}><Icons.Close /></button>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input
-                      id="channel-comment-input"
-                      style={{ ...s.inp2, flex: '1 1 260px', minWidth: 0, borderRadius: 12, padding: '10px 12px' }}
-                      value={postCommentDraft}
-                      onChange={(e) => setPostCommentDraft(e.target.value)}
-                      placeholder={commentsAllowed ? (postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...') : 'Комментарии отключены'}
-                      onKeyDown={(e) => e.key === 'Enter' && commentsAllowed && sendPostComment()}
-                      disabled={!commentsAllowed}
-                    />
-                    <button style={{ ...s.ib, flex: '0 0 auto', minWidth: 102, borderRadius: 11, padding: '9px 12px', fontSize: 14, fontWeight: 500, color: '#C9D0DB', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.16)', boxShadow: 'none' }} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {inviteChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 380 }} onClick={() => setInviteChannel(null)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Канал по ссылке</h3>
-            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>{inviteChannel.name || 'Канал'}</div>
-            <div style={{ fontSize: 13, color: '#A2A8B6', marginBottom: 10 }}>{inviteChannel._count?.members || 0} подписчиков</div>
-            {inviteChannel.description && <p style={{ fontSize: 14, color: '#CACED7', lineHeight: 1.5 }}>{inviteChannel.description}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button style={{ ...s.saveBtn, flex: 1, opacity: joiningInvite ? 0.7 : 1 }} onClick={joinInviteChannel} disabled={joiningInvite}>{joiningInvite ? 'Подписка...' : 'Подписаться'}</button>
-              <button style={{ ...s.ib, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px' }} onClick={() => setInviteChannel(null)}>Позже</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChannelInviteModal
+        inviteChannel={inviteChannel}
+        joiningInvite={joiningInvite}
+        styles={s}
+        onJoin={joinInviteChannel}
+        onClose={() => setInviteChannel(null)}
+      />
 
 
       {mediaModal && (
