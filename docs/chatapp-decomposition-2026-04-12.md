@@ -131,6 +131,7 @@ src/components/chat-app/
   - `ChannelInviteModal` (модалка приглашения в канал по slug).
 - Дополнительно вынесен `ChannelAttachmentsModal` (список медиа/ссылок канала), чтобы убрать ещё один крупный JSX-блок из `ChatApp`.
 - Вынесена тяжелая модалка комментариев поста в `PostCommentsModal`, чтобы изолировать thread-UI и сценарии reply/moderation от корневого контейнера.
+- Вынесена модалка управления каналом в `ChannelManageModal` (tabs main/bans, редактирование slug/описания, разбан), чтобы разгрузить админский блок в `ChatApp`.
 
 ## Критерии готовности
 
