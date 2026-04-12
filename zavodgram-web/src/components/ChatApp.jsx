@@ -351,14 +351,15 @@ export default function ChatApp() {
   };
 
   const toggleDirectContentProtection = useCallback(async () => {
-    if (!activeChat || !isDirectChat) return;
+    const isDirect = acd?.type === 'PRIVATE' || acd?.type === 'SECRET';
+    if (!activeChat || !isDirect) return;
     try {
       await chatsApi.update(activeChat, { contentProtectionEnabled: !acd?.contentProtectionEnabled });
       await loadChats();
     } catch (err) {
       alert(err.message || 'Не удалось переключить защиту контента');
     }
-  }, [activeChat, isDirectChat, chatsApi, acd?.contentProtectionEnabled, loadChats]);
+  }, [activeChat, acd?.type, chatsApi, acd?.contentProtectionEnabled, loadChats]);
 
   const doForward = (chatId) => {
     if (!forwardMsg) return;
