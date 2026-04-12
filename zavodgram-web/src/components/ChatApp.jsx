@@ -23,6 +23,7 @@ import { useVoiceMessaging } from './useVoiceMessaging';
 import { useChannelManagement } from './useChannelManagement';
 import { useProfileSettings } from './useProfileSettings';
 import { useChatCreation } from './useChatCreation';
+import { useGroupManagement } from './useGroupManagement';
 
 const tc = typeColors;
 
@@ -321,77 +322,43 @@ export default function ChatApp() {
   };
 
   // ── Group management ──
-  const myRole = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-  const isOwnerOrAdmin = myRole === 'OWNER' || myRole === 'ADMIN';
-  const isOwner = myRole === 'OWNER';
-  const isGroupOrChannel = acd?.type === 'GROUP' || acd?.type === 'CHANNEL';
-
-  const openGroupSettings = () => {
-    if (!acd || !isGroupOrChannel) return;
-    setEditGroupName(acd.name || '');
-    setEditGroupDesc(acd.description || '');
-    setEditTopicsEnabled(!!acd.topicsEnabled);
-    setGroupSettingsModal(true);
-  };
-
-  const saveGroupSettings = async () => {
-    if (!activeChat) return;
-    try {
-      await chatsApi.update(activeChat, { name: editGroupName, description: editGroupDesc, ...(acd?.type === 'GROUP' ? { topicsEnabled: editTopicsEnabled } : {}) });
-      await loadChats();
-      setGroupSettingsModal(false);
-    } catch (err) { console.error(err); }
-  };
-
-  const createTopic = async () => {
-    if (!activeChat || !newTopicTitle.trim()) return;
-    try {
-      const created = await chatsApi.createTopic(activeChat, newTopicTitle.trim());
-      setNewTopicTitle('');
-      setTopicError('');
-      await loadTopics(activeChat);
-      setActiveTopicId(created.id);
-    } catch (err) {
-      setTopicError(err.message || 'Не удалось создать тему');
-    }
-  };
-
-  const handleGroupAvatarUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
-    try {
-      const media = await mediaApi.upload(file);
-      const avatarRef = `media:${media.id}`;
-      await chatsApi.update(activeChat, { avatar: avatarRef });
-      await loadChats();
-    } catch (err) { console.error(err); }
-  };
-
-  const handleSetRole = async (targetId, role) => {
-    if (!activeChat) return;
-    try { await chatsApi.setMemberRole(activeChat, targetId, role); await loadChats(); } catch (err) { console.error(err); }
-  };
-
-  const handleKickMember = async (targetId) => {
-    if (!activeChat) return;
-    try { await chatsApi.removeMember(activeChat, targetId); await loadChats(); } catch (err) { console.error(err); }
-  };
-
-  const handleTransferOwnership = async (targetId) => {
-    if (!activeChat || !confirm('Передать права создателя? Это действие нельзя отменить.')) return;
-    try { await chatsApi.transferOwnership(activeChat, targetId); await loadChats(); } catch (err) { console.error(err); }
-  };
-
-  const handleAddMember = async (targetId) => {
-    if (!activeChat) return;
-    try { await chatsApi.addMember(activeChat, targetId); await loadChats(); setAddMemberSearch(''); setAddMemberResults([]); } catch (err) { console.error(err); }
-  };
-
-  const searchAddMember = async (q) => {
-    setAddMemberSearch(q);
-    if (q.length < 2) { setAddMemberResults([]); return; }
-    try { setAddMemberResults(await usersApi.search(q)); } catch {}
-  };
+  const {
+    myRole,
+    isOwnerOrAdmin,
+    isOwner,
+    isGroupOrChannel,
+    openGroupSettings,
+    saveGroupSettings,
+    createTopic,
+    handleGroupAvatarUpload,
+    handleSetRole,
+    handleKickMember,
+    handleTransferOwnership,
+    handleAddMember,
+    searchAddMember,
+  } = useGroupManagement({
+    acd,
+    userId: user.id,
+    activeChat,
+    editGroupName,
+    editGroupDesc,
+    editTopicsEnabled,
+    newTopicTitle,
+    setEditGroupName,
+    setEditGroupDesc,
+    setEditTopicsEnabled,
+    setGroupSettingsModal,
+    setNewTopicTitle,
+    setTopicError,
+    setActiveTopicId,
+    setAddMemberSearch,
+    setAddMemberResults,
+    chatsApi,
+    usersApi,
+    mediaApi,
+    loadChats,
+    loadTopics,
+  });
 
   const scrollToMsg = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
