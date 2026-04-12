@@ -11,8 +11,7 @@ import { ChatListPanel } from './ChatListPanel';
 import { ChatNotificationsPanel } from './ChatNotificationsPanel';
 import { ChatMessageContextMenu } from './ChatMessageContextMenu';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
-import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
-import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
+import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
 import { useChatAppDerivedState } from './useChatAppDerivedState';
 import { useComposerFormatting } from './useComposerFormatting';
@@ -26,6 +25,8 @@ import { useChatCreation } from './useChatCreation';
 import { useGroupManagement } from './useGroupManagement';
 import { usePostCommentsFlow } from './usePostCommentsFlow';
 import { useChannelAttachments } from './useChannelAttachments';
+import { useMessageReactions } from './useMessageReactions';
+import { useMessageTextRenderer } from './useMessageTextRenderer';
 
 const tc = typeColors;
 
@@ -426,25 +427,11 @@ export default function ChatApp() {
 
   const channelAttachments = useChannelAttachments({ acd, cms });
 
-  const REACTION_SET = ['👍', '❤️', '🔥', '👏', '😂', '😮', '😢', '😡'];
-
-  const addReaction = (msgId, emoji) => {
-    if (!activeChat) return;
-    ws.reactMessage({ chatId: activeChat, messageId: msgId, emoji });
-  };
-
-  const groupReactions = (msg) => {
-    const grouped = {};
-    (msg.reactions || []).forEach((r) => {
-      if (!grouped[r.emoji]) grouped[r.emoji] = [];
-      grouped[r.emoji].push(r.userId);
-    });
-    return grouped;
-  };
-
-  const openReactionPicker = (x, y, msgId) => {
-    setReactionPicker({ x: Math.min(x, window.innerWidth - 270), y: Math.min(y, window.innerHeight - 80), msgId });
-  };
+  const { REACTION_SET, addReaction, groupReactions, openReactionPicker } = useMessageReactions({
+    activeChat,
+    ws,
+    setReactionPicker,
+  });
 
   const openSettingsPanel = useCallback(() => {
     setSidebarOpen(false);
@@ -506,21 +493,7 @@ export default function ChatApp() {
     }
   };
 
-  const renderMessageText = (text) => {
-    if (!text) return null;
-    const safeHtml = sanitizeRichHtml(text);
-    const plain = richTextToPlain(safeHtml);
-    if (msgSearch) return highlightText(plain, msgSearch);
-    if (safeHtml !== plain) {
-      return <span className="zg-rich-text" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtml }} />;
-    }
-    const parts = plain.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, idx) => (
-      /^https?:\/\/[^\s]+$/.test(part)
-        ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#F5F6F8', textDecoration: 'underline' }}>{part}</a>
-        : <span key={idx}>{part}</span>
-    ));
-  };
+  const renderMessageText = useMessageTextRenderer({ msgSearch });
 
   const { getPostComments, openPostComments, sendPostComment, handleModerateComment } = usePostCommentsFlow({
     cms,
