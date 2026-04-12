@@ -7,10 +7,12 @@ export function useGroupManagement({
   editGroupName,
   editGroupDesc,
   editTopicsEnabled,
+  editContentProtection,
   newTopicTitle,
   setEditGroupName,
   setEditGroupDesc,
   setEditTopicsEnabled,
+  setEditContentProtection,
   setGroupSettingsModal,
   setNewTopicTitle,
   setTopicError,
@@ -33,8 +35,9 @@ export function useGroupManagement({
     setEditGroupName(acd.name || '');
     setEditGroupDesc(acd.description || '');
     setEditTopicsEnabled(!!acd.topicsEnabled);
+    setEditContentProtection(!!acd.contentProtectionEnabled);
     setGroupSettingsModal(true);
-  }, [acd, isGroupOrChannel, setEditGroupName, setEditGroupDesc, setEditTopicsEnabled, setGroupSettingsModal]);
+  }, [acd, isGroupOrChannel, setEditGroupName, setEditGroupDesc, setEditTopicsEnabled, setEditContentProtection, setGroupSettingsModal]);
 
   const saveGroupSettings = useCallback(async () => {
     if (!activeChat) return;
@@ -43,11 +46,12 @@ export function useGroupManagement({
         name: editGroupName,
         description: editGroupDesc,
         ...(acd?.type === 'GROUP' ? { topicsEnabled: editTopicsEnabled } : {}),
+        contentProtectionEnabled: editContentProtection,
       });
       await loadChats();
       setGroupSettingsModal(false);
     } catch (err) { console.error(err); }
-  }, [activeChat, chatsApi, editGroupName, editGroupDesc, acd?.type, editTopicsEnabled, loadChats, setGroupSettingsModal]);
+  }, [activeChat, chatsApi, editGroupName, editGroupDesc, acd?.type, editTopicsEnabled, editContentProtection, loadChats, setGroupSettingsModal]);
 
   const createTopic = useCallback(async () => {
     if (!activeChat || !newTopicTitle.trim()) return;

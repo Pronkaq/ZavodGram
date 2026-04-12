@@ -90,6 +90,7 @@ export default function ChatApp() {
   const [editGroupName, setEditGroupName] = useState('');
   const [editGroupDesc, setEditGroupDesc] = useState('');
   const [editTopicsEnabled, setEditTopicsEnabled] = useState(false);
+  const [editContentProtection, setEditContentProtection] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [addMemberResults, setAddMemberResults] = useState([]);
   const [channelInfoModal, setChannelInfoModal] = useState(false);
@@ -183,12 +184,25 @@ export default function ChatApp() {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
+  const protectedDirectChat = (acd?.type === 'PRIVATE' || acd?.type === 'SECRET') && !!acd?.contentProtectionEnabled;
 
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
+  useEffect(() => {
+    if (!protectedDirectChat) return undefined;
+    const onKeyDown = (event) => {
+      const key = (event.key || '').toLowerCase();
+      if (key === 'printscreen' || (event.ctrlKey && event.shiftKey && key === 's')) {
+        event.preventDefault();
+        alert('Скриншоты в защищённом личном чате запрещены');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [protectedDirectChat]);
 
   const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
     activeChat,
@@ -336,6 +350,16 @@ export default function ChatApp() {
     try { await chatsApi.mute(chatId, !chat?.muted); loadChats(); } catch {}
   };
 
+  const toggleDirectContentProtection = useCallback(async () => {
+    if (!activeChat || !isDirectChat) return;
+    try {
+      await chatsApi.update(activeChat, { contentProtectionEnabled: !acd?.contentProtectionEnabled });
+      await loadChats();
+    } catch (err) {
+      alert(err.message || 'Не удалось переключить защиту контента');
+    }
+  }, [activeChat, isDirectChat, chatsApi, acd?.contentProtectionEnabled, loadChats]);
+
   const doForward = (chatId) => {
     if (!forwardMsg) return;
     const targetChat = chats.find((c) => c.id === chatId);
@@ -367,10 +391,12 @@ export default function ChatApp() {
     editGroupName,
     editGroupDesc,
     editTopicsEnabled,
+    editContentProtection,
     newTopicTitle,
     setEditGroupName,
     setEditGroupDesc,
     setEditTopicsEnabled,
+    setEditContentProtection,
     setGroupSettingsModal,
     setNewTopicTitle,
     setTopicError,
@@ -428,11 +454,12 @@ export default function ChatApp() {
   } = useChannelManagement({
     activeChat,
     acd,
-    isOwner,
+    isOwnerOrAdmin,
     channelManageModal,
     channelSlugEdit,
     editGroupName,
     editGroupDesc,
+    editContentProtection,
     setChannelSlugEdit,
     setChannelSlugError,
     setChannelInfoModal,
@@ -440,6 +467,7 @@ export default function ChatApp() {
     setBannedUsers,
     setEditGroupName,
     setEditGroupDesc,
+    setEditContentProtection,
     setChannelManageTab,
     setChannelManageModal,
     chatsApi,
@@ -596,6 +624,7 @@ export default function ChatApp() {
                   )}
                   <MediaAttachment
                     media={msg.media}
+                    mediaBlocked={!!acd?.contentProtectionEnabled}
                     onTranscribe={handleTranscribe}
                     transcriptions={transcriptions}
                     transcriptionLoading={transcriptionLoading}
@@ -639,6 +668,15 @@ export default function ChatApp() {
                 </div>
                 <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
                 <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
+                {isDirectChat && (
+                  <button
+                    style={{ ...s.ib, ...(acd?.contentProtectionEnabled ? { color: '#E9EBEF' } : {}) }}
+                    onClick={toggleDirectContentProtection}
+                    title={acd?.contentProtectionEnabled ? 'Отключить защиту контента' : 'Включить защиту контента'}
+                  >
+                    <Icons.Shield />
+                  </button>
+                )}
                 {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
                 {acd.type === 'CHANNEL' && <button style={s.ib} onClick={() => setAttachmentsModal(true)}><Icons.Attach /></button>}
               </div>
@@ -731,7 +769,7 @@ export default function ChatApp() {
                         ? { background: 'linear-gradient(180deg, rgba(36,42,55,0.95), rgba(27,31,41,0.98))', border: '1px solid rgba(220,224,235,0.13)', boxShadow: '0 10px 26px rgba(0,0,0,0.25)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
-                      {isChannel && postVisual && (
+                      {isChannel && postVisual && !acd?.contentProtectionEnabled && (
                         <div
                           role="button"
                           tabIndex={0}
@@ -781,6 +819,7 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment
                         media={isChannel ? (msg.media || []).filter((m) => m.id !== postVisual?.id) : msg.media}
+                        mediaBlocked={!!acd?.contentProtectionEnabled}
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
@@ -1038,6 +1077,8 @@ export default function ChatApp() {
       <ChatMessageContextMenu
         contextMenu={contextMenu}
         styles={s}
+        canForward={!protectedDirectChat}
+        canDelete={!protectedDirectChat}
         onReply={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}
         onForward={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}
         onReaction={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}
@@ -1088,7 +1129,6 @@ export default function ChatApp() {
       <ChannelInfoModal
         open={channelInfoModal}
         channel={acd}
-        isOwner={isOwner}
         isOwnerOrAdmin={isOwnerOrAdmin}
         channelPublicLink={channelPublicLink}
         styles={s}
@@ -1102,7 +1142,7 @@ export default function ChatApp() {
       <ChannelManageModal
         open={channelManageModal}
         chat={acd}
-        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
         tab={channelManageTab}
         setTab={setChannelManageTab}
         onLoadBans={loadChannelBans}
@@ -1112,6 +1152,8 @@ export default function ChatApp() {
         setEditGroupName={setEditGroupName}
         editGroupDesc={editGroupDesc}
         setEditGroupDesc={setEditGroupDesc}
+        editContentProtection={editContentProtection}
+        setEditContentProtection={setEditContentProtection}
         channelSlugEdit={channelSlugEdit}
         setChannelSlugEdit={setChannelSlugEdit}
         setChannelSlugError={setChannelSlugError}
@@ -1176,6 +1218,8 @@ export default function ChatApp() {
         setEditGroupDesc={setEditGroupDesc}
         editTopicsEnabled={editTopicsEnabled}
         setEditTopicsEnabled={setEditTopicsEnabled}
+        editContentProtection={editContentProtection}
+        setEditContentProtection={setEditContentProtection}
         styles={s}
         onClose={() => setGroupSettingsModal(false)}
         onAvatarUpload={handleGroupAvatarUpload}

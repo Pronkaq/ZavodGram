@@ -6,7 +6,7 @@ const tc = typeColors;
 export function ChannelManageModal({
   open,
   chat,
-  isOwner,
+  isOwnerOrAdmin,
   tab,
   setTab,
   onLoadBans,
@@ -16,6 +16,8 @@ export function ChannelManageModal({
   setEditGroupName,
   editGroupDesc,
   setEditGroupDesc,
+  editContentProtection,
+  setEditContentProtection,
   channelSlugEdit,
   setChannelSlugEdit,
   setChannelSlugError,
@@ -26,7 +28,7 @@ export function ChannelManageModal({
   onUnbanMember,
   styles,
 }) {
-  if (!open || chat?.type !== 'CHANNEL' || !isOwner) return null;
+  if (!open || chat?.type !== 'CHANNEL' || !isOwnerOrAdmin) return null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 362, backdropFilter: 'blur(4px)' }} onClick={onClose}>
@@ -58,6 +60,14 @@ export function ChannelManageModal({
               <span style={{ color: '#9CA3B1', fontSize: 13 }}>{window.location.origin}/</span>
               <input style={styles.inp2} value={channelSlugEdit} onChange={(e) => { setChannelSlugEdit(e.target.value); setChannelSlugError(''); }} placeholder="my-channel" />
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#D6DAE2' }}>
+              <input
+                type="checkbox"
+                checked={editContentProtection}
+                onChange={(e) => setEditContentProtection(e.target.checked)}
+              />
+              Защита контента (блокировка медиа в чате)
+            </label>
             {channelSlugError && <div style={{ color: '#D5D8DE', fontSize: 12, marginTop: 6 }}>{channelSlugError}</div>}
             <button style={{ ...styles.saveBtn, marginTop: 12, width: '100%' }} onClick={onSave}>Сохранить изменения</button>
           </div>

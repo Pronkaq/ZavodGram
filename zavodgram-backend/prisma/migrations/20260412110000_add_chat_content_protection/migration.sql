@@ -1,0 +1,2 @@
+ALTER TABLE "Chat"
+ADD COLUMN IF NOT EXISTS "contentProtectionEnabled" BOOLEAN NOT NULL DEFAULT false;
