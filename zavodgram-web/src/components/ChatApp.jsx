@@ -11,6 +11,8 @@ import { ChatListPanel } from './ChatListPanel';
 import { ChatNotificationsPanel } from './ChatNotificationsPanel';
 import { ChatMessageContextMenu } from './ChatMessageContextMenu';
 import { ChatReactionPicker } from './ChatReactionPicker';
+import { ChatMessageSearchBar } from './ChatMessageSearchBar';
+import { ChatTopicsBar } from './ChatTopicsBar';
 import { ChannelInviteModal } from './ChannelInviteModal';
 import { ChannelAttachmentsModal } from './ChannelAttachmentsModal';
 import { PostCommentsModal } from './PostCommentsModal';
@@ -642,46 +644,32 @@ export default function ChatApp() {
               </div>
             </div>
 
-            {/* Message search bar */}
-            {msgSearchOpen && (
-              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.95)' }}>
-                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px' }}>
-                  <Icons.Search size={16} />
-                  <input style={{ ...s.si, fontSize: 13 }} placeholder="Поиск..." value={msgSearch} onChange={e => { setMsgSearch(e.target.value); setMsgSearchIdx(0); }} autoFocus />
-                  <span style={{ fontSize: 12, color: '#7C8392', fontFamily: 'mono', whiteSpace: 'nowrap' }}>{searchResults.length > 0 ? `${msgSearchIdx+1}/${searchResults.length}` : msgSearch ? '0' : ''}</span>
-                  {searchResults.length > 1 && <>
-                    <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.max(0, i-1))}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><Icons.ArrowDown /></span></button>
-                    <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.min(searchResults.length-1, i+1))}><Icons.ArrowDown /></button>
-                  </>}
-                  <button style={s.ib} onClick={() => { setMsgSearchOpen(false); setMsgSearch(''); }}><Icons.Close /></button>
-                </div>
-              </div>
-            )}
+            <ChatMessageSearchBar
+              open={msgSearchOpen}
+              styles={s}
+              msgSearch={msgSearch}
+              onSearchChange={(value) => { setMsgSearch(value); setMsgSearchIdx(0); }}
+              searchResults={searchResults}
+              msgSearchIdx={msgSearchIdx}
+              onPrev={() => setMsgSearchIdx((index) => Math.max(0, index - 1))}
+              onNext={() => setMsgSearchIdx((index) => Math.min(searchResults.length - 1, index + 1))}
+              onClose={() => { setMsgSearchOpen(false); setMsgSearch(''); }}
+            />
 
             {acd.type === 'SECRET' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 5, background: 'rgba(245,247,250,0.06)', color: '#EDEFF3', fontSize: 12, fontFamily: 'mono' }}><Icons.Lock /> Сквозное шифрование</div>}
 
-            {isTopicGroup && (
-              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.7)', overflowX: 'auto' }}>
-                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
-                  {topicsLoading && <span style={{ fontSize: 12, color: '#A3A8B4' }}>Загрузка тем...</span>}
-                  {!topicsLoading && chatTopics.map((topic) => (
-                    <button
-                      key={topic.id}
-                      style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(255,255,255,0.2)', color: '#F5F6F8' } : {}) }}
-                      onClick={() => setActiveTopicId(topic.id)}
-                    >
-                      #{topic.title}
-                    </button>
-                  ))}
-                  {isOwnerOrAdmin && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                      <input value={newTopicTitle} onChange={(e) => { setNewTopicTitle(e.target.value); setTopicError(''); }} placeholder="Новая тема" style={{ ...s.inp2, height: 30, minWidth: 130 }} />
-                      <button style={{ ...s.ib, color: '#EDEFF3' }} onClick={createTopic}><Icons.Plus /></button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <ChatTopicsBar
+              visible={isTopicGroup}
+              styles={s}
+              topicsLoading={topicsLoading}
+              chatTopics={chatTopics}
+              activeTopicId={activeTopicId}
+              onSelectTopic={setActiveTopicId}
+              isOwnerOrAdmin={isOwnerOrAdmin}
+              newTopicTitle={newTopicTitle}
+              onNewTopicTitleChange={(value) => { setNewTopicTitle(value); setTopicError(''); }}
+              onCreateTopic={createTopic}
+            />
             {topicError && <div style={{ padding: '0 14px 8px', color: '#D5D8DE', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
