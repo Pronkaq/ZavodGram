@@ -1049,8 +1049,8 @@ export default function ChatApp() {
                   <Av src={sender.avatar} name={sender.name} size={28} radius={8} color={sender.color} onClick={() => openProfile(msg.fromId || sender.id)} />
                 )}
                 <div style={{
-                  maxWidth: '72%',
-                  padding: '8px 12px',
+                  maxWidth: (msg.media && msg.media.length > 1) ? "min(100%, 480px)" : (msg.media && msg.media.length > 0) ? "min(100%, 380px)" : "85%",
+                  padding: (msg.media && msg.media.length > 0) ? "2px 2px 6px" : "8px 12px",
                   borderRadius: 14,
                   lineHeight: 1.45,
                   ...(isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }),
@@ -1210,7 +1210,7 @@ export default function ChatApp() {
                       <Av src={sender.avatar} name={sender.name} size={28} radius={8} color={sender.color} onClick={() => openProfile(msg.fromId || sender.id)} />
                     )}
                     <div style={{
-                      maxWidth: isChannel ? 'min(100%, 620px)' : '72%',
+                      maxWidth: isChannel ? 'min(100%, 620px)' : '85%',
                       width: isChannel ? 'min(100%, 620px)' : 'auto',
                       padding: isChannel ? '0' : '8px 12px',
                       borderRadius: 14,
