@@ -196,8 +196,13 @@ export default function ChatApp() {
     if (!protectedDirectChat) return undefined;
     const onKeyDown = (event) => {
       const key = (event.key || '').toLowerCase();
-      if (key === 'printscreen' || (event.ctrlKey && event.shiftKey && key === 's')) {
+      const isPrintScreen = key === 'printscreen';
+      const isWinSnip = event.ctrlKey && event.shiftKey && key === 's';
+      const isMacAreaShot = event.metaKey && event.shiftKey && key === '4';
+      const isMacWindowShot = event.metaKey && event.shiftKey && key === '3';
+      if (isPrintScreen || isWinSnip || isMacAreaShot || isMacWindowShot) {
         event.preventDefault();
+        event.stopPropagation();
         alert('Скриншоты в защищённом личном чате запрещены');
       }
     };
