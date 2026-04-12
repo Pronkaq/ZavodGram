@@ -85,6 +85,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         type: true,
         name: true,
         avatar: true,
+        contentProtectionEnabled: true,
         updatedAt: true,
       },
       orderBy: { updatedAt: 'desc' },
@@ -170,6 +171,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         muted: myMembership?.muted || false,
         myRole: myMembership?.role || 'MEMBER',
         myCommentsMuted: myMembership?.commentsMuted || false,
+        contentProtectionEnabled: chat.contentProtectionEnabled || false,
         lastMessagePreview: lastMessage ? (lastMessage.text || (lastMessage.hasMedia ? '[медиа]' : '')) : '',
         lastMessageAt: lastMessage?.createdAt || null,
         lastMessageFromId: lastMessage?.fromId || null,
@@ -261,6 +263,7 @@ const updateChatSchema = z.object({
   avatar: z.string().max(500).optional(),
   channelSlug: z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Ссылка канала: 3-64 символа (буквы, цифры, ., _, -)').optional(),
   topicsEnabled: z.boolean().optional(),
+  contentProtectionEnabled: z.boolean().optional(),
 });
 
 router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, res: Response, next: NextFunction) => {
@@ -270,7 +273,34 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
 
     const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
-    if (chat.type === 'PRIVATE' || chat.type === 'SECRET') throw new ForbiddenError('Нельзя редактировать личные чаты');
+    if (chat.type === 'PRIVATE' || chat.type === 'SECRET') {
+      await requireChatMembership(prisma, chatId, req.user!.userId);
+      const hasUnsupportedFields = data.name !== undefined
+        || data.description !== undefined
+        || data.avatar !== undefined
+        || data.channelSlug !== undefined
+        || data.topicsEnabled !== undefined;
+      if (hasUnsupportedFields) throw new ForbiddenError('Для личных чатов доступна только защита контента');
+      if (data.contentProtectionEnabled === undefined) throw new ValidationError('Укажите contentProtectionEnabled');
+
+      const updatedPrivate = await prisma.chat.update({
+        where: { id: chatId },
+        data: { contentProtectionEnabled: data.contentProtectionEnabled },
+        include: {
+          members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
+          _count: { select: { members: true } },
+        },
+      });
+
+      redisPub.publish('chat:updated', JSON.stringify({
+        chatId,
+        contentProtectionEnabled: updatedPrivate.contentProtectionEnabled,
+      }));
+
+      await cacheInvalidate(`chat:${chatId}`);
+      res.json({ ok: true, data: updatedPrivate });
+      return;
+    }
 
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
 
@@ -295,6 +325,7 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
         ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
         ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
         ...(data.topicsEnabled !== undefined ? { topicsEnabled: data.topicsEnabled } : {}),
+        ...(data.contentProtectionEnabled !== undefined ? { contentProtectionEnabled: data.contentProtectionEnabled } : {}),
       },
       include: {
         members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
@@ -310,6 +341,7 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       avatar: updated.avatar,
       channelSlug: updated.channelSlug,
       topicsEnabled: updated.topicsEnabled,
+      contentProtectionEnabled: updated.contentProtectionEnabled,
     }));
 
     await cacheInvalidate(`chat:${chatId}`);

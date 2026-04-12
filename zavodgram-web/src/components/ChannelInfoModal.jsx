@@ -6,7 +6,6 @@ const tc = typeColors;
 export function ChannelInfoModal({
   open,
   channel,
-  isOwner,
   isOwnerOrAdmin,
   channelPublicLink,
   styles,
@@ -39,7 +38,7 @@ export function ChannelInfoModal({
           <button style={styles.ib} onClick={() => navigator.clipboard?.writeText(channelPublicLink)} disabled={!channelPublicLink}><Icons.Copy /></button>
           <button style={styles.ib} onClick={onShare} disabled={!channelPublicLink}><Icons.Share /></button>
         </div>
-        {isOwner && <button style={{ ...styles.saveBtn, width: '100%' }} onClick={onOpenManagement}><Icons.Edit /> Управление</button>}
+        {isOwnerOrAdmin && <button style={{ ...styles.saveBtn, width: '100%' }} onClick={onOpenManagement}><Icons.Edit /> Управление</button>}
         <button style={{ ...styles.ib, marginTop: 14, width: '100%', justifyContent: 'center', padding: 10, border: '1px solid rgba(255,255,255,0.1)' }} onClick={onOpenAttachments}>
           <Icons.Image /> Вложения канала
         </button>

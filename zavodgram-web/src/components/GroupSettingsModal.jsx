@@ -14,6 +14,8 @@ export function GroupSettingsModal({
   setEditGroupDesc,
   editTopicsEnabled,
   setEditTopicsEnabled,
+  editContentProtection,
+  setEditContentProtection,
   styles,
   onClose,
   onAvatarUpload,
@@ -60,6 +62,15 @@ export function GroupSettingsModal({
                 Группа с темами (отдельные ветки)
               </label>
             )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#D6DAE2' }}>
+              <input
+                type="checkbox"
+                checked={editContentProtection}
+                onChange={(e) => setEditContentProtection(e.target.checked)}
+                disabled={!isOwnerOrAdmin}
+              />
+              Защита контента (блокировка медиа в чате)
+            </label>
 
             <button style={{ ...styles.saveBtn, width: '100%', marginTop: 16 }} onClick={onSave}>Сохранить</button>
           </>
