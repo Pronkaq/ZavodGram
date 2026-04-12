@@ -133,6 +133,7 @@ src/components/chat-app/
 - Вынесена тяжелая модалка комментариев поста в `PostCommentsModal`, чтобы изолировать thread-UI и сценарии reply/moderation от корневого контейнера.
 - Вынесена модалка управления каналом в `ChannelManageModal` (tabs main/bans, редактирование slug/описания, разбан), чтобы разгрузить админский блок в `ChatApp`.
 - Вынесена логика доступности отправки в `useComposerSendState` (text/media -> canSend + opacity кнопки), чтобы убрать прямую зависимость `ChatApp` от `richTextToPlain` и локальных условий кнопки отправки.
+- Вынесена модалка пересылки в `ForwardMessageModal`, чтобы убрать ещё один UI-блок выбора целевого чата из корня.
 
 ## Критерии готовности
 

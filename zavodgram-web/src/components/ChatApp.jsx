@@ -15,6 +15,7 @@ import { ChannelInviteModal } from './ChannelInviteModal';
 import { ChannelAttachmentsModal } from './ChannelAttachmentsModal';
 import { PostCommentsModal } from './PostCommentsModal';
 import { ChannelManageModal } from './ChannelManageModal';
+import { ForwardMessageModal } from './ForwardMessageModal';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
@@ -1184,22 +1185,13 @@ export default function ChatApp() {
       />
 
       {/* ── Forward Modal ── */}
-      {forwardMsg && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => setForwardMsg(null)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 20, minWidth: 300, maxWidth: 380, border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, fontFamily: 'mono' }}>Переслать</h3>
-            <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 14, fontSize: 13, color: '#9CA3B1', borderLeft: '3px solid #E9EBEF' }}>{forwardMsg.text || '[медиа]'}</div>
-            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-              {chats.filter(c => c.type !== 'CHANNEL').map(c => (
-                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => doForward(c.id)}>
-                  <Av name={getChatName(c, user.id)} size={32} radius={8} color={tc[c.type]} />
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{getChatName(c, user.id)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <ForwardMessageModal
+        openMessage={forwardMsg}
+        chats={chats}
+        userId={user.id}
+        onForward={doForward}
+        onClose={() => setForwardMsg(null)}
+      />
 
       {/* ── New Chat Modal ── */}
       {newChatModal && (
