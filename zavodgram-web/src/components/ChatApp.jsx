@@ -14,6 +14,11 @@ import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiPar
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
 import { useChatToasts } from './useChatToasts';
+import { useChatAppDerivedState } from './useChatAppDerivedState';
+import { useComposerFormatting } from './useComposerFormatting';
+import { useChatTopicFlow } from './useChatTopicFlow';
+import { useChatMessageViewport } from './useChatMessageViewport';
+import { useChatComposerActions } from './useChatComposerActions';
 
 const tc = typeColors;
 
@@ -23,7 +28,6 @@ export default function ChatApp() {
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
-  const [composerToolbar, setComposerToolbar] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [editingMsg, setEditingMsg] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
@@ -101,86 +105,62 @@ export default function ChatApp() {
   const mediaStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
 
-  const acd = chats.find((c) => c.id === activeChat);
-  const topicMessageKey = activeTopicId ? `${activeChat}::${activeTopicId}` : activeChat;
-  const cms = messages[topicMessageKey] || [];
-  const paging = messagePaging[topicMessageKey] || { hasMore: false, loadingMore: false };
-  const isActiveChannel = acd?.type === 'CHANNEL';
-  const VIRTUAL_THRESHOLD = 80;
-  const shouldVirtualize = !isActiveChannel && cms.length > VIRTUAL_THRESHOLD;
+  const {
+    acd,
+    topicMessageKey,
+    cms,
+    paging,
+    shouldVirtualize,
+    filteredChats,
+    getAvatarSourceForChat,
+    searchResults,
+  } = useChatAppDerivedState({
+    chats,
+    activeChat,
+    activeTopicId,
+    messages,
+    messagePaging,
+    search,
+    msgSearch,
+    userId: user.id,
+  });
 
-  const filteredChats = useMemo(() => chats.filter((c) => {
-    if (!search) return true;
-    return getChatName(c, user.id).toLowerCase().includes(search.toLowerCase());
-  }), [chats, search, user]);
+  const {
+    composerToolbar,
+    setComposerToolbar,
+    refreshComposerSelection,
+    applyComposerFormat,
+    applyComposerLink,
+    syncComposerInput,
+  } = useComposerFormatting({
+    composerRef,
+    input,
+    setInput,
+    activeChat,
+    activeTopicId,
+    acd,
+    userId: user.id,
+    typingTimer,
+    startTyping,
+  });
 
-  const getAvatarSourceForChat = useCallback((chat) => {
-    const isDirect = chat?.type === 'PRIVATE' || chat?.type === 'SECRET';
-    if (!isDirect) return chat?.avatar;
-    const other = getOtherUser(chat, user.id);
-    return other?.avatar || chat?.avatar;
-  }, [user.id]);
-
-  const searchResults = useMemo(() => {
-    if (!msgSearch.trim()) return [];
-    return cms.filter((m) => m.text?.toLowerCase().includes(msgSearch.toLowerCase())).map((m) => m.id);
-  }, [msgSearch, cms]);
-
-  const loadTopics = useCallback(async (chatId) => {
-    if (!chatId) return;
-    setTopicsLoading(true);
-    try {
-      const data = await chatsApi.listTopics(chatId);
-      setChatTopics(data);
-      if (data.length > 0) {
-        setActiveTopicId((prev) => (prev && data.some((t) => t.id === prev) ? prev : data[0].id));
-      } else {
-        setActiveTopicId(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setChatTopics([]);
-      setActiveTopicId(null);
-    } finally {
-      setTopicsLoading(false);
-    }
-  }, []);
+  const { loadTopics } = useChatTopicFlow({
+    chatsApi,
+    activeChat,
+    acd,
+    activeTopicId,
+    setTopicsLoading,
+    setChatTopics,
+    setActiveTopicId,
+    loadMessages,
+  });
 
   const openMediaModal = useCallback((payload) => {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
 
-  useEffect(() => {
-    if (searchResults.length > 0 && msgSearchIdx >= 0)
-      document.getElementById(`msg-${searchResults[msgSearchIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [msgSearchIdx, searchResults]);
-
-  useEffect(() => {
-    if (shouldVirtualize) {
-      messagesVirtuosoRef.current?.scrollToIndex({ index: Math.max(0, cms.length - 1), align: 'end', behavior: 'smooth' });
-      return;
-    }
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [cms.length, activeChat, shouldVirtualize]);
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
-  useEffect(() => {
-    if (!activeChat || acd?.type !== 'GROUP' || !acd?.topicsEnabled) {
-      setChatTopics([]);
-      setActiveTopicId(null);
-      return;
-    }
-    loadTopics(activeChat);
-  }, [activeChat, acd?.type, acd?.topicsEnabled, loadTopics]);
-
-  useEffect(() => {
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled) {
-      if (activeTopicId) loadMessages(activeChat, activeTopicId);
-      return;
-    }
-    loadMessages(activeChat);
-  }, [activeChat, activeTopicId, acd?.type, acd?.topicsEnabled, loadMessages]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
@@ -192,166 +172,49 @@ export default function ChatApp() {
     return () => clearInterval(timer);
   }, [voiceRecording]);
 
-  useEffect(() => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    const safe = sanitizeRichHtml(input);
-    if (editor.innerHTML !== safe) editor.innerHTML = safe;
-  }, [input]);
-
-  const onMessagesScroll = useCallback((e) => {
-    if (!activeChat || paging.loadingMore || !paging.hasMore) return;
-    const el = e.currentTarget;
-    if (el.scrollTop > 120) return;
-    const topicId = (acd?.type === 'GROUP' && acd?.topicsEnabled) ? activeTopicId : undefined;
-    loadMoreMessages(activeChat, topicId);
-  }, [activeChat, paging.loadingMore, paging.hasMore, acd?.type, acd?.topicsEnabled, activeTopicId, loadMoreMessages]);
-
-  const onMessagesViewportScroll = useCallback((e) => {
-    onMessagesScroll(e);
-  }, [onMessagesScroll]);
-
-  const refreshComposerSelection = useCallback(() => {
-    const editor = composerRef.current;
-    if (!editor || document.activeElement !== editor) {
-      setComposerToolbar(null);
-      return;
-    }
-    const sel = window.getSelection?.();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-      setComposerToolbar(null);
-      return;
-    }
-    const range = sel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    if (!rect || (!rect.width && !rect.height)) {
-      setComposerToolbar(null);
-      return;
-    }
-    setComposerToolbar({
-      top: rect.top + window.scrollY - 40,
-      left: rect.left + window.scrollX + rect.width / 2,
-    });
-  }, []);
-
-  const applyComposerFormat = useCallback((command) => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    editor.focus();
-    document.execCommand(command, false);
-    const html = sanitizeRichHtml(editor.innerHTML);
-    editor.innerHTML = html;
-    setInput(html);
-    setTimeout(refreshComposerSelection, 0);
-  }, [refreshComposerSelection]);
-
-  const applyComposerLink = useCallback(() => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    editor.focus();
-    const selection = window.getSelection?.();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-    const link = window.prompt('Вставьте ссылку (https://...)');
-    if (!link) return;
-    const normalized = link.trim();
-    if (!/^https?:\/\//i.test(normalized)) return;
-    document.execCommand('createLink', false, normalized);
-    const html = sanitizeRichHtml(editor.innerHTML);
-    editor.innerHTML = html;
-    setInput(html);
-    setTimeout(refreshComposerSelection, 0);
-  }, [refreshComposerSelection]);
-
-  const syncComposerInput = useCallback(() => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    const html = sanitizeRichHtml(editor.innerHTML);
-    if (editor.innerHTML !== html) editor.innerHTML = html;
-    setInput(html);
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    clearTimeout(typingTimer.current);
-    startTyping(activeChat);
-    typingTimer.current = setTimeout(() => {}, 3000);
-  }, [activeChat, acd, activeTopicId, startTyping, user.id]);
+  const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
+    activeChat,
+    activeTopicId,
+    acd,
+    paging,
+    loadMoreMessages,
+    shouldVirtualize,
+    cmsLength: cms.length,
+    searchResults,
+    msgSearchIdx,
+    endRef,
+    messagesVirtuosoRef,
+  });
 
   // ── Handlers ──
-  const enqueuePendingMedia = useCallback((fileList) => {
-    const files = Array.from(fileList || []).filter((f) => f instanceof File);
-    if (!files.length) return;
-    setPendingMedia((prev) => ([
-      ...prev,
-      ...files.map((file) => ({
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        file,
-        spoiler: false,
-        previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/') ? URL.createObjectURL(file) : '',
-      })),
-    ]));
-  }, []);
-
-  const handleSend = async () => {
-    const text = sanitizeRichHtml(input);
-    const plainText = richTextToPlain(text);
-    if (!plainText && pendingMedia.length === 0) return;
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    if (editingMsg) {
-      editMessage(activeChat, editingMsg.id, text);
-      setEditingMsg(null);
-    } else {
-      const options = {
-        ...((acd?.type === 'CHANNEL' && !replyTo) ? { commentsEnabled: channelPostCommentsEnabled } : {}),
-        ...((acd?.type === 'GROUP' && acd?.topicsEnabled) ? { topicId: activeTopicId } : {}),
-      };
-      let mediaIds = [];
-      if (pendingMedia.length > 0) {
-        const uploaded = await Promise.all(pendingMedia.map(async (item) => mediaApi.upload(item.file)));
-        mediaIds = uploaded.map((item) => item.id);
-      }
-      if (mediaIds.length > 0) {
-        await messagesApi.send(activeChat, { text: plainText ? text : undefined, mediaIds, replyToId: replyTo?.id, ...options });
-        await loadMessages(activeChat, acd?.type === 'GROUP' && acd?.topicsEnabled ? activeTopicId : undefined);
-        await loadChats();
-      } else {
-        sendMessage(activeChat, text, replyTo?.id, null, options);
-      }
-      setReplyTo(null);
-      if (acd?.type === 'CHANNEL') setChannelPostCommentsEnabled(true);
-    }
-    setInput('');
-    if (composerRef.current) composerRef.current.innerHTML = '';
-    setComposerToolbar(null);
-    pendingMedia.forEach((item) => {
-      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-    });
-    setPendingMedia([]);
-    setMediaComposerMenu(false);
-  };
-
-  const handleTyping = () => {
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    clearTimeout(typingTimer.current);
-    startTyping(activeChat);
-    typingTimer.current = setTimeout(() => {}, 3000);
-  };
-
-  const handleFileUpload = (e) => {
-    const files = e.target.files;
-    if (!files?.length || !activeChat) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    enqueuePendingMedia(files);
-    e.target.value = '';
-    setAttachMenu(false);
-  };
+  const { enqueuePendingMedia, handleSend, handleTyping, handleFileUpload } = useChatComposerActions({
+    input,
+    pendingMedia,
+    activeChat,
+    activeTopicId,
+    acd,
+    userId: user.id,
+    editingMsg,
+    replyTo,
+    channelPostCommentsEnabled,
+    typingTimer,
+    composerRef,
+    setEditingMsg,
+    setReplyTo,
+    setChannelPostCommentsEnabled,
+    setInput,
+    setComposerToolbar,
+    setPendingMedia,
+    setMediaComposerMenu,
+    setAttachMenu,
+    loadMessages,
+    loadChats,
+    sendMessage,
+    editMessage,
+    startTyping,
+    mediaApi,
+    messagesApi,
+  });
 
   const handleComposerPaste = useCallback((e) => {
     const files = Array.from(e.clipboardData?.items || [])
