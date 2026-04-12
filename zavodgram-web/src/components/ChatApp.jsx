@@ -380,6 +380,12 @@ export default function ChatApp() {
     return () => clearTimeout(timer);
   }, [shieldActivationNotice]);
 
+  useEffect(() => {
+    if (!shieldActivationNotice) return undefined;
+    const timer = setTimeout(() => setShieldActivationNotice(false), 2200);
+    return () => clearTimeout(timer);
+  }, [shieldActivationNotice]);
+
   const doForward = (chatId) => {
     if (!forwardMsg) return;
     const targetChat = chats.find((c) => c.id === chatId);
