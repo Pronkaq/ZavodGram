@@ -123,7 +123,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
       chatIds.length > 0
         ? prisma.chatMember.findMany({
             where: { userId, chatId: { in: chatIds } },
-            select: { chatId: true, muted: true, role: true, commentsMuted: true },
+            select: { chatId: true, muted: true, role: true, commentsMuted: true, contentProtectionAccepted: true },
           })
         : Promise.resolve([]),
       privateChatIds.length > 0
@@ -171,6 +171,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         muted: myMembership?.muted || false,
         myRole: myMembership?.role || 'MEMBER',
         myCommentsMuted: myMembership?.commentsMuted || false,
+        contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
         contentProtectionEnabled: chat.contentProtectionEnabled || false,
         lastMessagePreview: lastMessage ? (lastMessage.text || (lastMessage.hasMedia ? '[медиа]' : '')) : '',
         lastMessageAt: lastMessage?.createdAt || null,
@@ -215,7 +216,14 @@ router.get('/:id', authMiddleware, rateLimiter(120, 60), async (req: Request, re
     if (!isMember && chat.type !== 'CHANNEL') throw new ForbiddenError();
 
     const myMembership = chat.members.find((m) => m.userId === req.user!.userId);
-    res.json({ ok: true, data: { ...chat, myRole: myMembership?.role || 'MEMBER' } });
+    res.json({
+      ok: true,
+      data: {
+        ...chat,
+        myRole: myMembership?.role || 'MEMBER',
+        contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+      },
+    });
   } catch (err) { next(err); }
 });
 
@@ -283,14 +291,29 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       if (hasUnsupportedFields) throw new ForbiddenError('Для личных чатов доступна только защита контента');
       if (data.contentProtectionEnabled === undefined) throw new ValidationError('Укажите contentProtectionEnabled');
 
-      const updatedPrivate = await prisma.chat.update({
-        where: { id: chatId },
-        data: { contentProtectionEnabled: data.contentProtectionEnabled },
-        include: {
-          members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
-          _count: { select: { members: true } },
-        },
+      const updatedPrivate = await prisma.$transaction(async (tx) => {
+        await tx.chatMember.update({
+          where: { chatId_userId: { chatId, userId: req.user!.userId } },
+          data: { contentProtectionAccepted: data.contentProtectionEnabled },
+        });
+
+        const memberStates = await tx.chatMember.findMany({
+          where: { chatId },
+          select: { contentProtectionAccepted: true },
+        });
+        const protectionActive = memberStates.length >= 2 && memberStates.every((member) => member.contentProtectionAccepted);
+
+        return tx.chat.update({
+          where: { id: chatId },
+          data: { contentProtectionEnabled: protectionActive },
+          include: {
+            members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
+            _count: { select: { members: true } },
+          },
+        });
       });
+
+      const myMembership = updatedPrivate.members.find((member) => member.userId === req.user!.userId);
 
       redisPub.publish('chat:updated', JSON.stringify({
         chatId,
@@ -298,7 +321,13 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       }));
 
       await cacheInvalidate(`chat:${chatId}`);
-      res.json({ ok: true, data: updatedPrivate });
+      res.json({
+        ok: true,
+        data: {
+          ...updatedPrivate,
+          contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+        },
+      });
       return;
     }
 
