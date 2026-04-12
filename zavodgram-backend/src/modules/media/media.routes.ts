@@ -108,8 +108,14 @@ async function assertMediaReadableByUser(
   }
 
   //        membership 
-  const message = await prisma.message.findUnique({ where: { id: media.messageId } });
+  const message = await prisma.message.findUnique({
+    where: { id: media.messageId },
+    include: { chat: { select: { contentProtectionEnabled: true } } },
+  });
   if (!message || message.deleted) throw new NotFoundError('');
+  if (message.chat?.contentProtectionEnabled) {
+    throw new ForbiddenError('Медиа в этом чате защищено и недоступно для скачивания');
+  }
 
   await requireChatMembership(prisma, message.chatId, userId);
 }

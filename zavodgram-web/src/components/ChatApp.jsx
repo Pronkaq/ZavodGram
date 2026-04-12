@@ -90,6 +90,7 @@ export default function ChatApp() {
   const [editGroupName, setEditGroupName] = useState('');
   const [editGroupDesc, setEditGroupDesc] = useState('');
   const [editTopicsEnabled, setEditTopicsEnabled] = useState(false);
+  const [editContentProtection, setEditContentProtection] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [addMemberResults, setAddMemberResults] = useState([]);
   const [channelInfoModal, setChannelInfoModal] = useState(false);
@@ -367,10 +368,12 @@ export default function ChatApp() {
     editGroupName,
     editGroupDesc,
     editTopicsEnabled,
+    editContentProtection,
     newTopicTitle,
     setEditGroupName,
     setEditGroupDesc,
     setEditTopicsEnabled,
+    setEditContentProtection,
     setGroupSettingsModal,
     setNewTopicTitle,
     setTopicError,
@@ -428,11 +431,12 @@ export default function ChatApp() {
   } = useChannelManagement({
     activeChat,
     acd,
-    isOwner,
+    isOwnerOrAdmin,
     channelManageModal,
     channelSlugEdit,
     editGroupName,
     editGroupDesc,
+    editContentProtection,
     setChannelSlugEdit,
     setChannelSlugError,
     setChannelInfoModal,
@@ -440,6 +444,7 @@ export default function ChatApp() {
     setBannedUsers,
     setEditGroupName,
     setEditGroupDesc,
+    setEditContentProtection,
     setChannelManageTab,
     setChannelManageModal,
     chatsApi,
@@ -596,6 +601,7 @@ export default function ChatApp() {
                   )}
                   <MediaAttachment
                     media={msg.media}
+                    mediaBlocked={!!acd?.contentProtectionEnabled}
                     onTranscribe={handleTranscribe}
                     transcriptions={transcriptions}
                     transcriptionLoading={transcriptionLoading}
@@ -731,7 +737,7 @@ export default function ChatApp() {
                         ? { background: 'linear-gradient(180deg, rgba(36,42,55,0.95), rgba(27,31,41,0.98))', border: '1px solid rgba(220,224,235,0.13)', boxShadow: '0 10px 26px rgba(0,0,0,0.25)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
-                      {isChannel && postVisual && (
+                      {isChannel && postVisual && !acd?.contentProtectionEnabled && (
                         <div
                           role="button"
                           tabIndex={0}
@@ -781,6 +787,7 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment
                         media={isChannel ? (msg.media || []).filter((m) => m.id !== postVisual?.id) : msg.media}
+                        mediaBlocked={!!acd?.contentProtectionEnabled}
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
@@ -1088,7 +1095,6 @@ export default function ChatApp() {
       <ChannelInfoModal
         open={channelInfoModal}
         channel={acd}
-        isOwner={isOwner}
         isOwnerOrAdmin={isOwnerOrAdmin}
         channelPublicLink={channelPublicLink}
         styles={s}
@@ -1102,7 +1108,7 @@ export default function ChatApp() {
       <ChannelManageModal
         open={channelManageModal}
         chat={acd}
-        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
         tab={channelManageTab}
         setTab={setChannelManageTab}
         onLoadBans={loadChannelBans}
@@ -1112,6 +1118,8 @@ export default function ChatApp() {
         setEditGroupName={setEditGroupName}
         editGroupDesc={editGroupDesc}
         setEditGroupDesc={setEditGroupDesc}
+        editContentProtection={editContentProtection}
+        setEditContentProtection={setEditContentProtection}
         channelSlugEdit={channelSlugEdit}
         setChannelSlugEdit={setChannelSlugEdit}
         setChannelSlugError={setChannelSlugError}
@@ -1176,6 +1184,8 @@ export default function ChatApp() {
         setEditGroupDesc={setEditGroupDesc}
         editTopicsEnabled={editTopicsEnabled}
         setEditTopicsEnabled={setEditTopicsEnabled}
+        editContentProtection={editContentProtection}
+        setEditContentProtection={setEditContentProtection}
         styles={s}
         onClose={() => setGroupSettingsModal(false)}
         onAvatarUpload={handleGroupAvatarUpload}
