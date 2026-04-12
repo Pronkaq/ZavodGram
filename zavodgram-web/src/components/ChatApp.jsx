@@ -24,6 +24,8 @@ import { useChannelManagement } from './useChannelManagement';
 import { useProfileSettings } from './useProfileSettings';
 import { useChatCreation } from './useChatCreation';
 import { useGroupManagement } from './useGroupManagement';
+import { usePostCommentsFlow } from './usePostCommentsFlow';
+import { useChannelAttachments } from './useChannelAttachments';
 
 const tc = typeColors;
 
@@ -422,21 +424,7 @@ export default function ChatApp() {
     loadChats,
   });
 
-  const extractLinks = (text) => {
-    if (!text) return [];
-    const matches = text.match(/https?:\/\/[^\s]+/g);
-    return matches || [];
-  };
-
-  const channelAttachments = useMemo(() => {
-    if (!acd || acd.type !== 'CHANNEL') return [];
-    const list = [];
-    cms.forEach((msg) => {
-      (msg.media || []).forEach((m) => list.push({ kind: 'media', msgId: msg.id, createdAt: msg.createdAt, media: m }));
-      extractLinks(msg.text).forEach((url, idx) => list.push({ kind: 'link', msgId: msg.id, createdAt: msg.createdAt, id: `${msg.id}-${idx}`, url }));
-    });
-    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [acd, cms]);
+  const channelAttachments = useChannelAttachments({ acd, cms });
 
   const REACTION_SET = ['👍', '❤️', '🔥', '👏', '😂', '😮', '😢', '😡'];
 
@@ -534,65 +522,21 @@ export default function ChatApp() {
     ));
   };
 
-  const getPostComments = useCallback((msg) => {
-    if (!msg?.id) return [];
-    const children = new Map();
-    cms.forEach((m) => {
-      if (m.deleted || !m.replyToId) return;
-      if (!children.has(m.replyToId)) children.set(m.replyToId, []);
-      children.get(m.replyToId).push(m);
-    });
-
-    const result = [];
-    const walk = (parentId, depth = 0) => {
-      const list = (children.get(parentId) || []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      list.forEach((item) => {
-        result.push({ ...item, depth });
-        walk(item.id, depth + 1);
-      });
-    };
-
-    walk(msg.id, 0);
-    return result;
-  }, [cms]);
-
-  const openPostComments = useCallback((msg) => {
-    if (!msg) return;
-    setPostCommentsModal(msg);
-    setPostCommentDraft('');
-    setPostCommentReplyTo(null);
-  }, []);
-
-  const sendPostComment = useCallback(async () => {
-    if (!postCommentsModal) return;
-    const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
-    if (!commentsAllowed) return;
-    const text = postCommentDraft.trim();
-    if (!text) return;
-    sendMessage(activeChat, text, postCommentReplyTo?.id || postCommentsModal.id, null);
-    setPostCommentDraft('');
-    setPostCommentReplyTo(null);
-  }, [activeChat, isOwnerOrAdmin, postCommentDraft, postCommentReplyTo, postCommentsModal, sendMessage]);
-
-
-  const handleModerateComment = useCallback(async (comment, action) => {
-    if (!activeChat || !comment) return;
-    try {
-      if (action === 'delete') {
-        deleteMessage(activeChat, comment.id);
-      }
-      if (action === 'mute') {
-        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, true);
-        await loadChats();
-      }
-      if (action === 'unmute') {
-        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, false);
-        await loadChats();
-      }
-    } catch (err) {
-      alert(err.message || 'Не удалось выполнить действие');
-    }
-  }, [activeChat, deleteMessage, loadChats]);
+  const { getPostComments, openPostComments, sendPostComment, handleModerateComment } = usePostCommentsFlow({
+    cms,
+    activeChat,
+    isOwnerOrAdmin,
+    postCommentsModal,
+    postCommentDraft,
+    postCommentReplyTo,
+    setPostCommentsModal,
+    setPostCommentDraft,
+    setPostCommentReplyTo,
+    sendMessage,
+    deleteMessage,
+    chatsApi,
+    loadChats,
+  });
 
   return (
     <div className="zg-root" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setMediaComposerMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
