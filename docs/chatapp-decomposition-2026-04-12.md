@@ -126,6 +126,9 @@ src/components/chat-app/
   - сценарий join по публичной ссылке;
   - локальные состояния invite/joining.
 - Вынесен flow открытия панели настроек в `useSettingsPanelFlow`, чтобы убрать настройку профиля/подстраниц из корня `ChatApp`.
+- Вынесены отдельные UI-компоненты:
+  - `ChatReactionPicker` (popover выбора реакции);
+  - `ChannelInviteModal` (модалка приглашения в канал по slug).
 
 ## Критерии готовности
 

@@ -10,6 +10,8 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatListPanel } from './ChatListPanel';
 import { ChatNotificationsPanel } from './ChatNotificationsPanel';
 import { ChatMessageContextMenu } from './ChatMessageContextMenu';
+import { ChatReactionPicker } from './ChatReactionPicker';
+import { ChannelInviteModal } from './ChannelInviteModal';
 import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
@@ -1165,13 +1167,12 @@ export default function ChatApp() {
       />
 
 
-      {reactionPicker && (
-        <div style={{ position: 'fixed', top: reactionPicker.y, left: reactionPicker.x, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '8px 10px', zIndex: 240, display: 'flex', gap: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-          {REACTION_SET.map((emoji) => (
-            <button key={emoji} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer' }} onClick={() => { addReaction(reactionPicker.msgId, emoji); setReactionPicker(null); }}>{emoji}</button>
-          ))}
-        </div>
-      )}
+      <ChatReactionPicker
+        reactionPicker={reactionPicker}
+        reactionSet={REACTION_SET}
+        onReact={addReaction}
+        onClose={() => setReactionPicker(null)}
+      />
 
       {/* ── Forward Modal ── */}
       {forwardMsg && (
@@ -1543,20 +1544,13 @@ export default function ChatApp() {
         </div>
       )}
 
-      {inviteChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 380 }} onClick={() => setInviteChannel(null)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Канал по ссылке</h3>
-            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>{inviteChannel.name || 'Канал'}</div>
-            <div style={{ fontSize: 13, color: '#A2A8B6', marginBottom: 10 }}>{inviteChannel._count?.members || 0} подписчиков</div>
-            {inviteChannel.description && <p style={{ fontSize: 14, color: '#CACED7', lineHeight: 1.5 }}>{inviteChannel.description}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button style={{ ...s.saveBtn, flex: 1, opacity: joiningInvite ? 0.7 : 1 }} onClick={joinInviteChannel} disabled={joiningInvite}>{joiningInvite ? 'Подписка...' : 'Подписаться'}</button>
-              <button style={{ ...s.ib, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px' }} onClick={() => setInviteChannel(null)}>Позже</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChannelInviteModal
+        inviteChannel={inviteChannel}
+        joiningInvite={joiningInvite}
+        styles={s}
+        onJoin={joinInviteChannel}
+        onClose={() => setInviteChannel(null)}
+      />
 
 
       {mediaModal && (
