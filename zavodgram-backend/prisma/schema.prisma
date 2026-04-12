@@ -159,6 +159,7 @@ model ChatMember {
   role      MemberRole @default(MEMBER)
   muted     Boolean    @default(false)
   commentsMuted Boolean @default(false)
+  contentProtectionAccepted Boolean @default(false)
   joinedAt  DateTime   @default(now())
   lastRead  DateTime   @default(now())  // Для подсчёта непрочитанных
 

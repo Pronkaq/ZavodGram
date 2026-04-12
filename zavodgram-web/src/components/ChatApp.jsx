@@ -46,6 +46,7 @@ import { useMessageTextRenderer } from './useMessageTextRenderer';
 import { useChannelInviteFlow } from './useChannelInviteFlow';
 import { useSettingsPanelFlow } from './useSettingsPanelFlow';
 import { useComposerSendState } from './useComposerSendState';
+import { useDirectContentProtection } from './useDirectContentProtection';
 
 const tc = typeColors;
 
@@ -184,25 +185,12 @@ export default function ChatApp() {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
-  const protectedDirectChat = (acd?.type === 'PRIVATE' || acd?.type === 'SECRET') && !!acd?.contentProtectionEnabled;
 
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
-  useEffect(() => {
-    if (!protectedDirectChat) return undefined;
-    const onKeyDown = (event) => {
-      const key = (event.key || '').toLowerCase();
-      if (key === 'printscreen' || (event.ctrlKey && event.shiftKey && key === 's')) {
-        event.preventDefault();
-        alert('Скриншоты в защищённом личном чате запрещены');
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [protectedDirectChat]);
 
   const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
     activeChat,
@@ -350,16 +338,16 @@ export default function ChatApp() {
     try { await chatsApi.mute(chatId, !chat?.muted); loadChats(); } catch {}
   };
 
-  const toggleDirectContentProtection = useCallback(async () => {
-    const isDirect = acd?.type === 'PRIVATE' || acd?.type === 'SECRET';
-    if (!activeChat || !isDirect) return;
-    try {
-      await chatsApi.update(activeChat, { contentProtectionEnabled: !acd?.contentProtectionEnabled });
-      await loadChats();
-    } catch (err) {
-      alert(err.message || 'Не удалось переключить защиту контента');
-    }
-  }, [activeChat, acd?.type, chatsApi, acd?.contentProtectionEnabled, loadChats]);
+  const {
+    protectedDirectChat,
+    shieldActivationNotice,
+    toggleDirectContentProtection,
+  } = useDirectContentProtection({
+    activeChat,
+    acd,
+    chatsApi,
+    loadChats,
+  });
 
   const doForward = (chatId) => {
     if (!forwardMsg) return;
@@ -535,6 +523,31 @@ export default function ChatApp() {
           dismissToast(toast.id);
         }}
       />
+      {shieldActivationNotice && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1200,
+            pointerEvents: 'none',
+            padding: '10px 16px',
+            borderRadius: 14,
+            border: '1px solid rgba(80, 255, 150, 0.55)',
+            background: 'rgba(18, 38, 27, 0.48)',
+            color: '#DFFFEA',
+            fontSize: 13,
+            fontWeight: 600,
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 0 0 1px rgba(123, 255, 180, 0.2), 0 0 32px rgba(70, 255, 145, 0.35)',
+          }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Icons.Shield /> {shieldActivationNotice}
+          </span>
+        </div>
+      )}
 
       {/* ── Sidebar ── */}
       <ChatSidebar
@@ -671,9 +684,22 @@ export default function ChatApp() {
                 <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
                 {isDirectChat && (
                   <button
-                    style={{ ...s.ib, ...(acd?.contentProtectionEnabled ? { color: '#E9EBEF' } : {}) }}
+                    style={{
+                      ...s.ib,
+                      ...(acd?.contentProtectionEnabled ? {
+                        color: '#DFFFEA',
+                        border: '1px solid rgba(88, 255, 154, 0.9)',
+                        background: 'rgba(24, 66, 43, 0.42)',
+                        boxShadow: '0 0 0 1px rgba(92, 255, 160, 0.35), 0 0 16px rgba(88, 255, 154, 0.75), 0 0 32px rgba(88, 255, 154, 0.35)',
+                      } : acd?.contentProtectionRequestedByMe ? {
+                        color: '#EEF6FF',
+                        border: '1px solid rgba(153, 197, 255, 0.7)',
+                        background: 'rgba(44, 72, 112, 0.34)',
+                        boxShadow: '0 0 0 1px rgba(153, 197, 255, 0.25), 0 0 14px rgba(153, 197, 255, 0.35)',
+                      } : {}),
+                    }}
                     onClick={toggleDirectContentProtection}
-                    title={acd?.contentProtectionEnabled ? 'Отключить защиту контента' : 'Включить защиту контента'}
+                    title={acd?.contentProtectionRequestedByMe ? 'Отменить запрос защиты контента' : 'Отправить запрос на защиту контента'}
                   >
                     <Icons.Shield />
                   </button>
