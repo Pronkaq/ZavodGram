@@ -165,9 +165,15 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     if (data.forwardedFromId) {
       const original = await prisma.message.findUnique({
         where: { id: data.forwardedFromId },
-        include: { from: { select: { name: true } } },
+        include: { from: { select: { name: true } }, chat: { select: { type: true, contentProtectionEnabled: true } } },
       });
       if (!original || original.deleted) throw new NotFoundError('Пересылаемое сообщение');
+      if (
+        original.chat?.contentProtectionEnabled
+        && (original.chat.type === 'PRIVATE' || original.chat.type === 'SECRET')
+      ) {
+        throw new ForbiddenError('Пересылка из защищённого личного чата запрещена');
+      }
       await requireChatMembership(prisma, original.chatId, req.user!.userId);
       forwardedFromName = original.from.name ?? undefined;
       forwardText = forwardText || original.text || undefined;
@@ -268,6 +274,14 @@ router.delete('/:chatId/messages/:id', authMiddleware, rateLimiter(30, 60), asyn
     const { id, chatId } = req.params;
 
     const membership = await requireChatMembership(prisma, chatId, req.user!.userId);
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { type: true, contentProtectionEnabled: true },
+    });
+    if (!chat) throw new NotFoundError('Чат');
+    if (chat.contentProtectionEnabled && (chat.type === 'PRIVATE' || chat.type === 'SECRET')) {
+      throw new ForbiddenError('Удаление сообщений в защищённом личном чате запрещено');
+    }
     const message = await requireMessageInChat(prisma, id, chatId, true);
 
     if (message.fromId !== req.user!.userId && membership.role === 'MEMBER') {

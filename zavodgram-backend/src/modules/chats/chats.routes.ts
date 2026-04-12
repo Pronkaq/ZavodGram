@@ -273,7 +273,34 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
 
     const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
-    if (chat.type === 'PRIVATE' || chat.type === 'SECRET') throw new ForbiddenError('Нельзя редактировать личные чаты');
+    if (chat.type === 'PRIVATE' || chat.type === 'SECRET') {
+      await requireChatMembership(prisma, chatId, req.user!.userId);
+      const hasUnsupportedFields = data.name !== undefined
+        || data.description !== undefined
+        || data.avatar !== undefined
+        || data.channelSlug !== undefined
+        || data.topicsEnabled !== undefined;
+      if (hasUnsupportedFields) throw new ForbiddenError('Для личных чатов доступна только защита контента');
+      if (data.contentProtectionEnabled === undefined) throw new ValidationError('Укажите contentProtectionEnabled');
+
+      const updatedPrivate = await prisma.chat.update({
+        where: { id: chatId },
+        data: { contentProtectionEnabled: data.contentProtectionEnabled },
+        include: {
+          members: { include: { user: { select: { id: true, name: true, tag: true, avatar: true } } } },
+          _count: { select: { members: true } },
+        },
+      });
+
+      redisPub.publish('chat:updated', JSON.stringify({
+        chatId,
+        contentProtectionEnabled: updatedPrivate.contentProtectionEnabled,
+      }));
+
+      await cacheInvalidate(`chat:${chatId}`);
+      res.json({ ok: true, data: updatedPrivate });
+      return;
+    }
 
     await requireChatRole(prisma, chatId, req.user!.userId, ['OWNER', 'ADMIN']);
 

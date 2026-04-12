@@ -184,12 +184,25 @@ export default function ChatApp() {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
+  const protectedDirectChat = (acd?.type === 'PRIVATE' || acd?.type === 'SECRET') && !!acd?.contentProtectionEnabled;
 
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
+  useEffect(() => {
+    if (!protectedDirectChat) return undefined;
+    const onKeyDown = (event) => {
+      const key = (event.key || '').toLowerCase();
+      if (key === 'printscreen' || (event.ctrlKey && event.shiftKey && key === 's')) {
+        event.preventDefault();
+        alert('Скриншоты в защищённом личном чате запрещены');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [protectedDirectChat]);
 
   const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
     activeChat,
@@ -336,6 +349,16 @@ export default function ChatApp() {
     const chat = chats.find(c => c.id === chatId);
     try { await chatsApi.mute(chatId, !chat?.muted); loadChats(); } catch {}
   };
+
+  const toggleDirectContentProtection = useCallback(async () => {
+    if (!activeChat || !isDirectChat) return;
+    try {
+      await chatsApi.update(activeChat, { contentProtectionEnabled: !acd?.contentProtectionEnabled });
+      await loadChats();
+    } catch (err) {
+      alert(err.message || 'Не удалось переключить защиту контента');
+    }
+  }, [activeChat, isDirectChat, chatsApi, acd?.contentProtectionEnabled, loadChats]);
 
   const doForward = (chatId) => {
     if (!forwardMsg) return;
@@ -645,6 +668,15 @@ export default function ChatApp() {
                 </div>
                 <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
                 <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
+                {isDirectChat && (
+                  <button
+                    style={{ ...s.ib, ...(acd?.contentProtectionEnabled ? { color: '#E9EBEF' } : {}) }}
+                    onClick={toggleDirectContentProtection}
+                    title={acd?.contentProtectionEnabled ? 'Отключить защиту контента' : 'Включить защиту контента'}
+                  >
+                    <Icons.Shield />
+                  </button>
+                )}
                 {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
                 {acd.type === 'CHANNEL' && <button style={s.ib} onClick={() => setAttachmentsModal(true)}><Icons.Attach /></button>}
               </div>
@@ -1045,6 +1077,8 @@ export default function ChatApp() {
       <ChatMessageContextMenu
         contextMenu={contextMenu}
         styles={s}
+        canForward={!protectedDirectChat}
+        canDelete={!protectedDirectChat}
         onReply={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}
         onForward={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}
         onReaction={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}

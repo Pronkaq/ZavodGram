@@ -3,6 +3,8 @@ import { Icons } from './Icons';
 export function ChatMessageContextMenu({
   contextMenu,
   styles,
+  canForward = true,
+  canDelete = true,
   onReply,
   onForward,
   onReaction,
@@ -18,11 +20,11 @@ export function ChatMessageContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div style={styles.mi} onClick={onReply}><Icons.Reply /> Ответить</div>
-      <div style={styles.mi} onClick={onForward}><Icons.Forward /> Переслать</div>
+      {canForward && <div style={styles.mi} onClick={onForward}><Icons.Forward /> Переслать</div>}
       <div style={styles.mi} onClick={onReaction}><Icons.Smile /> Реакция</div>
       <div style={styles.mi} onClick={onCopy}><Icons.Copy /> Копировать</div>
       {contextMenu.msg.mine && <div style={styles.mi} onClick={onEdit}><Icons.Edit /> Редактировать</div>}
-      {contextMenu.msg.mine && <div style={{ ...styles.mi, color: '#D5D8DE' }} onClick={onDelete}><Icons.Trash /> Удалить</div>}
+      {contextMenu.msg.mine && canDelete && <div style={{ ...styles.mi, color: '#D5D8DE' }} onClick={onDelete}><Icons.Trash /> Удалить</div>}
     </div>
   );
 }
