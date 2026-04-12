@@ -14,6 +14,13 @@ import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiPar
 import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
 import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
 import { useChatToasts } from './useChatToasts';
+import { useChatAppDerivedState } from './useChatAppDerivedState';
+import { useComposerFormatting } from './useComposerFormatting';
+import { useChatTopicFlow } from './useChatTopicFlow';
+import { useChatMessageViewport } from './useChatMessageViewport';
+import { useChatComposerActions } from './useChatComposerActions';
+import { useVoiceMessaging } from './useVoiceMessaging';
+import { useChannelManagement } from './useChannelManagement';
 
 const tc = typeColors;
 
@@ -23,7 +30,6 @@ export default function ChatApp() {
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
-  const [composerToolbar, setComposerToolbar] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [editingMsg, setEditingMsg] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
@@ -101,257 +107,132 @@ export default function ChatApp() {
   const mediaStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
 
-  const acd = chats.find((c) => c.id === activeChat);
-  const topicMessageKey = activeTopicId ? `${activeChat}::${activeTopicId}` : activeChat;
-  const cms = messages[topicMessageKey] || [];
-  const paging = messagePaging[topicMessageKey] || { hasMore: false, loadingMore: false };
-  const isActiveChannel = acd?.type === 'CHANNEL';
-  const VIRTUAL_THRESHOLD = 80;
-  const shouldVirtualize = !isActiveChannel && cms.length > VIRTUAL_THRESHOLD;
+  const {
+    acd,
+    topicMessageKey,
+    cms,
+    paging,
+    shouldVirtualize,
+    filteredChats,
+    getAvatarSourceForChat,
+    searchResults,
+  } = useChatAppDerivedState({
+    chats,
+    activeChat,
+    activeTopicId,
+    messages,
+    messagePaging,
+    search,
+    msgSearch,
+    userId: user.id,
+  });
 
-  const filteredChats = useMemo(() => chats.filter((c) => {
-    if (!search) return true;
-    return getChatName(c, user.id).toLowerCase().includes(search.toLowerCase());
-  }), [chats, search, user]);
+  const {
+    composerToolbar,
+    setComposerToolbar,
+    refreshComposerSelection,
+    applyComposerFormat,
+    applyComposerLink,
+    syncComposerInput,
+  } = useComposerFormatting({
+    composerRef,
+    input,
+    setInput,
+    activeChat,
+    activeTopicId,
+    acd,
+    userId: user.id,
+    typingTimer,
+    startTyping,
+  });
 
-  const getAvatarSourceForChat = useCallback((chat) => {
-    const isDirect = chat?.type === 'PRIVATE' || chat?.type === 'SECRET';
-    if (!isDirect) return chat?.avatar;
-    const other = getOtherUser(chat, user.id);
-    return other?.avatar || chat?.avatar;
-  }, [user.id]);
-
-  const searchResults = useMemo(() => {
-    if (!msgSearch.trim()) return [];
-    return cms.filter((m) => m.text?.toLowerCase().includes(msgSearch.toLowerCase())).map((m) => m.id);
-  }, [msgSearch, cms]);
-
-  const loadTopics = useCallback(async (chatId) => {
-    if (!chatId) return;
-    setTopicsLoading(true);
-    try {
-      const data = await chatsApi.listTopics(chatId);
-      setChatTopics(data);
-      if (data.length > 0) {
-        setActiveTopicId((prev) => (prev && data.some((t) => t.id === prev) ? prev : data[0].id));
-      } else {
-        setActiveTopicId(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setChatTopics([]);
-      setActiveTopicId(null);
-    } finally {
-      setTopicsLoading(false);
-    }
-  }, []);
+  const { loadTopics } = useChatTopicFlow({
+    chatsApi,
+    activeChat,
+    acd,
+    activeTopicId,
+    setTopicsLoading,
+    setChatTopics,
+    setActiveTopicId,
+    loadMessages,
+  });
 
   const openMediaModal = useCallback((payload) => {
     if (!payload?.src) return;
     setMediaModal(payload);
   }, []);
 
-  useEffect(() => {
-    if (searchResults.length > 0 && msgSearchIdx >= 0)
-      document.getElementById(`msg-${searchResults[msgSearchIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [msgSearchIdx, searchResults]);
-
-  useEffect(() => {
-    if (shouldVirtualize) {
-      messagesVirtuosoRef.current?.scrollToIndex({ index: Math.max(0, cms.length - 1), align: 'end', behavior: 'smooth' });
-      return;
-    }
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [cms.length, activeChat, shouldVirtualize]);
   useEffect(() => { if (editingMsg || replyTo) inpRef.current?.focus(); }, [editingMsg, replyTo]);
-  useEffect(() => {
-    if (!activeChat || acd?.type !== 'GROUP' || !acd?.topicsEnabled) {
-      setChatTopics([]);
-      setActiveTopicId(null);
-      return;
-    }
-    loadTopics(activeChat);
-  }, [activeChat, acd?.type, acd?.topicsEnabled, loadTopics]);
-
-  useEffect(() => {
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled) {
-      if (activeTopicId) loadMessages(activeChat, activeTopicId);
-      return;
-    }
-    loadMessages(activeChat);
-  }, [activeChat, activeTopicId, acd?.type, acd?.topicsEnabled, loadMessages]);
   useEffect(() => () => {
     mediaRecorderRef.current?.stop?.();
     mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
 
-  useEffect(() => {
-    if (!voiceRecording) return undefined;
-    const timer = setInterval(() => setRecordingNowTs(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [voiceRecording]);
-
-  useEffect(() => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    const safe = sanitizeRichHtml(input);
-    if (editor.innerHTML !== safe) editor.innerHTML = safe;
-  }, [input]);
-
-  const onMessagesScroll = useCallback((e) => {
-    if (!activeChat || paging.loadingMore || !paging.hasMore) return;
-    const el = e.currentTarget;
-    if (el.scrollTop > 120) return;
-    const topicId = (acd?.type === 'GROUP' && acd?.topicsEnabled) ? activeTopicId : undefined;
-    loadMoreMessages(activeChat, topicId);
-  }, [activeChat, paging.loadingMore, paging.hasMore, acd?.type, acd?.topicsEnabled, activeTopicId, loadMoreMessages]);
-
-  const onMessagesViewportScroll = useCallback((e) => {
-    onMessagesScroll(e);
-  }, [onMessagesScroll]);
-
-  const refreshComposerSelection = useCallback(() => {
-    const editor = composerRef.current;
-    if (!editor || document.activeElement !== editor) {
-      setComposerToolbar(null);
-      return;
-    }
-    const sel = window.getSelection?.();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-      setComposerToolbar(null);
-      return;
-    }
-    const range = sel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    if (!rect || (!rect.width && !rect.height)) {
-      setComposerToolbar(null);
-      return;
-    }
-    setComposerToolbar({
-      top: rect.top + window.scrollY - 40,
-      left: rect.left + window.scrollX + rect.width / 2,
-    });
-  }, []);
-
-  const applyComposerFormat = useCallback((command) => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    editor.focus();
-    document.execCommand(command, false);
-    const html = sanitizeRichHtml(editor.innerHTML);
-    editor.innerHTML = html;
-    setInput(html);
-    setTimeout(refreshComposerSelection, 0);
-  }, [refreshComposerSelection]);
-
-  const applyComposerLink = useCallback(() => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    editor.focus();
-    const selection = window.getSelection?.();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-    const link = window.prompt('Вставьте ссылку (https://...)');
-    if (!link) return;
-    const normalized = link.trim();
-    if (!/^https?:\/\//i.test(normalized)) return;
-    document.execCommand('createLink', false, normalized);
-    const html = sanitizeRichHtml(editor.innerHTML);
-    editor.innerHTML = html;
-    setInput(html);
-    setTimeout(refreshComposerSelection, 0);
-  }, [refreshComposerSelection]);
-
-  const syncComposerInput = useCallback(() => {
-    const editor = composerRef.current;
-    if (!editor) return;
-    const html = sanitizeRichHtml(editor.innerHTML);
-    if (editor.innerHTML !== html) editor.innerHTML = html;
-    setInput(html);
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    clearTimeout(typingTimer.current);
-    startTyping(activeChat);
-    typingTimer.current = setTimeout(() => {}, 3000);
-  }, [activeChat, acd, activeTopicId, startTyping, user.id]);
+  const { onMessagesScroll, onMessagesViewportScroll } = useChatMessageViewport({
+    activeChat,
+    activeTopicId,
+    acd,
+    paging,
+    loadMoreMessages,
+    shouldVirtualize,
+    cmsLength: cms.length,
+    searchResults,
+    msgSearchIdx,
+    endRef,
+    messagesVirtuosoRef,
+  });
 
   // ── Handlers ──
-  const enqueuePendingMedia = useCallback((fileList) => {
-    const files = Array.from(fileList || []).filter((f) => f instanceof File);
-    if (!files.length) return;
-    setPendingMedia((prev) => ([
-      ...prev,
-      ...files.map((file) => ({
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        file,
-        spoiler: false,
-        previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/') ? URL.createObjectURL(file) : '',
-      })),
-    ]));
-  }, []);
+  const { enqueuePendingMedia, handleSend, handleTyping, handleFileUpload } = useChatComposerActions({
+    input,
+    pendingMedia,
+    activeChat,
+    activeTopicId,
+    acd,
+    userId: user.id,
+    editingMsg,
+    replyTo,
+    channelPostCommentsEnabled,
+    typingTimer,
+    composerRef,
+    setEditingMsg,
+    setReplyTo,
+    setChannelPostCommentsEnabled,
+    setInput,
+    setComposerToolbar,
+    setPendingMedia,
+    setMediaComposerMenu,
+    setAttachMenu,
+    loadMessages,
+    loadChats,
+    sendMessage,
+    editMessage,
+    startTyping,
+    mediaApi,
+    messagesApi,
+  });
 
-  const handleSend = async () => {
-    const text = sanitizeRichHtml(input);
-    const plainText = richTextToPlain(text);
-    if (!plainText && pendingMedia.length === 0) return;
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    if (editingMsg) {
-      editMessage(activeChat, editingMsg.id, text);
-      setEditingMsg(null);
-    } else {
-      const options = {
-        ...((acd?.type === 'CHANNEL' && !replyTo) ? { commentsEnabled: channelPostCommentsEnabled } : {}),
-        ...((acd?.type === 'GROUP' && acd?.topicsEnabled) ? { topicId: activeTopicId } : {}),
-      };
-      let mediaIds = [];
-      if (pendingMedia.length > 0) {
-        const uploaded = await Promise.all(pendingMedia.map(async (item) => mediaApi.upload(item.file)));
-        mediaIds = uploaded.map((item) => item.id);
-      }
-      if (mediaIds.length > 0) {
-        await messagesApi.send(activeChat, { text: plainText ? text : undefined, mediaIds, replyToId: replyTo?.id, ...options });
-        await loadMessages(activeChat, acd?.type === 'GROUP' && acd?.topicsEnabled ? activeTopicId : undefined);
-        await loadChats();
-      } else {
-        sendMessage(activeChat, text, replyTo?.id, null, options);
-      }
-      setReplyTo(null);
-      if (acd?.type === 'CHANNEL') setChannelPostCommentsEnabled(true);
-    }
-    setInput('');
-    if (composerRef.current) composerRef.current.innerHTML = '';
-    setComposerToolbar(null);
-    pendingMedia.forEach((item) => {
-      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-    });
-    setPendingMedia([]);
-    setMediaComposerMenu(false);
-  };
-
-  const handleTyping = () => {
-    if (!activeChat) return;
-    if (acd?.type === 'GROUP' && acd?.topicsEnabled && !activeTopicId) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    clearTimeout(typingTimer.current);
-    startTyping(activeChat);
-    typingTimer.current = setTimeout(() => {}, 3000);
-  };
-
-  const handleFileUpload = (e) => {
-    const files = e.target.files;
-    if (!files?.length || !activeChat) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-    enqueuePendingMedia(files);
-    e.target.value = '';
-    setAttachMenu(false);
-  };
+  const { handleVoiceRecordToggle, handleTranscribe } = useVoiceMessaging({
+    activeChat,
+    acd,
+    userId: user.id,
+    voiceRecording,
+    transcriptionLoading,
+    transcriptionAvailable,
+    mediaRecorderRef,
+    mediaStreamRef,
+    voiceChunksRef,
+    setVoiceRecorderState,
+    setRecordingNowTs,
+    setVoiceRecording,
+    setTranscriptionLoading,
+    setTranscriptions,
+    setTranscriptionAvailable,
+    mediaApi,
+    messagesApi,
+    loadMessages,
+    loadChats,
+  });
 
   const handleComposerPaste = useCallback((e) => {
     const files = Array.from(e.clipboardData?.items || [])
@@ -379,107 +260,6 @@ export default function ChatApp() {
       return next;
     });
   }, []);
-
-  const handleVoiceRecordToggle = async () => {
-    if (!activeChat) return;
-    const roleInChat = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-    if (acd?.type === 'CHANNEL' && !['OWNER', 'ADMIN'].includes(roleInChat)) return;
-
-    if (voiceRecording) {
-      mediaRecorderRef.current?.stop?.();
-      return;
-    }
-
-    try {
-      if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        setVoiceRecorderState({ startedAt: 0, error: 'Запись голоса не поддерживается в этом браузере' });
-        return;
-      }
-      setVoiceRecorderState({ startedAt: 0, error: '' });
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-      const isAppleDevice = /iPad|iPhone|iPod|Macintosh/i.test(navigator.userAgent || '');
-      const mimeTypes = [
-        ...(isAppleDevice ? ['audio/mp4'] : []),
-        'audio/webm;codecs=opus',
-        'audio/ogg;codecs=opus',
-        'audio/mp4',
-        'audio/webm',
-      ];
-      const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      voiceChunksRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data?.size > 0) voiceChunksRef.current.push(event.data);
-      };
-      recorder.onstop = async () => {
-        setVoiceRecording(false);
-        mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-
-        const chunks = voiceChunksRef.current;
-        voiceChunksRef.current = [];
-        if (!chunks.length || !activeChat) {
-          if (!chunks.length) {
-            setVoiceRecorderState({ startedAt: 0, error: 'Не удалось записать аудио. Попробуйте ещё раз' });
-          }
-          return;
-        }
-
-        try {
-          const audioType = chunks[0]?.type || 'audio/webm';
-          const ext = audioType.includes('ogg')
-            ? 'ogg'
-            : audioType.includes('mpeg')
-              ? 'mp3'
-              : audioType.includes('mp4')
-                ? 'm4a'
-                : 'webm';
-          const voiceFile = new File(chunks, `voice-${Date.now()}.${ext}`, { type: audioType });
-          const media = await mediaApi.upload(voiceFile);
-          await messagesApi.send(activeChat, { mediaIds: [media.id] });
-          await loadMessages(activeChat);
-          await loadChats();
-        } catch (err) {
-          console.error('Voice upload failed', err);
-          setVoiceRecorderState({ startedAt: 0, error: 'Не удалось отправить голосовое сообщение' });
-        }
-      };
-
-      recorder.start(1000);
-      setVoiceRecorderState({ startedAt: Date.now(), error: '' });
-      setRecordingNowTs(Date.now());
-      setVoiceRecording(true);
-    } catch (err) {
-      console.error('Voice recording failed', err);
-      const errorText = err?.name === 'NotFoundError'
-        ? 'Микрофон не найден. Подключите устройство ввода и попробуйте снова'
-        : err?.name === 'NotAllowedError'
-          ? 'Нет доступа к микрофону. Разрешите доступ в браузере'
-          : 'Не удалось получить доступ к микрофону';
-      setVoiceRecorderState({ startedAt: 0, error: errorText });
-      setVoiceRecording(false);
-    }
-  };
-
-  const handleTranscribe = async (mediaId) => {
-    if (!mediaId || transcriptionLoading[mediaId] || !transcriptionAvailable) return;
-    setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: true }));
-    try {
-      const result = await mediaApi.transcribe(mediaId);
-      setTranscriptions((prev) => ({ ...prev, [mediaId]: result.text || '' }));
-    } catch (err) {
-      const message = err?.message || 'Не удалось получить расшифровку';
-      if (message.toLowerCase().includes('не настроен провайдер')) {
-        setTranscriptionAvailable(false);
-      }
-      setTranscriptions((prev) => ({ ...prev, [mediaId]: message }));
-    } finally {
-      setTranscriptionLoading((prev) => ({ ...prev, [mediaId]: false }));
-    }
-  };
 
   const openProfile = async (userId) => {
     if (userId === user.id) { setProfileData({ ...user, online: true }); }
@@ -693,108 +473,35 @@ export default function ChatApp() {
   }, []);
 
 
-  const normalizedSlug = (slug) => (slug || '').trim().toLowerCase();
-  const channelPublicLink = useMemo(() => {
-    if (!acd?.channelSlug) return '';
-    return `${window.location.origin}/${acd.channelSlug}`;
-  }, [acd?.channelSlug]);
-
-  const openChannelInfo = useCallback(() => {
-    if (!acd || acd.type !== 'CHANNEL') return;
-    setChannelSlugEdit(acd.channelSlug || '');
-    setChannelSlugError('');
-    setChannelInfoModal(true);
-  }, [acd]);
-
-  const shareChannelLink = async () => {
-    if (!channelPublicLink) return;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: acd?.name || 'Канал', url: channelPublicLink });
-      } else {
-        await navigator.clipboard?.writeText(channelPublicLink);
-      }
-    } catch {}
-  };
-
-  const saveChannelSlug = async () => {
-    if (!activeChat || !acd || acd.type !== 'CHANNEL') return;
-    const slug = normalizedSlug(channelSlugEdit);
-    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
-      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
-      return;
-    }
-    try {
-      await chatsApi.update(activeChat, { channelSlug: slug });
-      await loadChats();
-      setChannelSlugError('');
-      setChannelInfoModal(false);
-    } catch (err) {
-      setChannelSlugError(err.message || 'Не удалось сохранить ссылку');
-    }
-  };
-
-  const loadChannelBans = useCallback(async () => {
-    if (!activeChat) return;
-    setBansLoading(true);
-    try {
-      const bans = await chatsApi.listBans(activeChat);
-      setBannedUsers(bans || []);
-    } catch (err) {
-      setBannedUsers([]);
-      alert(err.message || 'Не удалось загрузить список заблокированных');
-    } finally {
-      setBansLoading(false);
-    }
-  }, [activeChat]);
-
-  const openChannelManagement = useCallback(async () => {
-    if (!acd || acd.type !== 'CHANNEL' || !isOwner) return;
-    setEditGroupName(acd.name || '');
-    setEditGroupDesc(acd.description || '');
-    setChannelSlugEdit(acd.channelSlug || '');
-    setChannelSlugError('');
-    setChannelManageTab('main');
-    setChannelManageModal(true);
-    await loadChannelBans();
-  }, [acd, isOwner, loadChannelBans]);
-
-  const saveChannelManagement = async () => {
-    if (!activeChat || !acd || acd.type !== 'CHANNEL' || !isOwner) return;
-    const slug = normalizedSlug(channelSlugEdit);
-    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
-      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
-      return;
-    }
-    try {
-      await chatsApi.update(activeChat, { name: editGroupName.trim(), description: editGroupDesc, channelSlug: slug });
-      await loadChats();
-      setChannelManageModal(false);
-    } catch (err) {
-      setChannelSlugError(err.message || 'Не удалось сохранить настройки канала');
-    }
-  };
-
-  const handleBanMember = async (targetId) => {
-    if (!activeChat || !targetId) return;
-    try {
-      await chatsApi.banMember(activeChat, targetId);
-      await loadChats();
-      if (channelManageModal) await loadChannelBans();
-    } catch (err) {
-      alert(err.message || 'Не удалось заблокировать пользователя');
-    }
-  };
-
-  const handleUnbanMember = async (targetId) => {
-    if (!activeChat || !targetId) return;
-    try {
-      await chatsApi.unbanMember(activeChat, targetId);
-      await loadChannelBans();
-    } catch (err) {
-      alert(err.message || 'Не удалось разблокировать пользователя');
-    }
-  };
+  const {
+    channelPublicLink,
+    openChannelInfo,
+    shareChannelLink,
+    saveChannelSlug,
+    openChannelManagement,
+    saveChannelManagement,
+    handleBanMember,
+    handleUnbanMember,
+  } = useChannelManagement({
+    activeChat,
+    acd,
+    isOwner,
+    channelManageModal,
+    channelSlugEdit,
+    editGroupName,
+    editGroupDesc,
+    setChannelSlugEdit,
+    setChannelSlugError,
+    setChannelInfoModal,
+    setBansLoading,
+    setBannedUsers,
+    setEditGroupName,
+    setEditGroupDesc,
+    setChannelManageTab,
+    setChannelManageModal,
+    chatsApi,
+    loadChats,
+  });
 
   const extractLinks = (text) => {
     if (!text) return [];
