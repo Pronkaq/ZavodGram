@@ -2,216 +2,132 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export default function AuthPage() {
-  const { login, registerStart, registerStatus, registerComplete } = useAuth();
+  const { login, registerStart, fetchCaptcha, recoveryResetPassword } = useAuth();
   const [mode, setMode] = useState('login');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [registerStep, setRegisterStep] = useState('form');
-  const [pendingRegistration, setPendingRegistration] = useState(null);
-  const [form, setForm] = useState({ phone: '+7', password: '', name: '', tag: '@', bio: '' });
+  const [success, setSuccess] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [captcha, setCaptcha] = useState({ captchaId: '', question: '' });
+  const [form, setForm] = useState({
+    nickname: '',
+    password: '',
+    name: '',
+    captchaAnswer: '',
+    recoveryCode: '',
+    newPassword: '',
+  });
 
   const set = (k, v) => {
-    if (k === 'phone') {
-      v = v.replace(/[^\d+]/g, '');
-      v = v.replace(/\+/g, '');
-      v = `+${v}`;
-    }
-    if (k === 'tag') {
-      if (!v.startsWith('@')) v = '@' + v;
-      v = '@' + v.slice(1).replace(/[^a-zA-Z0-9_]/g, '');
+    if (k === 'nickname') {
+      v = v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 30);
     }
     setForm((p) => ({ ...p, [k]: v }));
   };
 
-  useEffect(() => {
-    if (mode !== 'register' || !pendingRegistration?.registrationId) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const data = await registerStatus(pendingRegistration.registrationId);
-        setPendingRegistration((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            status: data.status,
-            confirmedAt: data.confirmedAt,
-          };
-        });
-        if (data.status === 'CONFIRMED') {
-          setRegisterStep('confirmed');
-        }
-      } catch {
-        // silently ignore transient polling errors
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [mode, pendingRegistration?.registrationId, registerStatus]);
-
-  const validateRegisterForm = () => {
-    if (!form.name.trim()) return 'Введите имя';
-    if (form.tag.length < 4) return 'Тег минимум 3 символа после @';
-    if (!/^\+7\d{10}$/.test(form.phone)) return 'Введите номер в формате +7XXXXXXXXXX';
-    if (form.password.length < 6) return 'Пароль минимум 6 символов';
-    return '';
+  const loadCaptcha = async () => {
+    try {
+      const data = await fetchCaptcha();
+      setCaptcha({ captchaId: data.captchaId, question: data.question });
+      setForm((prev) => ({ ...prev, captchaAnswer: '' }));
+    } catch {
+      setError('Не удалось загрузить капчу');
+    }
   };
+
+  useEffect(() => {
+    loadCaptcha();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
+    setRecoveryCode('');
     setLoading(true);
     try {
-      if (mode === 'login') {
-        await login(form.phone, form.password);
-      } else if (registerStep === 'form') {
-        const validationError = validateRegisterForm();
-        if (validationError) {
-          setError(validationError);
-          setLoading(false);
-          return;
-        }
+      if (!captcha.captchaId) throw new Error('Обновите капчу');
 
+      if (mode === 'login') {
+        await login(form.nickname, form.password, captcha.captchaId, form.captchaAnswer);
+      } else if (mode === 'register') {
+        if (!form.name.trim()) throw new Error('Введите имя');
         const data = await registerStart({
-          phone: form.phone,
+          nickname: form.nickname,
           password: form.password,
           name: form.name,
-          tag: form.tag,
-          bio: form.bio,
+          captchaId: captcha.captchaId,
+          captchaAnswer: form.captchaAnswer,
         });
-
-        setPendingRegistration({
-          registrationId: data.registrationId,
-          expiresAt: data.expiresAt,
-          telegramDeepLink: data.telegramDeepLink,
-          status: 'PENDING',
-        });
-        setRegisterStep('telegram');
+        setRecoveryCode(data.recoveryCode || '');
+        setSuccess('Аккаунт создан. Сохраните recovery code — он будет показан только один раз.');
       } else {
-        const registrationId = pendingRegistration?.registrationId;
-        if (!registrationId) throw new Error('Регистрация не инициализирована');
-        await registerComplete(registrationId);
+        await recoveryResetPassword({
+          nickname: form.nickname,
+          recoveryCode: form.recoveryCode,
+          newPassword: form.newPassword,
+          captchaId: captcha.captchaId,
+          captchaAnswer: form.captchaAnswer,
+        });
+        setSuccess('Пароль обновлен. Войдите с новым паролем.');
       }
     } catch (err) {
       setError(err.message || 'Ошибка');
+      await loadCaptcha();
     }
     setLoading(false);
   };
-
-  const resetRegisterFlow = () => {
-    setRegisterStep('form');
-    setPendingRegistration(null);
-    setError('');
-  };
-
-  const telegramConfirmed = pendingRegistration?.status === 'CONFIRMED' || registerStep === 'confirmed';
-  const telegramStartPayload = (() => {
-    if (!pendingRegistration?.telegramDeepLink) return '';
-    try {
-      return new URL(pendingRegistration.telegramDeepLink).searchParams.get('start') || '';
-    } catch {
-      return '';
-    }
-  })();
-  const telegramStartCommand = telegramStartPayload ? `/start ${telegramStartPayload}` : '';
 
   return (
     <div style={s.page} className="zg-auth">
       <div style={s.card}>
         <div style={s.logo}>Z</div>
         <h1 style={s.title}>ZavodGram</h1>
-        <p style={s.subtitle}>{mode === 'login' ? 'Вход в аккаунт' : 'Создание аккаунта'}</p>
+        <p style={s.subtitle}>{mode === 'login' ? 'Вход в аккаунт' : mode === 'register' ? 'Анонимная регистрация' : 'Восстановление по recovery code'}</p>
 
         <form onSubmit={handleSubmit} style={s.form}>
-          {mode === 'register' && registerStep === 'form' && (
+          {mode !== 'login' && (
+            <input style={s.input} placeholder="Имя" value={form.name} onChange={(e) => set('name', e.target.value)} disabled={mode === 'recovery'} />
+          )}
+
+          <input style={s.input} placeholder="Ник (без @)" value={form.nickname} onChange={(e) => set('nickname', e.target.value)} />
+
+          {mode !== 'recovery' && (
+            <input style={s.input} type="password" placeholder="Пароль" value={form.password} onChange={(e) => set('password', e.target.value)} />
+          )}
+
+          {mode === 'recovery' && (
             <>
-              <input style={s.input} placeholder="Имя" value={form.name} onChange={(e) => set('name', e.target.value)} />
-              <input style={s.input} placeholder="@ваш_тег" value={form.tag} onChange={(e) => set('tag', e.target.value)} />
+              <input style={s.input} placeholder="Recovery code" value={form.recoveryCode} onChange={(e) => set('recoveryCode', e.target.value.toUpperCase())} />
+              <input style={s.input} type="password" placeholder="Новый пароль" value={form.newPassword} onChange={(e) => set('newPassword', e.target.value)} />
             </>
           )}
 
-          {(mode === 'login' || (mode === 'register' && registerStep === 'form')) && (
-            <>
-              <input style={s.input} placeholder="+79001234567" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
-              <input style={s.input} type="password" placeholder="Пароль" value={form.password} onChange={(e) => set('password', e.target.value)} />
-              {mode === 'register' && (
-                <textarea style={{ ...s.input, minHeight: 50, resize: 'vertical' }} placeholder="О себе (необязательно)" value={form.bio} onChange={(e) => set('bio', e.target.value)} />
-              )}
-            </>
-          )}
-
-          {mode === 'register' && registerStep !== 'form' && pendingRegistration && (
-            <div style={s.telegramBox}>
-              <div style={s.telegramTitle}>Подтвердите регистрацию в Telegram</div>
-              <div style={s.telegramText}>1) Откройте бота по ссылке ниже и нажмите «Подтвердить».</div>
-              <div style={s.telegramText}>2) Вернитесь сюда и завершите регистрацию.</div>
-              {pendingRegistration.telegramDeepLink ? (
-                <>
-                  <a href={pendingRegistration.telegramDeepLink} target="_blank" rel="noreferrer" style={s.telegramLink}>
-                    Открыть Telegram-бота
-                  </a>
-                  <div style={s.telegramHint}>
-                    Если бот пишет, что payload отсутствует — отправьте ему эту команду вручную:
-                  </div>
-                  <div style={s.telegramCommandRow}>
-                    <code style={s.telegramCommand}>{telegramStartCommand}</code>
-                    <button
-                      type="button"
-                      style={s.telegramCopyBtn}
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(telegramStartCommand);
-                        } catch {
-                          // ignore clipboard permission errors
-                        }
-                      }}
-                    >
-                      Копировать
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div style={s.error}>Бот не настроен: отсутствует TELEGRAM_BOT_USERNAME на backend.</div>
-              )}
-              <div style={s.telegramStatus}>
-                Статус: {telegramConfirmed ? 'подтверждено ✅' : 'ожидаем подтверждение...'}
-              </div>
+          <div style={s.captchaBox}>
+            <div style={s.captchaQuestion}>Капча: {captcha.question || '...'}</div>
+            <div style={s.captchaRow}>
+              <input style={{ ...s.input, marginBottom: 0 }} placeholder="Ответ" value={form.captchaAnswer} onChange={(e) => set('captchaAnswer', e.target.value)} />
+              <button type="button" style={s.captchaBtn} onClick={loadCaptcha}>↻</button>
             </div>
-          )}
+          </div>
 
           {error && <div style={s.error}>{error}</div>}
+          {success && <div style={s.success}>{success}</div>}
+          {recoveryCode && <div style={s.recovery}>Ваш recovery code: <b>{recoveryCode}</b></div>}
 
-          <button style={s.btn} type="submit" disabled={loading || (mode === 'register' && registerStep !== 'form' && !telegramConfirmed)}>
-            {loading
-              ? '...'
-              : mode === 'login'
-                ? 'Войти'
-                : registerStep === 'form'
-                  ? 'Отправить в Telegram'
-                  : 'Завершить регистрацию'}
-          </button>
-
-          {mode === 'register' && registerStep !== 'form' && (
-            <button type="button" style={s.switch} onClick={resetRegisterFlow}>
-              Начать заново
-            </button>
-          )}
+          <button style={s.btn} type="submit" disabled={loading}>{loading ? '...' : mode === 'login' ? 'Войти' : mode === 'register' ? 'Создать аккаунт' : 'Сбросить пароль'}</button>
         </form>
 
-        <button style={s.switch} onClick={() => {
-          setMode(mode === 'login' ? 'register' : 'login');
-          setError('');
-          resetRegisterFlow();
-        }}>
-          {mode === 'login' ? 'Нет аккаунта? Зарегистрируйтесь' : 'Уже есть аккаунт? Войти'}
-        </button>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <button style={s.switch} onClick={() => { setMode('login'); setError(''); setSuccess(''); }}>Вход</button>
+          <button style={s.switch} onClick={() => { setMode('register'); setError(''); setSuccess(''); }}>Регистрация</button>
+          <button style={s.switch} onClick={() => { setMode('recovery'); setError(''); setSuccess(''); }}>Восстановление</button>
+        </div>
       </div>
       <style>{`
         .zg-auth input::placeholder,
         .zg-auth textarea::placeholder{
           color: rgba(228,232,238,.58);
-        }
-        .zg-auth button:hover{
-          filter: brightness(1.06);
         }
       `}</style>
     </div>
@@ -219,23 +135,20 @@ export default function AuthPage() {
 }
 
 const s = {
-  page: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'radial-gradient(1000px 520px at 20% 10%, rgba(255,255,255,0.14), transparent 60%), linear-gradient(150deg, #0f1319 0%, #171c24 55%, #1f242c 100%)', padding: 20 },
-  card: { background: 'rgba(0,0,0,0.58)', borderRadius: 24, padding: '40px 32px', width: '100%', maxWidth: 430, border: '1px solid rgba(255,255,255,0.24)', textAlign: 'center', backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -18px 34px rgba(255,255,255,0.025), 0 24px 55px rgba(0,0,0,0.46)' },
-  logo: { width: 64, height: 64, background: 'rgba(255,255,255,0.66)', borderRadius: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#181d26', marginBottom: 16, border: '1px solid rgba(255,255,255,0.28)' },
-  title: { fontSize: 24, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, color: '#F5F6F8' },
-  subtitle: { fontSize: 14, color: '#B8BEC9', marginBottom: 24 },
-  form: { display: 'flex', flexDirection: 'column', gap: 10 },
-  input: { width: '100%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 12, padding: '11px 14px', color: '#EEF1F6', fontSize: 14, outline: 'none', fontFamily: "'Manrope', sans-serif", backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -10px 24px rgba(0,0,0,0.24)' },
-  btn: { width: '100%', padding: '12px', background: 'rgba(255,255,255,0.26)', border: '1px solid rgba(255,255,255,0.32)', borderRadius: 12, color: '#F5F7FB', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 6, backdropFilter: 'blur(24px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.26), 0 12px 24px rgba(0,0,0,0.28)' },
-  error: { color: '#DDE1E8', fontSize: 13, textAlign: 'left', padding: '6px 0' },
-  switch: { background: 'none', border: 'none', color: '#F0F2F6', fontSize: 13, cursor: 'pointer', marginTop: 16, padding: 4 },
-  telegramBox: { textAlign: 'left', border: '1px solid rgba(255,255,255,0.24)', borderRadius: 12, background: 'rgba(255,255,255,0.08)', padding: 12, backdropFilter: 'blur(20px)' },
-  telegramTitle: { color: '#F2F4F7', fontSize: 14, fontWeight: 700, marginBottom: 8 },
-  telegramText: { color: '#D2D6DE', fontSize: 13, marginBottom: 6 },
-  telegramLink: { display: 'inline-block', color: '#F5F6F8', textDecoration: 'none', fontWeight: 600, margin: '8px 0' },
-  telegramHint: { color: '#D2D6DE', fontSize: 12, marginTop: 4, marginBottom: 6 },
-  telegramCommandRow: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  telegramCommand: { background: 'rgba(0,0,0,0.45)', borderRadius: 8, padding: '5px 8px', color: '#F2F4F7', fontSize: 12 },
-  telegramCopyBtn: { border: '1px solid rgba(255,255,255,0.28)', borderRadius: 8, padding: '5px 10px', background: 'rgba(255,255,255,0.1)', color: '#E5E9F0', cursor: 'pointer', fontSize: 12 },
-  telegramStatus: { color: '#F2F4F7', fontSize: 13, marginTop: 8 },
+  page: { minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(circle at 20% 20%, #1b2a41, #0f1726 60%)', padding: 20 },
+  card: { width: '100%', maxWidth: 420, background: '#121c2d', border: '1px solid #25344f', borderRadius: 16, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.45)' },
+  logo: { width: 44, height: 44, borderRadius: 12, background: '#4f8cff', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, marginBottom: 12 },
+  title: { margin: 0, color: '#e4e8ee', fontSize: 26 },
+  subtitle: { margin: '6px 0 18px', color: '#9fb0cb' },
+  form: { display: 'grid', gap: 10 },
+  input: { width: '100%', padding: '11px 12px', borderRadius: 10, border: '1px solid #2a3a57', outline: 'none', background: '#0f1726', color: '#e4e8ee', marginBottom: 2 },
+  btn: { marginTop: 4, padding: '12px 14px', borderRadius: 10, border: 'none', background: '#4f8cff', color: '#fff', fontWeight: 700, cursor: 'pointer' },
+  switch: { background: 'transparent', border: '1px solid #2a3a57', color: '#9fb0cb', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' },
+  error: { background: 'rgba(255,86,86,.12)', border: '1px solid rgba(255,86,86,.35)', color: '#ffb3b3', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
+  success: { background: 'rgba(78,216,130,.12)', border: '1px solid rgba(78,216,130,.35)', color: '#b7f5cf', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
+  recovery: { background: 'rgba(79,140,255,.12)', border: '1px solid rgba(79,140,255,.35)', color: '#cbdcff', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
+  captchaBox: { border: '1px solid #2a3a57', borderRadius: 10, padding: 10, marginTop: 4 },
+  captchaQuestion: { color: '#c5d2e6', marginBottom: 8 },
+  captchaRow: { display: 'grid', gridTemplateColumns: '1fr 44px', gap: 8, alignItems: 'center' },
+  captchaBtn: { height: 44, borderRadius: 10, border: '1px solid #2a3a57', background: '#17243a', color: '#d5e1f4', cursor: 'pointer' },
 };

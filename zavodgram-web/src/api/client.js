@@ -83,7 +83,9 @@ export const authApi = {
   registerStatus: (registrationId) => api('/auth/register/status', { method: 'POST', body: { registrationId } }),
   registerComplete: (registrationId) => api('/auth/register/complete', { method: 'POST', body: { registrationId } }),
   register: (data) => api('/auth/register', { method: 'POST', body: data }),
-  login: (phone, password) => api('/auth/login', { method: 'POST', body: { phone, password } }),
+  login: (nickname, password, captchaId, captchaAnswer) => api('/auth/login', { method: 'POST', body: { nickname, password, captchaId, captchaAnswer } }),
+  captcha: () => api('/auth/captcha'),
+  recoveryResetPassword: (data) => api('/auth/recovery/reset-password', { method: 'POST', body: data }),
   logout: () => api('/auth/logout', { method: 'POST', body: { refreshToken } }),
 };
 
