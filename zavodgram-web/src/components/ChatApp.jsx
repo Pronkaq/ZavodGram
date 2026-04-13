@@ -10,9 +10,24 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatListPanel } from './ChatListPanel';
 import { ChatNotificationsPanel } from './ChatNotificationsPanel';
 import { ChatMessageContextMenu } from './ChatMessageContextMenu';
-import { Av, MediaAttachment, mediaUrlById, resolveAvatarSrc } from './chatUiParts';
-import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage, highlightText } from '../utils/helpers.jsx';
-import { sanitizeRichHtml, richTextToPlain } from './chatRichText';
+import { ChatReactionPicker } from './ChatReactionPicker';
+import { ChatMessageSearchBar } from './ChatMessageSearchBar';
+import { ChatTopicsBar } from './ChatTopicsBar';
+import { ChannelInviteModal } from './ChannelInviteModal';
+import { ChannelAttachmentsModal } from './ChannelAttachmentsModal';
+import { PostCommentsModal } from './PostCommentsModal';
+import { ChannelManageModal } from './ChannelManageModal';
+import { ForwardMessageModal } from './ForwardMessageModal';
+import { NewChatModal } from './NewChatModal';
+import { ChannelInfoModal } from './ChannelInfoModal';
+import { ChatMediaModal } from './ChatMediaModal';
+import { AvatarFullscreenModal } from './AvatarFullscreenModal';
+import { GroupSettingsModal } from './GroupSettingsModal';
+import { MemberListModal } from './MemberListModal';
+import { ChatAppGlobalStyles } from './ChatAppGlobalStyles';
+import { ProfilePanel } from './ProfilePanel';
+import { Av, MediaAttachment, mediaUrlById } from './chatUiParts';
+import { formatTime, formatTimeShort, getChatName, getChatAvatar, getOtherUser, isOnline, getLastMessage } from '../utils/helpers.jsx';
 import { useChatToasts } from './useChatToasts';
 import { useChatAppDerivedState } from './useChatAppDerivedState';
 import { useComposerFormatting } from './useComposerFormatting';
@@ -64,6 +79,7 @@ export default function ChatApp() {
   const [editGroupName, setEditGroupName] = useState('');
   const [editGroupDesc, setEditGroupDesc] = useState('');
   const [editTopicsEnabled, setEditTopicsEnabled] = useState(false);
+  const [editContentProtection, setEditContentProtection] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [addMemberResults, setAddMemberResults] = useState([]);
   const [channelInfoModal, setChannelInfoModal] = useState(false);
@@ -79,8 +95,6 @@ export default function ChatApp() {
   const [postCommentDraft, setPostCommentDraft] = useState('');
   const [postCommentReplyTo, setPostCommentReplyTo] = useState(null);
   const [channelPostCommentsEnabled, setChannelPostCommentsEnabled] = useState(true);
-  const [inviteChannel, setInviteChannel] = useState(null);
-  const [joiningInvite, setJoiningInvite] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceRecorderState, setVoiceRecorderState] = useState({ startedAt: 0, error: '' });
   const [recordingNowTs, setRecordingNowTs] = useState(Date.now());
@@ -93,6 +107,7 @@ export default function ChatApp() {
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [topicError, setTopicError] = useState('');
   const [mediaModal, setMediaModal] = useState(null);
+  const [shieldActivationNotice, setShieldActivationNotice] = useState('');
   const endRef = useRef(null);
   const messagesScrollRef = useRef(null);
   const messagesVirtuosoRef = useRef(null);
@@ -101,7 +116,6 @@ export default function ChatApp() {
   const typingTimer = useRef(null);
   const fileRef = useRef(null);
   const mediaExtraRef = useRef(null);
-  const handledSlugRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
@@ -327,37 +341,16 @@ export default function ChatApp() {
     try { await chatsApi.mute(chatId, !chat?.muted); loadChats(); } catch {}
   };
 
-  const saveProfileCard = async () => {
-    const cleanName = nameEdit?.trim();
-    const cleanBio = bioEdit?.trim();
-    const cleanTag = (tagEdit?.trim() || user.tag || '').replace(/^@?/, '@');
-    if (!cleanName) {
-      setSettingsSaveState({ loading: false, error: 'Имя не может быть пустым', ok: '' });
-      return;
-    }
-    setSettingsSaveState({ loading: true, error: '', ok: '' });
-    try {
-      await usersApi.update({ name: cleanName, bio: cleanBio });
-      if (cleanTag && cleanTag !== user.tag) await usersApi.updateTag(cleanTag);
-      updateUser({ name: cleanName, bio: cleanBio, tag: cleanTag });
-      setProfileData((prev) => (prev ? { ...prev, name: cleanName, bio: cleanBio, tag: cleanTag } : prev));
-      setSettingsSaveState({ loading: false, error: '', ok: 'Сохранено' });
-    } catch (err) {
-      setSettingsSaveState({ loading: false, error: err.message || 'Не удалось сохранить', ok: '' });
-    }
-  };
-
-  const handleAvatarUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const media = await mediaApi.upload(file);
-      const avatarRef = `media:${media.id}`;
-      await usersApi.update({ avatar: avatarRef });
-      updateUser({ avatar: avatarRef });
-      setProfileData(p => ({ ...p, avatar: avatarRef }));
-    } catch (err) { console.error(err); }
-  };
+  const {
+    protectedDirectChat,
+    shieldActivationNotice,
+    toggleDirectContentProtection,
+  } = useDirectContentProtection({
+    activeChat,
+    acd,
+    chatsApi,
+    loadChats,
+  });
 
   const doForward = (chatId) => {
     if (!forwardMsg) return;
@@ -369,77 +362,45 @@ export default function ChatApp() {
   };
 
   // ── Group management ──
-  const myRole = acd?.myRole || acd?.members?.find(m => m.userId === user.id)?.role || 'MEMBER';
-  const isOwnerOrAdmin = myRole === 'OWNER' || myRole === 'ADMIN';
-  const isOwner = myRole === 'OWNER';
-  const isGroupOrChannel = acd?.type === 'GROUP' || acd?.type === 'CHANNEL';
-
-  const openGroupSettings = () => {
-    if (!acd || !isGroupOrChannel) return;
-    setEditGroupName(acd.name || '');
-    setEditGroupDesc(acd.description || '');
-    setEditTopicsEnabled(!!acd.topicsEnabled);
-    setGroupSettingsModal(true);
-  };
-
-  const saveGroupSettings = async () => {
-    if (!activeChat) return;
-    try {
-      await chatsApi.update(activeChat, { name: editGroupName, description: editGroupDesc, ...(acd?.type === 'GROUP' ? { topicsEnabled: editTopicsEnabled } : {}) });
-      await loadChats();
-      setGroupSettingsModal(false);
-    } catch (err) { console.error(err); }
-  };
-
-  const createTopic = async () => {
-    if (!activeChat || !newTopicTitle.trim()) return;
-    try {
-      const created = await chatsApi.createTopic(activeChat, newTopicTitle.trim());
-      setNewTopicTitle('');
-      setTopicError('');
-      await loadTopics(activeChat);
-      setActiveTopicId(created.id);
-    } catch (err) {
-      setTopicError(err.message || 'Не удалось создать тему');
-    }
-  };
-
-  const handleGroupAvatarUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
-    try {
-      const media = await mediaApi.upload(file);
-      const avatarRef = `media:${media.id}`;
-      await chatsApi.update(activeChat, { avatar: avatarRef });
-      await loadChats();
-    } catch (err) { console.error(err); }
-  };
-
-  const handleSetRole = async (targetId, role) => {
-    if (!activeChat) return;
-    try { await chatsApi.setMemberRole(activeChat, targetId, role); await loadChats(); } catch (err) { console.error(err); }
-  };
-
-  const handleKickMember = async (targetId) => {
-    if (!activeChat) return;
-    try { await chatsApi.removeMember(activeChat, targetId); await loadChats(); } catch (err) { console.error(err); }
-  };
-
-  const handleTransferOwnership = async (targetId) => {
-    if (!activeChat || !confirm('Передать права создателя? Это действие нельзя отменить.')) return;
-    try { await chatsApi.transferOwnership(activeChat, targetId); await loadChats(); } catch (err) { console.error(err); }
-  };
-
-  const handleAddMember = async (targetId) => {
-    if (!activeChat) return;
-    try { await chatsApi.addMember(activeChat, targetId); await loadChats(); setAddMemberSearch(''); setAddMemberResults([]); } catch (err) { console.error(err); }
-  };
-
-  const searchAddMember = async (q) => {
-    setAddMemberSearch(q);
-    if (q.length < 2) { setAddMemberResults([]); return; }
-    try { setAddMemberResults(await usersApi.search(q)); } catch {}
-  };
+  const {
+    myRole,
+    isOwnerOrAdmin,
+    isOwner,
+    isGroupOrChannel,
+    openGroupSettings,
+    saveGroupSettings,
+    createTopic,
+    handleGroupAvatarUpload,
+    handleSetRole,
+    handleKickMember,
+    handleTransferOwnership,
+    handleAddMember,
+    searchAddMember,
+  } = useGroupManagement({
+    acd,
+    userId: user.id,
+    activeChat,
+    editGroupName,
+    editGroupDesc,
+    editTopicsEnabled,
+    editContentProtection,
+    newTopicTitle,
+    setEditGroupName,
+    setEditGroupDesc,
+    setEditTopicsEnabled,
+    setEditContentProtection,
+    setGroupSettingsModal,
+    setNewTopicTitle,
+    setTopicError,
+    setActiveTopicId,
+    setAddMemberSearch,
+    setAddMemberResults,
+    chatsApi,
+    usersApi,
+    mediaApi,
+    loadChats,
+    loadTopics,
+  });
 
   const scrollToMsg = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
@@ -472,280 +433,86 @@ export default function ChatApp() {
   }, []);
 
 
-  const normalizedSlug = (slug) => (slug || '').trim().toLowerCase();
-  const channelPublicLink = useMemo(() => {
-    if (!acd?.channelSlug) return '';
-    return `${window.location.origin}/${acd.channelSlug}`;
-  }, [acd?.channelSlug]);
+  const {
+    loadChannelBans,
+    channelPublicLink,
+    openChannelInfo,
+    shareChannelLink,
+    saveChannelSlug,
+    openChannelManagement,
+    saveChannelManagement,
+    handleBanMember,
+    handleUnbanMember,
+  } = useChannelManagement({
+    activeChat,
+    acd,
+    isOwnerOrAdmin,
+    channelManageModal,
+    channelSlugEdit,
+    editGroupName,
+    editGroupDesc,
+    editContentProtection,
+    setChannelSlugEdit,
+    setChannelSlugError,
+    setChannelInfoModal,
+    setBansLoading,
+    setBannedUsers,
+    setEditGroupName,
+    setEditGroupDesc,
+    setEditContentProtection,
+    setChannelManageTab,
+    setChannelManageModal,
+    chatsApi,
+    loadChats,
+  });
 
-  const openChannelInfo = useCallback(() => {
-    if (!acd || acd.type !== 'CHANNEL') return;
-    setChannelSlugEdit(acd.channelSlug || '');
-    setChannelSlugError('');
-    setChannelInfoModal(true);
-  }, [acd]);
+  const channelAttachments = useChannelAttachments({ acd, cms });
 
-  const shareChannelLink = async () => {
-    if (!channelPublicLink) return;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: acd?.name || 'Канал', url: channelPublicLink });
-      } else {
-        await navigator.clipboard?.writeText(channelPublicLink);
-      }
-    } catch {}
-  };
+  const { REACTION_SET, addReaction, groupReactions, openReactionPicker } = useMessageReactions({
+    activeChat,
+    ws,
+    setReactionPicker,
+  });
 
-  const saveChannelSlug = async () => {
-    if (!activeChat || !acd || acd.type !== 'CHANNEL') return;
-    const slug = normalizedSlug(channelSlugEdit);
-    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
-      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
-      return;
-    }
-    try {
-      await chatsApi.update(activeChat, { channelSlug: slug });
-      await loadChats();
-      setChannelSlugError('');
-      setChannelInfoModal(false);
-    } catch (err) {
-      setChannelSlugError(err.message || 'Не удалось сохранить ссылку');
-    }
-  };
+  const { openSettingsPanel, openSettingsSubpage } = useSettingsPanelFlow({
+    user,
+    setSidebarOpen,
+    setNotifPanel,
+    setSettingsMode,
+    setSettingsSubpage,
+    setTagEdit,
+    setNameEdit,
+    setBioEdit,
+    setSettingsSaveState,
+    setProfileData,
+    setProfilePanel,
+  });
 
-  const loadChannelBans = useCallback(async () => {
-    if (!activeChat) return;
-    setBansLoading(true);
-    try {
-      const bans = await chatsApi.listBans(activeChat);
-      setBannedUsers(bans || []);
-    } catch (err) {
-      setBannedUsers([]);
-      alert(err.message || 'Не удалось загрузить список заблокированных');
-    } finally {
-      setBansLoading(false);
-    }
-  }, [activeChat]);
+  const { inviteChannel, joiningInvite, setInviteChannel, joinInviteChannel } = useChannelInviteFlow({
+    chats,
+    selectChat,
+    loadChats,
+    chatsApi,
+    setShowMobileChat,
+  });
 
-  const openChannelManagement = useCallback(async () => {
-    if (!acd || acd.type !== 'CHANNEL' || !isOwner) return;
-    setEditGroupName(acd.name || '');
-    setEditGroupDesc(acd.description || '');
-    setChannelSlugEdit(acd.channelSlug || '');
-    setChannelSlugError('');
-    setChannelManageTab('main');
-    setChannelManageModal(true);
-    await loadChannelBans();
-  }, [acd, isOwner, loadChannelBans]);
+  const renderMessageText = useMessageTextRenderer({ msgSearch });
 
-  const saveChannelManagement = async () => {
-    if (!activeChat || !acd || acd.type !== 'CHANNEL' || !isOwner) return;
-    const slug = normalizedSlug(channelSlugEdit);
-    if (!/^[a-z0-9._-]{3,64}$/i.test(slug)) {
-      setChannelSlugError('3-64 символа: буквы, цифры, ., _, -');
-      return;
-    }
-    try {
-      await chatsApi.update(activeChat, { name: editGroupName.trim(), description: editGroupDesc, channelSlug: slug });
-      await loadChats();
-      setChannelManageModal(false);
-    } catch (err) {
-      setChannelSlugError(err.message || 'Не удалось сохранить настройки канала');
-    }
-  };
-
-  const handleBanMember = async (targetId) => {
-    if (!activeChat || !targetId) return;
-    try {
-      await chatsApi.banMember(activeChat, targetId);
-      await loadChats();
-      if (channelManageModal) await loadChannelBans();
-    } catch (err) {
-      alert(err.message || 'Не удалось заблокировать пользователя');
-    }
-  };
-
-  const handleUnbanMember = async (targetId) => {
-    if (!activeChat || !targetId) return;
-    try {
-      await chatsApi.unbanMember(activeChat, targetId);
-      await loadChannelBans();
-    } catch (err) {
-      alert(err.message || 'Не удалось разблокировать пользователя');
-    }
-  };
-
-  const extractLinks = (text) => {
-    if (!text) return [];
-    const matches = text.match(/https?:\/\/[^\s]+/g);
-    return matches || [];
-  };
-
-  const channelAttachments = useMemo(() => {
-    if (!acd || acd.type !== 'CHANNEL') return [];
-    const list = [];
-    cms.forEach((msg) => {
-      (msg.media || []).forEach((m) => list.push({ kind: 'media', msgId: msg.id, createdAt: msg.createdAt, media: m }));
-      extractLinks(msg.text).forEach((url, idx) => list.push({ kind: 'link', msgId: msg.id, createdAt: msg.createdAt, id: `${msg.id}-${idx}`, url }));
-    });
-    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [acd, cms]);
-
-  const REACTION_SET = ['👍', '❤️', '🔥', '👏', '😂', '😮', '😢', '😡'];
-
-  const addReaction = (msgId, emoji) => {
-    if (!activeChat) return;
-    ws.reactMessage({ chatId: activeChat, messageId: msgId, emoji });
-  };
-
-  const groupReactions = (msg) => {
-    const grouped = {};
-    (msg.reactions || []).forEach((r) => {
-      if (!grouped[r.emoji]) grouped[r.emoji] = [];
-      grouped[r.emoji].push(r.userId);
-    });
-    return grouped;
-  };
-
-  const openReactionPicker = (x, y, msgId) => {
-    setReactionPicker({ x: Math.min(x, window.innerWidth - 270), y: Math.min(y, window.innerHeight - 80), msgId });
-  };
-
-  const openSettingsPanel = useCallback(() => {
-    setSidebarOpen(false);
-    setNotifPanel(false);
-    setSettingsMode(true);
-    setSettingsSubpage(null);
-    setTagEdit(user.tag || '');
-    setNameEdit(user.name || '');
-    setBioEdit(user.bio || '');
-    setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setProfileData({ ...user, online: true });
-    setProfilePanel(user.id);
-  }, [user]);
-
-  const openSettingsSubpage = useCallback((subpage) => {
-    setSettingsSaveState({ loading: false, error: '', ok: '' });
-    setSettingsSubpage(subpage);
-  }, []);
-
-  useEffect(() => {
-    const slug = window.location.pathname.replace(/^\/+/, '').trim();
-    if (!slug || ['auth', 'login'].includes(slug.toLowerCase())) return;
-    if (slug.includes('/')) return;
-    if (handledSlugRef.current === slug) return;
-    handledSlugRef.current = slug;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const channel = await chatsApi.getBySlug(slug);
-        if (cancelled) return;
-        const existing = chats.find((c) => c.id === channel.id);
-        if (existing) {
-          selectChat(existing.id);
-          setShowMobileChat(true);
-          window.history.replaceState({}, '', '/');
-          return;
-        }
-        setInviteChannel(channel);
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [chats, selectChat]);
-
-  const joinInviteChannel = async () => {
-    if (!inviteChannel?.channelSlug) return;
-    setJoiningInvite(true);
-    try {
-      const joined = await chatsApi.joinBySlug(inviteChannel.channelSlug);
-      await loadChats();
-      selectChat(joined.id);
-      setShowMobileChat(true);
-      setInviteChannel(null);
-      window.history.replaceState({}, '', '/');
-    } catch (err) {
-      alert(err.message || 'Не удалось подписаться');
-    } finally {
-      setJoiningInvite(false);
-    }
-  };
-
-  const renderMessageText = (text) => {
-    if (!text) return null;
-    const safeHtml = sanitizeRichHtml(text);
-    const plain = richTextToPlain(safeHtml);
-    if (msgSearch) return highlightText(plain, msgSearch);
-    if (safeHtml !== plain) {
-      return <span className="zg-rich-text" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtml }} />;
-    }
-    const parts = plain.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, idx) => (
-      /^https?:\/\/[^\s]+$/.test(part)
-        ? <a key={idx} href={part} target="_blank" rel="noreferrer" style={{ color: '#F5F6F8', textDecoration: 'underline' }}>{part}</a>
-        : <span key={idx}>{part}</span>
-    ));
-  };
-
-  const getPostComments = useCallback((msg) => {
-    if (!msg?.id) return [];
-    const children = new Map();
-    cms.forEach((m) => {
-      if (m.deleted || !m.replyToId) return;
-      if (!children.has(m.replyToId)) children.set(m.replyToId, []);
-      children.get(m.replyToId).push(m);
-    });
-
-    const result = [];
-    const walk = (parentId, depth = 0) => {
-      const list = (children.get(parentId) || []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      list.forEach((item) => {
-        result.push({ ...item, depth });
-        walk(item.id, depth + 1);
-      });
-    };
-
-    walk(msg.id, 0);
-    return result;
-  }, [cms]);
-
-  const openPostComments = useCallback((msg) => {
-    if (!msg) return;
-    setPostCommentsModal(msg);
-    setPostCommentDraft('');
-    setPostCommentReplyTo(null);
-  }, []);
-
-  const sendPostComment = useCallback(async () => {
-    if (!postCommentsModal) return;
-    const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
-    if (!commentsAllowed) return;
-    const text = postCommentDraft.trim();
-    if (!text) return;
-    sendMessage(activeChat, text, postCommentReplyTo?.id || postCommentsModal.id, null);
-    setPostCommentDraft('');
-    setPostCommentReplyTo(null);
-  }, [activeChat, isOwnerOrAdmin, postCommentDraft, postCommentReplyTo, postCommentsModal, sendMessage]);
-
-
-  const handleModerateComment = useCallback(async (comment, action) => {
-    if (!activeChat || !comment) return;
-    try {
-      if (action === 'delete') {
-        deleteMessage(activeChat, comment.id);
-      }
-      if (action === 'mute') {
-        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, true);
-        await loadChats();
-      }
-      if (action === 'unmute') {
-        await chatsApi.muteComments(activeChat, comment.fromId || comment.from?.id, false);
-        await loadChats();
-      }
-    } catch (err) {
-      alert(err.message || 'Не удалось выполнить действие');
-    }
-  }, [activeChat, deleteMessage, loadChats]);
+  const { getPostComments, openPostComments, sendPostComment, handleModerateComment } = usePostCommentsFlow({
+    cms,
+    activeChat,
+    isOwnerOrAdmin,
+    postCommentsModal,
+    postCommentDraft,
+    postCommentReplyTo,
+    setPostCommentsModal,
+    setPostCommentDraft,
+    setPostCommentReplyTo,
+    sendMessage,
+    deleteMessage,
+    chatsApi,
+    loadChats,
+  });
 
   return (
     <div className="zg-root" style={s.root} onClick={() => { setContextMenu(null); setSidebarOpen(false); setAttachMenu(false); setMediaComposerMenu(false); setNotifPanel(false); setReactionPicker(null); }}>
@@ -759,6 +526,31 @@ export default function ChatApp() {
           dismissToast(toast.id);
         }}
       />
+      {shieldActivationNotice && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1200,
+            pointerEvents: 'none',
+            padding: '10px 16px',
+            borderRadius: 14,
+            border: '1px solid rgba(80, 255, 150, 0.55)',
+            background: 'rgba(18, 38, 27, 0.48)',
+            color: '#DFFFEA',
+            fontSize: 13,
+            fontWeight: 600,
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 0 0 1px rgba(123, 255, 180, 0.2), 0 0 32px rgba(70, 255, 145, 0.35)',
+          }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Icons.Shield /> {shieldActivationNotice}
+          </span>
+        </div>
+      )}
 
       {/* ── Sidebar ── */}
       <ChatSidebar
@@ -849,6 +641,7 @@ export default function ChatApp() {
                   )}
                   <MediaAttachment
                     media={msg.media}
+                    mediaBlocked={!!acd?.contentProtectionEnabled}
                     onTranscribe={handleTranscribe}
                     transcriptions={transcriptions}
                     transcriptionLoading={transcriptionLoading}
@@ -892,51 +685,59 @@ export default function ChatApp() {
                 </div>
                 <button style={s.ib} onClick={() => { setMsgSearchOpen(!msgSearchOpen); setMsgSearch(''); setMsgSearchIdx(-1); }}><Icons.Search /></button>
                 <button style={s.ib} onClick={() => handleMute(acd.id)}>{acd.muted ? <Icons.BellOff /> : <Icons.Bell />}</button>
+                {isDirectChat && (
+                  <button
+                    style={{
+                      ...s.ib,
+                      ...(acd?.contentProtectionEnabled ? {
+                        color: '#DFFFEA',
+                        border: '1px solid rgba(88, 255, 154, 0.9)',
+                        background: 'rgba(24, 66, 43, 0.42)',
+                        boxShadow: '0 0 0 1px rgba(92, 255, 160, 0.35), 0 0 16px rgba(88, 255, 154, 0.75), 0 0 32px rgba(88, 255, 154, 0.35)',
+                      } : acd?.contentProtectionRequestedByMe ? {
+                        color: '#EEF6FF',
+                        border: '1px solid rgba(153, 197, 255, 0.7)',
+                        background: 'rgba(44, 72, 112, 0.34)',
+                        boxShadow: '0 0 0 1px rgba(153, 197, 255, 0.25), 0 0 14px rgba(153, 197, 255, 0.35)',
+                      } : {}),
+                    }}
+                    onClick={toggleDirectContentProtection}
+                    title={acd?.contentProtectionRequestedByMe ? 'Отменить запрос защиты контента' : 'Отправить запрос на защиту контента'}
+                  >
+                    <Icons.Shield />
+                  </button>
+                )}
                 {isDirectChat && other && <button style={s.ib} onClick={() => openProfile(other.id)}><Icons.User /></button>}
                 {acd.type === 'CHANNEL' && <button style={s.ib} onClick={() => setAttachmentsModal(true)}><Icons.Attach /></button>}
               </div>
             </div>
 
-            {/* Message search bar */}
-            {msgSearchOpen && (
-              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.95)' }}>
-                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px' }}>
-                  <Icons.Search size={16} />
-                  <input style={{ ...s.si, fontSize: 13 }} placeholder="Поиск..." value={msgSearch} onChange={e => { setMsgSearch(e.target.value); setMsgSearchIdx(0); }} autoFocus />
-                  <span style={{ fontSize: 12, color: '#7C8392', fontFamily: 'mono', whiteSpace: 'nowrap' }}>{searchResults.length > 0 ? `${msgSearchIdx+1}/${searchResults.length}` : msgSearch ? '0' : ''}</span>
-                  {searchResults.length > 1 && <>
-                    <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.max(0, i-1))}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><Icons.ArrowDown /></span></button>
-                    <button style={s.ib} onClick={() => setMsgSearchIdx(i => Math.min(searchResults.length-1, i+1))}><Icons.ArrowDown /></button>
-                  </>}
-                  <button style={s.ib} onClick={() => { setMsgSearchOpen(false); setMsgSearch(''); }}><Icons.Close /></button>
-                </div>
-              </div>
-            )}
+            <ChatMessageSearchBar
+              open={msgSearchOpen}
+              styles={s}
+              msgSearch={msgSearch}
+              onSearchChange={(value) => { setMsgSearch(value); setMsgSearchIdx(0); }}
+              searchResults={searchResults}
+              msgSearchIdx={msgSearchIdx}
+              onPrev={() => setMsgSearchIdx((index) => Math.max(0, index - 1))}
+              onNext={() => setMsgSearchIdx((index) => Math.min(searchResults.length - 1, index + 1))}
+              onClose={() => { setMsgSearchOpen(false); setMsgSearch(''); }}
+            />
 
             {acd.type === 'SECRET' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 5, background: 'rgba(245,247,250,0.06)', color: '#EDEFF3', fontSize: 12, fontFamily: 'mono' }}><Icons.Lock /> Сквозное шифрование</div>}
 
-            {isTopicGroup && (
-              <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(15,18,25,0.7)', overflowX: 'auto' }}>
-                <div style={{ ...s.chatInner, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
-                  {topicsLoading && <span style={{ fontSize: 12, color: '#A3A8B4' }}>Загрузка тем...</span>}
-                  {!topicsLoading && chatTopics.map((topic) => (
-                    <button
-                      key={topic.id}
-                      style={{ ...s.ib, height: 'auto', padding: '6px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...(activeTopicId === topic.id ? { background: 'rgba(255,255,255,0.2)', color: '#F5F6F8' } : {}) }}
-                      onClick={() => setActiveTopicId(topic.id)}
-                    >
-                      #{topic.title}
-                    </button>
-                  ))}
-                  {isOwnerOrAdmin && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                      <input value={newTopicTitle} onChange={(e) => { setNewTopicTitle(e.target.value); setTopicError(''); }} placeholder="Новая тема" style={{ ...s.inp2, height: 30, minWidth: 130 }} />
-                      <button style={{ ...s.ib, color: '#EDEFF3' }} onClick={createTopic}><Icons.Plus /></button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <ChatTopicsBar
+              visible={isTopicGroup}
+              styles={s}
+              topicsLoading={topicsLoading}
+              chatTopics={chatTopics}
+              activeTopicId={activeTopicId}
+              onSelectTopic={setActiveTopicId}
+              isOwnerOrAdmin={isOwnerOrAdmin}
+              newTopicTitle={newTopicTitle}
+              onNewTopicTitleChange={(value) => { setNewTopicTitle(value); setTopicError(''); }}
+              onCreateTopic={createTopic}
+            />
             {topicError && <div style={{ padding: '0 14px 8px', color: '#D5D8DE', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}
@@ -998,7 +799,7 @@ export default function ChatApp() {
                         ? { background: 'linear-gradient(180deg, rgba(36,42,55,0.95), rgba(27,31,41,0.98))', border: '1px solid rgba(220,224,235,0.13)', boxShadow: '0 10px 26px rgba(0,0,0,0.25)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
-                      {isChannel && postVisual && (
+                      {isChannel && postVisual && !acd?.contentProtectionEnabled && (
                         <div
                           role="button"
                           tabIndex={0}
@@ -1048,6 +849,7 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment
                         media={isChannel ? (msg.media || []).filter((m) => m.id !== postVisual?.id) : msg.media}
+                        mediaBlocked={!!acd?.contentProtectionEnabled}
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}
@@ -1245,7 +1047,7 @@ export default function ChatApp() {
                       >
                         <Icons.Mic />
                       </button>
-                      <button style={{ ...s.sendBtn, opacity: (richTextToPlain(input) || pendingMedia.length > 0) ? 1 : 0.3 }} onClick={handleSend} disabled={!richTextToPlain(input) && pendingMedia.length === 0}><Icons.Send /></button>
+                      <button style={{ ...s.sendBtn, opacity: sendButtonOpacity }} onClick={handleSend} disabled={!canSendComposerMessage}><Icons.Send /></button>
                     </>
                   ) : (
                     <div style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#9CA3B1', fontSize: 13 }}>
@@ -1265,153 +1067,27 @@ export default function ChatApp() {
         )}
       </div>
 
-      {/* ── Profile Panel ── */}
-      {profilePanel && profileData && (
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '100vw', background: '#171A20', borderLeft: '1px solid rgba(255,255,255,0.06)', zIndex: 90, display: 'flex', flexDirection: 'column', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <button
-              style={s.ib}
-              onClick={() => {
-                if (settingsMode && settingsSubpage) {
-                  setSettingsSubpage(null);
-                  return;
-                }
-                setProfilePanel(null);
-                setSettingsSubpage(null);
-              }}
-            >
-              {settingsMode && settingsSubpage ? <Icons.Back /> : <Icons.Close />}
-            </button>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>
-              {settingsMode ? ({
-                profile: 'Профиль',
-              }[settingsSubpage] || 'Настройки') : 'Профиль'}
-            </span>
-          </div>
-          {settingsMode ? (
-            settingsSubpage === 'profile' ? (
-              <div style={{ padding: '20px 16px 24px' }}>
-                <div style={{ padding: 16, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18 }}>
-                  <label style={s.lbl}>Display name</label>
-                  <input style={s.inp2} value={nameEdit} onChange={(e) => setNameEdit(e.target.value)} placeholder="Введите имя" />
-                  <label style={{ ...s.lbl, marginTop: 12 }}>Имя пользователя</label>
-                  <input style={{ ...s.inp2, fontFamily: 'mono' }} value={tagEdit} onChange={(e) => setTagEdit(e.target.value)} placeholder="@username" />
-                  <label style={{ ...s.lbl, marginTop: 12 }}>О себе</label>
-                  <textarea style={{ ...s.inp2, minHeight: 90, resize: 'vertical' }} value={bioEdit} onChange={(e) => setBioEdit(e.target.value)} placeholder="Коротко расскажите о себе" />
-                  <button onClick={saveProfileCard} style={{ ...s.saveBtn, width: '100%', marginTop: 12 }} disabled={settingsSaveState.loading}>
-                    {settingsSaveState.loading ? 'Сохранение…' : 'Сохранить'}
-                  </button>
-                  {settingsSaveState.error && <div style={{ marginTop: 10, fontSize: 12, color: '#D5D8DE' }}>{settingsSaveState.error}</div>}
-                  {settingsSaveState.ok && <div style={{ marginTop: 10, fontSize: 12, color: '#B8D9C6' }}>{settingsSaveState.ok}</div>}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 12, color: '#BFC4D0', fontSize: 12, lineHeight: 1.5 }}>
-                    <Icons.Shield /><span>Публичные поля профиля редактируются в одном месте для удобства.</span>
-                  </div>
-                </div>
-              </div>
-            ) : settingsSubpage ? (
-              <div style={{ padding: '20px 16px 24px' }}>
-                <div style={{ padding: 18, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>Скоро</h3>
-                  <p style={{ fontSize: 13, color: '#99A1B2', lineHeight: 1.5 }}>Этот раздел уже подготовлен в интерфейсе. Функциональность появится в одном из следующих обновлений.</p>
-                </div>
-              </div>
-            ) : (
-              <div style={{ padding: '14px 14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ background: 'linear-gradient(150deg, rgba(35,40,51,0.96), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, padding: 14, boxShadow: '0 12px 30px rgba(0,0,0,0.28)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ position: 'relative' }}>
-                      <Av src={profileData.avatar} name={profileData.name} size={72} radius={18} />
-                      <label style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #171A20' }}>
-                        <Icons.Edit />
-                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-                      </label>
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#F3F5F9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.name}</div>
-                      <div style={{ fontSize: 13, color: '#BBC2D1', fontFamily: 'mono', marginTop: 3 }}>{profileData.tag || '@username'}</div>
-                      <div style={{ fontSize: 12, color: '#8E96A7', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileData.bio || 'Расскажите немного о себе'}</div>
-                    </div>
-                    <button style={{ ...s.ib, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => openSettingsSubpage('profile')}>
-                      <Icons.Edit />
-                    </button>
-                  </div>
-                </div>
-
-                {[
-                  {
-                    id: 'account',
-                    rows: [
-                      { id: 'profile', title: 'Профиль', subtitle: 'Имя и фото', icon: <Icons.User size={16} /> },
-                    ],
-                  },
-                  {
-                    id: 'privacy',
-                    rows: [
-                      { id: 'notifications', title: 'Уведомления', subtitle: 'Звуки и предпросмотр', icon: <Icons.Bell size={15} /> },
-                      { id: 'privacy', title: 'Конфиденциальность', subtitle: 'Доступ и безопасность', icon: <Icons.Lock size={14} /> },
-                      { id: 'data', title: 'Данные и память', subtitle: 'Кэш и медиа', icon: <Icons.File size={14} /> },
-                      { id: 'devices', title: 'Устройства', subtitle: 'Активные сессии', icon: <Icons.Group size={14} /> },
-                    ],
-                  },
-                  {
-                    id: 'appearance',
-                    rows: [
-                      { id: 'language', title: 'Язык', subtitle: 'Русский', icon: <Icons.Copy size={14} /> },
-                      { id: 'stickers', title: 'Стикеры и эмодзи', subtitle: 'Наборы и реакции', icon: <Icons.Smile size={14} /> },
-                      { id: 'folders', title: 'Папки чатов', subtitle: 'Организация диалогов', icon: <Icons.Channel size={14} /> },
-                    ],
-                  },
-                ].map((group) => (
-                  <div key={group.id} style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 18, overflow: 'hidden' }}>
-                    {group.rows.map((row, idx) => (
-                      <button
-                        key={row.id}
-                        type="button"
-                        onClick={() => openSettingsSubpage(row.id)}
-                        style={{ width: '100%', border: 'none', background: 'transparent', color: 'inherit', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px', cursor: 'pointer', borderBottom: idx === group.rows.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)', textAlign: 'left' }}
-                      >
-                        <div style={{ width: 30, height: 30, borderRadius: 10, background: 'rgba(255,255,255,0.07)', color: '#ECEFF5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{row.icon}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#F2F4F8' }}>{row.title}</div>
-                          {row.subtitle && <div style={{ fontSize: 12, color: '#8F98A9', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.subtitle}</div>}
-                        </div>
-                        <div style={{ transform: 'rotate(180deg)', color: '#7D8799', display: 'flex' }}>
-                          <Icons.Back size={14} />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '2px 2px 6px' }}>
-                  <div style={{ fontSize: 12, color: '#717A8B', textAlign: 'center' }}>ZavodGram Web · v1.0</div>
-                  <button onClick={logout} style={{ ...s.saveBtn, width: '100%', background: 'rgba(255,255,255,0.07)', color: '#F3F4F7', border: '1px solid rgba(255,255,255,0.11)' }}>
-                    <Icons.Logout /> Выйти
-                  </button>
-                </div>
-              </div>
-            )
-          ) : (
-            <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div style={{ position: 'relative', marginBottom: 14 }}>
-                <Av src={profileData.avatar} name={profileData.name} size={90} radius={22}
-                  onClick={() => setAvatarView({ url: profileData.avatar, name: profileData.name })} />
-              </div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{profileData.name}</h2>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'rgba(255,255,255,0.1)', borderRadius: 20, color: '#E9EBEF', fontSize: 13, fontWeight: 600, fontFamily: 'mono', marginBottom: 18 }}><Icons.Tag />{profileData.tag}<Icons.Shield /></div>
-              <p style={{ fontSize: 14, color: '#A2A8B6', textAlign: 'center', lineHeight: 1.55, marginBottom: 22, maxWidth: 260 }}>{profileData.bio}</p>
-              <div style={{ width: '100%' }}>
-                {[['Телефон', profileData.phone], ['Тег', profileData.tag, '#E9EBEF']].map(([l, v, c], i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    <span style={{ fontSize: 13, color: '#7C8392' }}>{l}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, fontFamily: 'mono', color: c || '#F2F4F7' }}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      <ProfilePanel
+        open={profilePanel}
+        profileData={profileData}
+        settingsMode={settingsMode}
+        settingsSubpage={settingsSubpage}
+        nameEdit={nameEdit}
+        tagEdit={tagEdit}
+        bioEdit={bioEdit}
+        settingsSaveState={settingsSaveState}
+        styles={s}
+        onClose={() => setProfilePanel(null)}
+        onSetSettingsSubpage={setSettingsSubpage}
+        onSetNameEdit={setNameEdit}
+        onSetTagEdit={setTagEdit}
+        onSetBioEdit={setBioEdit}
+        onSaveProfileCard={saveProfileCard}
+        onAvatarUpload={handleAvatarUpload}
+        onOpenSettingsSubpage={openSettingsSubpage}
+        onLogout={logout}
+        onOpenAvatar={() => setAvatarView({ url: profileData?.avatar, name: profileData?.name })}
+      />
 
       {/* ── Notification Panel ── */}
       <ChatNotificationsPanel
@@ -1431,6 +1107,8 @@ export default function ChatApp() {
       <ChatMessageContextMenu
         contextMenu={contextMenu}
         styles={s}
+        canForward={!protectedDirectChat}
+        canDelete={!protectedDirectChat}
         onReply={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}
         onForward={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}
         onReaction={() => { openReactionPicker(contextMenu.x + 10, contextMenu.y - 50, contextMenu.msg.id); setContextMenu(null); }}
@@ -1440,617 +1118,167 @@ export default function ChatApp() {
       />
 
 
-      {reactionPicker && (
-        <div style={{ position: 'fixed', top: reactionPicker.y, left: reactionPicker.x, background: '#1D2128', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '8px 10px', zIndex: 240, display: 'flex', gap: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()}>
-          {REACTION_SET.map((emoji) => (
-            <button key={emoji} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer' }} onClick={() => { addReaction(reactionPicker.msgId, emoji); setReactionPicker(null); }}>{emoji}</button>
-          ))}
-        </div>
-      )}
+      <ChatReactionPicker
+        reactionPicker={reactionPicker}
+        reactionSet={REACTION_SET}
+        onReact={addReaction}
+        onClose={() => setReactionPicker(null)}
+      />
 
       {/* ── Forward Modal ── */}
-      {forwardMsg && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => setForwardMsg(null)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 20, minWidth: 300, maxWidth: 380, border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, fontFamily: 'mono' }}>Переслать</h3>
-            <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 14, fontSize: 13, color: '#9CA3B1', borderLeft: '3px solid #E9EBEF' }}>{forwardMsg.text || '[медиа]'}</div>
-            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-              {chats.filter(c => c.type !== 'CHANNEL').map(c => (
-                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => doForward(c.id)}>
-                  <Av name={getChatName(c, user.id)} size={32} radius={8} color={tc[c.type]} />
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{getChatName(c, user.id)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <ForwardMessageModal
+        openMessage={forwardMsg}
+        chats={chats}
+        userId={user.id}
+        onForward={doForward}
+        onClose={() => setForwardMsg(null)}
+      />
 
-      {/* ── New Chat Modal ── */}
-      {newChatModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, backdropFilter: 'blur(4px)' }} onClick={() => { setNewChatModal(false); setNewChatMode('search'); }}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 400, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            {newChatMode === 'search' ? (<>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Новый чат</h3>
-              {/* Type selector */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-                {[['Личный','PRIVATE','#E9EBEF'],['Группа','GROUP','#C8CCD4'],['Канал','CHANNEL','#D3D6DC'],['Секретный','SECRET','#EDEFF3']].map(([l,t,c]) => (
-                  <button key={t} onClick={() => (t === 'GROUP' || t === 'CHANNEL') ? setNewChatMode(t) : setNewChatType(t)}
-                    style={{ flex: 1, padding: '8px 4px', background: newChatType === t ? c+'22' : 'rgba(255,255,255,0.04)', border: `1px solid ${newChatType === t ? c : 'rgba(255,255,255,0.06)'}`, borderRadius: 8, color: newChatType === t ? c : '#9CA3B1', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'mono' }}>{l}</button>
-                ))}
-              </div>
-              <input style={s.inp2} placeholder="Поиск по имени или @тегу..." value={newChatSearch} onChange={e => searchNewChat(e.target.value)} autoFocus />
-              <div style={{ maxHeight: 280, overflowY: 'auto', marginTop: 12 }}>
-                {newChatResults.map(u => (
-                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => handleNewChat(u.id, newChatType)}>
-                    <Av src={u.avatar} name={u.name} size={36} radius={10} online={u.online} />
-                    <div><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</div></div>
-                  </div>
-                ))}
-                {newChatSearch.length >= 2 && newChatResults.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: '#686F7F', fontSize: 13 }}>Никого не найдено</div>}
-              </div>
-            </>) : (<>
-              {/* Group / Channel creation */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <button style={s.ib} onClick={() => setNewChatMode('search')}><Icons.Back /></button>
-                <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono' }}>{newChatMode === 'GROUP' ? 'Новая группа' : 'Новый канал'}</h3>
-              </div>
-              <input style={{ ...s.inp2, marginBottom: 8 }} placeholder="Название" value={groupName} onChange={e => setGroupName(e.target.value)} autoFocus />
-              <textarea style={{ ...s.inp2, minHeight: 50, resize: 'vertical', marginBottom: 12 }} placeholder="Описание (необязательно)" value={groupDesc} onChange={e => setGroupDesc(e.target.value)} />
-              <input style={s.inp2} placeholder="Добавить участников..." value={newChatSearch} onChange={e => searchNewChat(e.target.value)} />
-              {groupMembers.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0' }}>
-                  {groupMembers.map(m => (
-                    <span key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'rgba(255,255,255,0.1)', borderRadius: 20, fontSize: 12, color: '#E9EBEF' }}>
-                      {m.name} <span style={{ cursor: 'pointer', opacity: 0.6, fontSize: 14 }} onClick={() => setGroupMembers(p => p.filter(x => x.id !== m.id))}>×</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 8 }}>
-                {newChatResults.filter(u => !groupMembers.some(m => m.id === u.id)).map(u => (
-                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', cursor: 'pointer', borderRadius: 8 }} onClick={() => setGroupMembers(p => [...p, u])}>
-                    <Av src={u.avatar} name={u.name} size={30} radius={8} />
-                    <span style={{ fontSize: 13 }}>{u.name}</span>
-                    <span style={{ fontSize: 11, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</span>
-                  </div>
-                ))}
-              </div>
-              <button style={{ ...s.saveBtn, width: '100%', marginTop: 14, opacity: groupName.trim() ? 1 : 0.4 }} disabled={!groupName.trim()} onClick={createGroupOrChannel}>
-                Создать {newChatMode === 'GROUP' ? 'группу' : 'канал'}
-              </button>
-            </>)}
-          </div>
-        </div>
-      )}
+      <NewChatModal
+        open={newChatModal}
+        mode={newChatMode}
+        chatType={newChatType}
+        search={newChatSearch}
+        results={newChatResults}
+        groupName={groupName}
+        groupDesc={groupDesc}
+        groupMembers={groupMembers}
+        styles={s}
+        onClose={() => { setNewChatModal(false); setNewChatMode('search'); }}
+        onModeChange={setNewChatMode}
+        onChatTypeChange={setNewChatType}
+        onSearch={searchNewChat}
+        onPickUser={handleNewChat}
+        onGroupNameChange={setGroupName}
+        onGroupDescChange={setGroupDesc}
+        onGroupMemberAdd={(member) => setGroupMembers((prev) => [...prev, member])}
+        onGroupMemberRemove={(memberId) => setGroupMembers((prev) => prev.filter((item) => item.id !== memberId))}
+        onCreate={createGroupOrChannel}
+      />
 
+      <ChannelInfoModal
+        open={channelInfoModal}
+        channel={acd}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        channelPublicLink={channelPublicLink}
+        styles={s}
+        onClose={() => setChannelInfoModal(false)}
+        onAvatarUpload={handleGroupAvatarUpload}
+        onShare={shareChannelLink}
+        onOpenManagement={() => { setChannelInfoModal(false); openChannelManagement(); }}
+        onOpenAttachments={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}
+      />
 
-      {channelInfoModal && acd?.type === 'CHANNEL' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setChannelInfoModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>О канале</h3>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-              <div style={{ position: 'relative' }}>
-                <Av src={acd.avatar} name={acd.name} size={78} radius={20} color={tc[acd.type]} />
-                {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1D2128' }}>
-                    <Icons.Edit />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
-                  </label>
-                )}
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: '#A2A8B6', marginBottom: 6 }}>Публичная ссылка</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input style={s.inp2} value={channelPublicLink || 'Ссылка не настроена'} readOnly />
-              <button style={s.ib} onClick={() => navigator.clipboard?.writeText(channelPublicLink)} disabled={!channelPublicLink}><Icons.Copy /></button>
-              <button style={s.ib} onClick={shareChannelLink} disabled={!channelPublicLink}><Icons.Share /></button>
-            </div>
-            {isOwner && <button style={{ ...s.saveBtn, width: '100%' }} onClick={() => { setChannelInfoModal(false); openChannelManagement(); }}><Icons.Edit /> Управление</button>}
-            <button style={{ ...s.ib, marginTop: 14, width: '100%', justifyContent: 'center', padding: 10, border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => { setChannelInfoModal(false); setAttachmentsModal(true); }}>
-              <Icons.Image /> Вложения канала
-            </button>
-          </div>
-        </div>
-      )}
+      <ChannelManageModal
+        open={channelManageModal}
+        chat={acd}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        tab={channelManageTab}
+        setTab={setChannelManageTab}
+        onLoadBans={loadChannelBans}
+        onClose={() => setChannelManageModal(false)}
+        onAvatarUpload={handleGroupAvatarUpload}
+        editGroupName={editGroupName}
+        setEditGroupName={setEditGroupName}
+        editGroupDesc={editGroupDesc}
+        setEditGroupDesc={setEditGroupDesc}
+        editContentProtection={editContentProtection}
+        setEditContentProtection={setEditContentProtection}
+        channelSlugEdit={channelSlugEdit}
+        setChannelSlugEdit={setChannelSlugEdit}
+        setChannelSlugError={setChannelSlugError}
+        channelSlugError={channelSlugError}
+        onSave={saveChannelManagement}
+        bansLoading={bansLoading}
+        bannedUsers={bannedUsers}
+        onUnbanMember={handleUnbanMember}
+        styles={s}
+      />
 
-      {channelManageModal && acd?.type === 'CHANNEL' && isOwner && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 362, backdropFilter: 'blur(4px)' }} onClick={() => setChannelManageModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '84vh', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Управление каналом</h3>
-              <button style={{ ...s.ib, ...(channelManageTab === 'main' ? { color: '#E9EBEF' } : {}) }} onClick={() => setChannelManageTab('main')}>Основное</button>
-              <button style={{ ...s.ib, ...(channelManageTab === 'bans' ? { color: '#D3D6DC' } : {}) }} onClick={() => { setChannelManageTab('bans'); loadChannelBans(); }}>Забаненные</button>
-              <button style={s.ib} onClick={() => setChannelManageModal(false)}><Icons.Close /></button>
-            </div>
+      <ChannelAttachmentsModal
+        open={attachmentsModal && acd?.type === 'CHANNEL'}
+        channelAttachments={channelAttachments}
+        onClose={() => setAttachmentsModal(false)}
+      />
 
-            {channelManageTab === 'main' ? (
-              <div style={{ overflowY: 'auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                  <div style={{ position: 'relative' }}>
-                    <Av src={acd.avatar} name={acd.name} size={88} radius={22} color={tc[acd.type]} />
-                    <label style={{ position: 'absolute', bottom: -2, right: -2, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1D2128' }}>
-                      <Icons.Edit />
-                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
-                    </label>
-                  </div>
-                </div>
-                <label style={s.lbl}>Название</label>
-                <input style={{ ...s.inp2, marginBottom: 10 }} value={editGroupName} onChange={(e) => setEditGroupName(e.target.value)} placeholder="Название канала" />
-                <label style={s.lbl}>Описание</label>
-                <textarea style={{ ...s.inp2, minHeight: 72, resize: 'vertical', marginBottom: 10 }} value={editGroupDesc} onChange={(e) => setEditGroupDesc(e.target.value)} placeholder="Описание канала" />
-                <label style={s.lbl}>Уникальная ссылка (slug)</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ color: '#9CA3B1', fontSize: 13 }}>{window.location.origin}/</span>
-                  <input style={s.inp2} value={channelSlugEdit} onChange={e => { setChannelSlugEdit(e.target.value); setChannelSlugError(''); }} placeholder="my-channel" />
-                </div>
-                {channelSlugError && <div style={{ color: '#D5D8DE', fontSize: 12, marginTop: 6 }}>{channelSlugError}</div>}
-                <button style={{ ...s.saveBtn, marginTop: 12, width: '100%' }} onClick={saveChannelManagement}>Сохранить изменения</button>
-              </div>
-            ) : (
-              <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
-                {bansLoading && <div style={{ color: '#A2A8B6', fontSize: 13 }}>Загрузка...</div>}
-                {!bansLoading && bannedUsers.length === 0 && <div style={{ color: '#A2A8B6', fontSize: 13 }}>Список пуст.</div>}
-                {!bansLoading && bannedUsers.map((ban) => (
-                  <div key={ban.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <Av src={ban.user?.avatar} name={ban.user?.name} size={36} radius={10} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{ban.user?.name}</div>
-                      <div style={{ fontSize: 11, color: '#A2A8B6' }}>{ban.user?.tag} • бан от {ban.admin?.name || 'админа'}</div>
-                    </div>
-                    <button style={{ ...s.ib, color: '#EDEFF3' }} onClick={() => handleUnbanMember(ban.userId)}><Icons.Check /> Разбан</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <PostCommentsModal
+        post={postCommentsModal}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        userId={user.id}
+        members={acd?.members}
+        getPostComments={getPostComments}
+        onOpenDirectChat={openDirectChatWithUser}
+        onModerateComment={handleModerateComment}
+        replyTo={postCommentReplyTo}
+        setReplyTo={setPostCommentReplyTo}
+        draft={postCommentDraft}
+        setDraft={setPostCommentDraft}
+        onSend={sendPostComment}
+        styles={s}
+        onClose={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}
+      />
 
-      {attachmentsModal && acd?.type === 'CHANNEL' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, backdropFilter: 'blur(4px)' }} onClick={() => setAttachmentsModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 20, width: 520, maxWidth: '96vw', maxHeight: '82vh', border: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 12, fontFamily: 'mono' }}>Вложения канала</h3>
-            {channelAttachments.length === 0 && <div style={{ color: '#A2A8B6', fontSize: 13 }}>Пока нет вложений или ссылок.</div>}
-            {channelAttachments.map((item) => (
-              <div key={`${item.msgId}-${item.kind}-${item.id || item.media?.id}`} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                {item.kind === 'link' ? (
-                  <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#E9EBEF', wordBreak: 'break-all' }}>{item.url}</a>
-                ) : item.media?.type === 'IMAGE' ? (
-                  <img src={mediaUrlById(item.media.id)} alt={item.media.originalName} style={{ maxWidth: '100%', borderRadius: 10 }} />
-                ) : (
-                  <a href={mediaUrlById(item.media.id)} target="_blank" rel="noreferrer" style={{ color: '#E9EBEF' }}>{item.media?.originalName || 'Файл'}</a>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ChannelInviteModal
+        inviteChannel={inviteChannel}
+        joiningInvite={joiningInvite}
+        styles={s}
+        onJoin={joinInviteChannel}
+        onClose={() => setInviteChannel(null)}
+      />
 
-      {postCommentsModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 365, backdropFilter: 'blur(4px)' }} onClick={() => { setPostCommentsModal(null); setPostCommentReplyTo(null); }}>
-          <div style={{ background: 'linear-gradient(180deg, rgba(31,35,46,0.98), rgba(24,27,36,0.98))', borderRadius: 20, padding: 20, width: 580, maxWidth: '96vw', maxHeight: '86vh', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px rgba(0,0,0,0.45)', gap: 12 }} onClick={e => e.stopPropagation()}>
-            {(() => {
-              const commentsAllowed = Boolean(postCommentsModal.commentsEnabled) || isOwnerOrAdmin;
-              const modalComments = getPostComments(postCommentsModal);
-              const hasLongPost = (postCommentsModal.text || '').length > 330;
-              const commentsCount = modalComments.length;
-              const commentsWord = (n) => {
-                const abs = Math.abs(n) % 100;
-                const last = abs % 10;
-                if (abs > 10 && abs < 20) return 'комментариев';
-                if (last > 1 && last < 5) return 'комментария';
-                if (last === 1) return 'комментарий';
-                return 'комментариев';
-              };
-              return (
-                <>
-                  <h3 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: 0.2, color: '#F7F8FB', fontFamily: 'mono' }}>Комментарии к посту</h3>
-                  {!commentsAllowed && (
-                    <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(238,240,244,0.12)', border: '1px solid rgba(238,240,244,0.4)', color: '#F0F1F4', fontSize: 12 }}>
-                      Комментарии отключены для этого поста.
-                    </div>
-                  )}
+      <ChatMediaModal
+        media={mediaModal}
+        styles={s}
+        onClose={() => setMediaModal(null)}
+      />
 
-                  <div style={{ position: 'relative', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', padding: '12px 14px' }}>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: '#C5CBD6',
-                        lineHeight: 1.58,
-                        maxHeight: 132,
-                        overflow: 'hidden',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 6,
-                        WebkitBoxOrient: 'vertical',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word'
-                      }}
-                    >
-                      {postCommentsModal.text || '[медиа-пост]'}
-                    </div>
-                    {hasLongPost && (
-                      <div style={{ position: 'absolute', left: 1, right: 1, bottom: 1, height: 28, borderRadius: '0 0 13px 13px', background: 'linear-gradient(180deg, rgba(26,30,39,0), rgba(26,30,39,0.94))', pointerEvents: 'none' }} />
-                    )}
-                  </div>
+      <AvatarFullscreenModal
+        avatarView={avatarView}
+        onClose={() => setAvatarView(null)}
+      />
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-                    <button
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#8F97A6',
-                        fontSize: 12,
-                        fontWeight: 500,
-                        lineHeight: 1,
-                        padding: '2px 0',
-                        height: 'auto',
-                        opacity: commentsAllowed ? 1 : 0.75,
-                        borderRadius: 0,
-                        fontFamily: 'Inter, system-ui, sans-serif'
-                      }}
-                      onClick={() => commentsAllowed && document.getElementById('channel-comment-input')?.focus()}
-                      disabled={!commentsAllowed}
-                    >
-                      {`${commentsCount} ${commentsWord(commentsCount)}`}
-                    </button>
-                  </div>
+      <GroupSettingsModal
+        open={groupSettingsModal}
+        chat={acd}
+        isGroupOrChannel={isGroupOrChannel}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        editGroupName={editGroupName}
+        setEditGroupName={setEditGroupName}
+        editGroupDesc={editGroupDesc}
+        setEditGroupDesc={setEditGroupDesc}
+        editTopicsEnabled={editTopicsEnabled}
+        setEditTopicsEnabled={setEditTopicsEnabled}
+        editContentProtection={editContentProtection}
+        setEditContentProtection={setEditContentProtection}
+        styles={s}
+        onClose={() => setGroupSettingsModal(false)}
+        onAvatarUpload={handleGroupAvatarUpload}
+        onSave={saveGroupSettings}
+        onOpenMembers={() => { setGroupSettingsModal(false); setMemberListModal(true); }}
+      />
 
-                  <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2, marginTop: 2 }}>
-                    {modalComments.length === 0 ? (
-                      <div style={{ color: '#A2A8B6', fontSize: 13, paddingTop: 6 }}>Пока комментариев нет. Будьте первым.</div>
-                    ) : modalComments.map((comment) => {
-                      const canModerate = isOwnerOrAdmin && (comment.fromId || comment.from?.id) !== user.id;
-                      const mutedByAdmin = acd?.members?.find((m) => m.userId === (comment.fromId || comment.from?.id))?.commentsMuted;
-                      const commentAuthor = comment.from || null;
-                      const canOpenAuthorChat = Boolean(commentAuthor?.id) && commentAuthor.id !== user.id;
-                      const isMyComment = (comment.fromId || comment.from?.id) === user.id;
-                      const commentBody = `${comment.text || ''}`.trim();
-                      return (
-                        <div
-                          key={comment.id}
-                          style={{
-                            marginLeft: Math.min((comment.depth || 0) * 16, 64),
-                            marginBottom: 6,
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 10,
-                            padding: '4px 6px',
-                            borderRadius: 10,
-                            transition: 'background 160ms ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                            const replyBtn = e.currentTarget.querySelector('[data-reply-btn="true"]');
-                            if (replyBtn) {
-                              replyBtn.style.opacity = '0.95';
-                              replyBtn.style.color = '#BCC3CF';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent';
-                            const replyBtn = e.currentTarget.querySelector('[data-reply-btn="true"]');
-                            if (replyBtn) {
-                              replyBtn.style.opacity = '0.5';
-                              replyBtn.style.color = '#8D95A4';
-                            }
-                          }}
-                        >
-                          <Av
-                            src={commentAuthor?.avatar}
-                            name={commentAuthor?.name || 'Пользователь'}
-                            size={34}
-                            radius={999}
-                            onClick={canOpenAuthorChat ? () => openDirectChatWithUser(commentAuthor) : undefined}
-                            style={{ marginTop: 2, border: '1px solid rgba(255,255,255,0.16)' }}
-                          />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                                <button
-                                  type="button"
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    fontSize: 14,
-                                    padding: 0,
-                                    height: 'auto',
-                                    color: canOpenAuthorChat ? (isMyComment ? '#9FD3FF' : '#58C8E8') : '#C1C7D2',
-                                    cursor: canOpenAuthorChat ? 'pointer' : 'default',
-                                    fontWeight: 700,
-                                    fontFamily: 'Inter, system-ui, sans-serif',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis'
-                                  }}
-                                  onClick={() => canOpenAuthorChat && openDirectChatWithUser(commentAuthor)}
-                                  disabled={!canOpenAuthorChat}
-                                  title={canOpenAuthorChat ? 'Открыть чат' : undefined}
-                                >
-                                  {commentAuthor?.name || 'Пользователь'}
-                                </button>
-                                <span style={{ color: '#8790A0', fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12 }}>{formatTimeShort(comment.createdAt)}</span>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                <button data-reply-btn="true" style={{ background: 'transparent', border: 'none', fontSize: 12, padding: 0, height: 'auto', fontFamily: 'Inter, system-ui, sans-serif', color: '#8D95A4', cursor: 'pointer', fontWeight: 500, opacity: 0.5, transition: 'opacity 160ms ease, color 160ms ease' }} onClick={() => setPostCommentReplyTo(comment)}>Ответить</button>
-                                {canModerate && (
-                                  <>
-                                    <button style={{ ...s.ib, fontSize: 11 }} onClick={() => handleModerateComment(comment, mutedByAdmin ? 'unmute' : 'mute')}>{mutedByAdmin ? 'Снять мут' : 'Мут'}</button>
-                                    <button style={{ ...s.ib, fontSize: 11, color: '#D5D8DE' }} onClick={() => handleModerateComment(comment, 'delete')}>Удалить</button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <div style={{ borderRadius: 10, background: isMyComment ? 'rgba(68,86,115,0.36)' : 'rgba(255,255,255,0.03)', padding: '7px 9px', transition: 'background 160ms ease' }} onMouseEnter={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.44)' : 'rgba(255,255,255,0.045)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = isMyComment ? 'rgba(68,86,115,0.36)' : 'rgba(255,255,255,0.03)'; }}>
-                              <div style={{ fontSize: 14, color: '#F2F4F7', lineHeight: 1.42, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                {commentBody || '…'}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+      <MemberListModal
+        open={memberListModal}
+        chat={acd}
+        isGroupOrChannel={isGroupOrChannel}
+        isOwner={isOwner}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        userId={user.id}
+        styles={s}
+        addMemberSearch={addMemberSearch}
+        addMemberResults={addMemberResults}
+        onClose={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}
+        onOpenManagement={() => { setGroupSettingsModal(true); setMemberListModal(false); }}
+        onSearchAddMember={searchAddMember}
+        onAddMember={handleAddMember}
+        onOpenProfile={(memberUserId) => { setMemberListModal(false); openProfile(memberUserId); }}
+        onSetRole={handleSetRole}
+        onKickMember={handleKickMember}
+        onBanMember={handleBanMember}
+        onTransferOwnership={handleTransferOwnership}
+      />
 
-                  {postCommentReplyTo && (
-                    <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', fontSize: 12, color: '#D6DAE2', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ответ для {postCommentReplyTo.from?.name || 'пользователя'}: {(postCommentReplyTo.text || '').slice(0, 90)}</span>
-                      <button style={s.ib} onClick={() => setPostCommentReplyTo(null)}><Icons.Close /></button>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input
-                      id="channel-comment-input"
-                      style={{ ...s.inp2, flex: '1 1 260px', minWidth: 0, borderRadius: 12, padding: '10px 12px' }}
-                      value={postCommentDraft}
-                      onChange={(e) => setPostCommentDraft(e.target.value)}
-                      placeholder={commentsAllowed ? (postCommentReplyTo ? 'Написать ответ...' : 'Написать комментарий...') : 'Комментарии отключены'}
-                      onKeyDown={(e) => e.key === 'Enter' && commentsAllowed && sendPostComment()}
-                      disabled={!commentsAllowed}
-                    />
-                    <button style={{ ...s.ib, flex: '0 0 auto', minWidth: 102, borderRadius: 11, padding: '9px 12px', fontSize: 14, fontWeight: 500, color: '#C9D0DB', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.16)', boxShadow: 'none' }} onClick={sendPostComment} disabled={!commentsAllowed || !postCommentDraft.trim()}>Отправить</button>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {inviteChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 380 }} onClick={() => setInviteChannel(null)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Канал по ссылке</h3>
-            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>{inviteChannel.name || 'Канал'}</div>
-            <div style={{ fontSize: 13, color: '#A2A8B6', marginBottom: 10 }}>{inviteChannel._count?.members || 0} подписчиков</div>
-            {inviteChannel.description && <p style={{ fontSize: 14, color: '#CACED7', lineHeight: 1.5 }}>{inviteChannel.description}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button style={{ ...s.saveBtn, flex: 1, opacity: joiningInvite ? 0.7 : 1 }} onClick={joinInviteChannel} disabled={joiningInvite}>{joiningInvite ? 'Подписка...' : 'Подписаться'}</button>
-              <button style={{ ...s.ib, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px' }} onClick={() => setInviteChannel(null)}>Позже</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {mediaModal && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(5,7,12,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 430, padding: 18 }}
-          onClick={() => setMediaModal(null)}
-        >
-          <div style={{ width: 'min(96vw, 980px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', gap: 10 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
-              <button type="button" style={s.ib} onClick={() => setMediaModal(null)} aria-label="Закрыть медиа"><Icons.Close /></button>
-            </div>
-            <div style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, overflow: 'hidden', maxHeight: 'calc(92vh - 54px)' }}>
-              {mediaModal.type === 'VIDEO' ? (
-                <video src={mediaModal.src} controls autoPlay playsInline style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', display: 'block', background: '#000' }} />
-              ) : (
-                <img src={mediaModal.src} alt={mediaModal.title || 'media'} style={{ width: '100%', maxHeight: 'calc(92vh - 56px)', objectFit: 'contain', display: 'block', background: '#000' }} />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Avatar Fullscreen ── */}
-      {avatarView && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, cursor: 'pointer' }} onClick={() => setAvatarView(null)}>
-          {avatarView.url ? (
-            <img src={resolveAvatarSrc(avatarView.url)} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 16 }} alt="" />
-          ) : (
-            <div style={{ width: 240, height: 240, borderRadius: 32, background: '#E9EBEF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 96, fontWeight: 700, color: '#fff', fontFamily: 'mono' }}>
-              {avatarView.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Group Settings Modal ── */}
-      {groupSettingsModal && acd && isGroupOrChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => setGroupSettingsModal(false)}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 400, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <button style={s.ib} onClick={() => setGroupSettingsModal(false)}><Icons.Close /></button>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono' }}>{acd.type === 'GROUP' ? 'Настройки группы' : 'Настройки канала'}</h3>
-            </div>
-
-            {/* Group avatar */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-              <div style={{ position: 'relative' }}>
-                <Av src={acd.avatar} name={acd.name} size={90} radius={22} color={tc[acd.type]} />
-                {isOwnerOrAdmin && (
-                  <label style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #E9EBEF, #C8CCD4)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid #1D2128' }}>
-                    <Icons.Edit />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarUpload} />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            {isOwnerOrAdmin ? (<>
-              <label style={s.lbl}>Название</label>
-              <input style={s.inp2} value={editGroupName} onChange={e => setEditGroupName(e.target.value)} />
-
-              <label style={{ ...s.lbl, marginTop: 12 }}>Описание</label>
-              <textarea style={{ ...s.inp2, minHeight: 60, resize: 'vertical' }} value={editGroupDesc} onChange={e => setEditGroupDesc(e.target.value)} />
-              {acd.type === 'GROUP' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: '#D6DAE2' }}>
-                  <input
-                    type="checkbox"
-                    checked={editTopicsEnabled}
-                    onChange={(e) => setEditTopicsEnabled(e.target.checked)}
-                    disabled={!isOwnerOrAdmin}
-                  />
-                  Группа с темами (отдельные ветки)
-                </label>
-              )}
-
-              <button style={{ ...s.saveBtn, width: '100%', marginTop: 16 }} onClick={saveGroupSettings}>Сохранить</button>
-            </>) : (<>
-              <h2 style={{ fontSize: 20, fontWeight: 700, textAlign: 'center', marginBottom: 6 }}>{acd.name}</h2>
-              {acd.description && <p style={{ fontSize: 14, color: '#A2A8B6', textAlign: 'center', lineHeight: 1.5 }}>{acd.description}</p>}
-            </>)}
-
-            {/* Quick member count */}
-            <div style={{ marginTop: 20, padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-              onClick={() => { setGroupSettingsModal(false); setMemberListModal(true); }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Icons.Group />
-                <span style={{ fontSize: 14 }}>{acd._count?.members || acd.members?.length} участников</span>
-              </div>
-              <span style={{ color: '#E9EBEF', fontSize: 13 }}>Показать →</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Member List Modal ── */}
-      {memberListModal && acd && isGroupOrChannel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, backdropFilter: 'blur(4px)' }} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}>
-          <div style={{ background: '#1D2128', borderRadius: 16, padding: 24, width: 420, maxWidth: '92vw', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <button style={s.ib} onClick={() => { setMemberListModal(false); setAddMemberSearch(''); setAddMemberResults([]); }}><Icons.Close /></button>
-              <h3 style={{ fontSize: 18, fontWeight: 700, fontFamily: 'mono', flex: 1 }}>Участники ({acd.members?.length || 0})</h3>
-              {isOwnerOrAdmin && <button style={{ ...s.ib, color: '#E9EBEF', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
-                onClick={() => { setGroupSettingsModal(true); setMemberListModal(false); }}><Icons.Edit /> Управление</button>}
-            </div>
-
-            {/* Add member (owner/admin) */}
-            {isOwnerOrAdmin && (
-              <div style={{ marginBottom: 12 }}>
-                <input style={s.inp2} placeholder="Добавить участника..." value={addMemberSearch} onChange={e => searchAddMember(e.target.value)} />
-                {addMemberResults.length > 0 && (
-                  <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6, background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 4 }}>
-                    {addMemberResults.filter(u => !acd.members?.some(m => m.userId === u.id)).map(u => (
-                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', borderRadius: 6 }} onClick={() => handleAddMember(u.id)}>
-                        <Av src={u.avatar} name={u.name} size={28} radius={7} />
-                        <span style={{ fontSize: 13 }}>{u.name}</span>
-                        <span style={{ fontSize: 11, color: '#E9EBEF', fontFamily: 'mono' }}>{u.tag}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#EDEFF3' }}>+ Добавить</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Member list */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {(acd.members || [])
-                .sort((a, b) => { const order = { OWNER: 0, ADMIN: 1, MEMBER: 2 }; return (order[a.role] || 2) - (order[b.role] || 2); })
-                .map(member => {
-                  const u = member.user;
-                  const isMe = member.userId === user.id;
-                  const roleLabel = member.role === 'OWNER' ? 'Создатель' : member.role === 'ADMIN' ? 'Модератор' : null;
-                  const roleColor = member.role === 'OWNER' ? '#D3D6DC' : member.role === 'ADMIN' ? '#C8CCD4' : null;
-                  const canManage = isOwner && !isMe && member.role !== 'OWNER';
-                  const canAdminManage = isOwnerOrAdmin && !isMe && member.role === 'MEMBER';
-
-                  return (
-                    <div key={member.userId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <Av src={u?.avatar} name={u?.name} size={38} radius={10} onClick={() => { setMemberListModal(false); openProfile(member.userId); }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {u?.name}
-                          {roleLabel && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: roleColor + '22', color: roleColor, fontFamily: 'mono', fontWeight: 600 }}>{roleLabel}</span>}
-                          {isMe && <span style={{ fontSize: 10, color: '#7C8392' }}>(вы)</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#E9EBEF', fontFamily: 'mono' }}>{u?.tag}</div>
-                      </div>
-
-                      {/* Actions dropdown */}
-                      {(canManage || canAdminManage) && (
-                        <div style={{ position: 'relative' }}>
-                          <select
-                            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#AAB0BD', fontSize: 11, padding: '4px 6px', cursor: 'pointer', fontFamily: 'mono' }}
-                            value=""
-                            onChange={e => {
-                              const action = e.target.value;
-                              if (action === 'make_admin') handleSetRole(member.userId, 'ADMIN');
-                              if (action === 'remove_admin') handleSetRole(member.userId, 'MEMBER');
-                              if (action === 'kick') handleKickMember(member.userId);
-                              if (action === 'ban') handleBanMember(member.userId);
-                              if (action === 'transfer') handleTransferOwnership(member.userId);
-                              e.target.value = '';
-                            }}
-                          >
-                            <option value="" disabled>···</option>
-                            {isOwner && member.role === 'MEMBER' && <option value="make_admin">Назначить модератором</option>}
-                            {isOwner && member.role === 'ADMIN' && <option value="remove_admin">Снять модератора</option>}
-                            {(canManage || canAdminManage) && <option value="kick">{acd.type === 'CHANNEL' ? 'Удалить из канала' : 'Удалить из группы'}</option>}
-                            {(canManage || canAdminManage) && acd.type === 'CHANNEL' && <option value="ban">Забанить в канале</option>}
-                            {isOwner && <option value="transfer">Передать права создателя</option>}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes slideDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
-        .zg-root{
-          background:
-            radial-gradient(1000px 550px at 15% 12%, rgba(255,255,255,.18), transparent 62%),
-            radial-gradient(1200px 700px at 85% 88%, rgba(0,0,0,.45), transparent 64%),
-            linear-gradient(155deg, #0f1319 0%, #151922 52%, #1d2129 100%);
-        }
-        .zg-root button,
-        .zg-root input,
-        .zg-root textarea,
-        .zg-root select{
-          transition: all .22s ease;
-        }
-        .zg-root button:hover{
-          filter: brightness(1.08);
-        }
-        .zg-root ::-webkit-scrollbar{width:8px;height:8px}
-        .zg-root ::-webkit-scrollbar-thumb{
-          background: rgba(255,255,255,.22);
-          border-radius: 999px;
-        }
-        .zg-composer:empty::before{
-          content: attr(data-placeholder);
-          color: rgba(199,207,219,.7);
-          pointer-events: none;
-        }
-        .zg-rich-text a{
-          color: #8db4ff;
-          text-decoration: underline;
-          text-underline-offset: 2px;
-        }
-        @media(max-width:700px){
-          .zg-chatlist{${showMobileChat ? 'display:none !important' : 'width:100% !important;max-width:100% !important'}}
-          .zg-chatarea{${showMobileChat ? 'display:flex !important;width:100% !important' : 'display:none !important'}}
-          .zg-back{display:flex !important}
-        }
-      `}</style>
+      <ChatAppGlobalStyles showMobileChat={showMobileChat} />
     </div>
   );
 }

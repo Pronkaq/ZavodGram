@@ -124,6 +124,7 @@ model Chat {
   type        ChatType
   name        String?          // null для приватных
   description String?
+  contentProtectionEnabled Boolean @default(false)
   channelSlug String?  @unique // Уникальная публичная ссылка для каналов
   avatar      String?
   createdBy   String?
@@ -158,6 +159,7 @@ model ChatMember {
   role      MemberRole @default(MEMBER)
   muted     Boolean    @default(false)
   commentsMuted Boolean @default(false)
+  contentProtectionAccepted Boolean @default(false)
   joinedAt  DateTime   @default(now())
   lastRead  DateTime   @default(now())  // Для подсчёта непрочитанных
 

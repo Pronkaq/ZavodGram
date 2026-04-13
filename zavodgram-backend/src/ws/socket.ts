@@ -166,9 +166,18 @@ export function setupWebSocket(httpServer: HttpServer) {
         if (data.forwardedFromId) {
           const orig = await prisma.message.findUnique({
             where: { id: data.forwardedFromId },
-            include: { from: { select: { name: true } } },
+            include: {
+              from: { select: { name: true } },
+              chat: { select: { type: true, contentProtectionEnabled: true } },
+            },
           });
           if (!orig || orig.deleted) return socket.emit('error', { message: 'Источник пересылки не найден' });
+          if (
+            orig.chat?.contentProtectionEnabled
+            && (orig.chat.type === 'PRIVATE' || orig.chat.type === 'SECRET')
+          ) {
+            return socket.emit('error', { message: 'Пересылка из защищённого личного чата запрещена' });
+          }
           await requireChatMembership(prisma, orig.chatId, userId);
           forwardedFromName = orig.from.name ?? undefined;
           text = text || orig.text || undefined;
@@ -265,6 +274,12 @@ export function setupWebSocket(httpServer: HttpServer) {
       try {
         if (!enforceSocketRate(userId, 'message:delete', 30, 60000)) return;
         const membership = await requireChatMembership(prisma, data.chatId, userId);
+        const chat = await prisma.chat.findUnique({
+          where: { id: data.chatId },
+          select: { type: true, contentProtectionEnabled: true },
+        });
+        if (!chat) return;
+        if (chat.contentProtectionEnabled && (chat.type === 'PRIVATE' || chat.type === 'SECRET')) return;
         const msg = await requireMessageInChat(prisma, data.messageId, data.chatId, true);
 
         if (msg.fromId !== userId && membership.role === 'MEMBER') return;
