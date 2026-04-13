@@ -33,6 +33,7 @@ model User {
   reactions      MessageReaction[]
   channelBans    ChatBan[]         @relation("ChatBanUser")
   bansIssued     ChatBan[]         @relation("ChatBanBy")
+  recovery      UserRecovery?
 
   @@index([tag])
   @@index([phone])
@@ -40,6 +41,15 @@ model User {
 }
 
 // ── Сессии (multi-device) ──
+model UserRecovery {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recoveryCodeHash String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 model Session {
   id           String   @id @default(uuid())
   userId       String

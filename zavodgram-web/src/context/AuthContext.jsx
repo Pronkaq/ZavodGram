@@ -32,15 +32,25 @@ export function AuthProvider({ children }) {
     }
   }, [logout]);
 
-  const login = async (phone, password) => {
-    const data = await authApi.login(phone, password);
+  const login = async (nickname, password, captchaId, captchaAnswer) => {
+    const data = await authApi.login(nickname, password, captchaId, captchaAnswer);
     setTokens(data.accessToken, data.refreshToken);
     setUser(data.user);
     connectSocket();
     return data.user;
   };
 
-  const registerStart = (formData) => authApi.registerStart(formData);
+  const registerStart = async (formData) => {
+    const data = await authApi.register(formData);
+    setTokens(data.accessToken, data.refreshToken);
+    setUser(data.user);
+    connectSocket();
+    return data;
+  };
+
+  const fetchCaptcha = () => authApi.captcha();
+
+  const recoveryResetPassword = (data) => authApi.recoveryResetPassword(data);
 
   const registerStatus = (registrationId) => authApi.registerStatus(registrationId);
 
@@ -57,7 +67,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, registerStart, registerStatus, registerComplete, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, registerStart, registerStatus, registerComplete, fetchCaptcha, recoveryResetPassword, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

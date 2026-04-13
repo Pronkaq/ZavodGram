@@ -10,44 +10,36 @@ import { config } from '../../config';
 import { AuthError, ConflictError, ValidationError } from '../../core/errors';
 import { authMiddleware, AuthPayload } from '../../middleware/auth';
 import { rateLimiter } from '../../middleware/errorHandler';
+import { redis } from '../../core/redis';
 
 const router = Router();
 
-// ── Schemas ──
 const registerSchema = z.object({
-  phone: z.string().regex(/^\+7\d{10}$/, 'Формат: +7XXXXXXXXXX'),
-  tag: z.string().regex(/^@[a-zA-Z0-9_]{3,30}$/, 'Тег: @abc_123, от 3 до 30 символов'),
+  nickname: z.string().regex(/^[a-zA-Z0-9_]{3,30}$/, 'Ник: от 3 до 30 символов, латиница/цифры/_'),
   name: z.string().min(1).max(100),
-  password: z.string().min(6, 'Минимум 6 символов'),
-  bio: z.string().max(300).optional(),
-});
-
-const registerCompleteSchema = z.object({
-  registrationId: z.string().uuid('Некорректный registrationId'),
-});
-
-const registerStatusSchema = z.object({
-  registrationId: z.string().uuid('Некорректный registrationId'),
-});
-
-const telegramConfirmSchema = z.object({
-  token: z.string().min(32, 'Некорректный токен подтверждения'),
-  telegramUser: z.object({
-    id: z.union([z.string(), z.number()]),
-    username: z.string().optional(),
-    firstName: z.string().optional(),
-  }),
+  password: z.string().min(8, 'Минимум 8 символов'),
+  captchaId: z.string().min(10),
+  captchaAnswer: z.string().min(1),
 });
 
 const loginSchema = z.object({
-  phone: z.string(),
-  password: z.string(),
+  nickname: z.string().regex(/^[a-zA-Z0-9_]{3,30}$/),
+  password: z.string().min(1),
+  captchaId: z.string().min(10),
+  captchaAnswer: z.string().min(1),
 });
 
 const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const logoutSchema = z.object({ refreshToken: z.string().min(20).optional() });
 
-// ── Helpers ──
+const recoveryResetSchema = z.object({
+  nickname: z.string().regex(/^[a-zA-Z0-9_]{3,30}$/),
+  recoveryCode: z.string().min(8),
+  newPassword: z.string().min(8, 'Минимум 8 символов'),
+  captchaId: z.string().min(10),
+  captchaAnswer: z.string().min(1),
+});
+
 function getJwtExpiresIn(value: string | number): number | StringValue {
   if (typeof value === 'number') return value;
   return value as StringValue;
@@ -63,282 +55,156 @@ function generateTokens(payload: AuthPayload) {
   return { accessToken, refreshToken };
 }
 
-function hashVerificationToken(token: string) {
-  return createHash('sha256').update(token).digest('hex');
+function hashValue(value: string) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
-function normalizeTelegramBotUsername(rawValue: string) {
-  const value = rawValue.trim();
-  if (!value) return '';
-
-  let normalized = value
-    .replace(/^https?:\/\/t\.me\//i, '')
-    .replace(/^t\.me\//i, '')
-    .replace(/^@+/, '')
-    .trim();
-
-  normalized = normalized.split(/[/?#]/, 1)[0] || '';
-  return normalized;
+function toTag(nickname: string) {
+  return `@${nickname}`;
 }
 
-async function assertRegistrationAvailability(phone: string, tag: string) {
-  const existingPhone = await prisma.user.findUnique({ where: { phone } });
-  if (existingPhone) throw new ConflictError('Этот номер уже зарегистрирован');
-
+async function assertNicknameAvailability(nickname: string) {
+  const tag = toTag(nickname);
   const existingTag = await prisma.user.findUnique({ where: { tag } });
-  if (existingTag) throw new ConflictError('Этот тег уже занят');
+  if (existingTag) throw new ConflictError('Этот ник уже занят');
 
   const tagReserved = await prisma.tagHistory.findUnique({ where: { tag } });
-  if (tagReserved) throw new ConflictError('Этот тег забронирован другим пользователем');
+  if (tagReserved) throw new ConflictError('Этот ник зарезервирован другим пользователем');
 }
 
-async function assertTelegramAvailability(telegramId: string, attemptId?: string) {
-  const existingTelegramUser = await prisma.user.findUnique({ where: { telegramId } });
-  if (existingTelegramUser) {
-    throw new ConflictError('Этот Telegram уже привязан к другому аккаунту');
+async function generateAnonymousPhone(): Promise<string> {
+  for (let i = 0; i < 5; i += 1) {
+    const suffix = randomBytes(5).toString('hex').slice(0, 10).replace(/[a-f]/g, (c) => (c.charCodeAt(0) - 87).toString());
+    const candidate = `+79${suffix.slice(0, 9)}`;
+    const existing = await prisma.user.findUnique({ where: { phone: candidate }, select: { id: true } });
+    if (!existing) return candidate;
+  }
+  throw new ValidationError('Не удалось создать анонимный идентификатор, попробуйте еще раз');
+}
+
+function generateRecoveryCode() {
+  const raw = randomBytes(10).toString('base64url').replace(/[-_]/g, '').toUpperCase();
+  return raw.slice(0, 16);
+}
+
+async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
+  const key = `captcha:${captchaId}`;
+  const expectedHash = await redis.get(key);
+  if (!expectedHash) throw new ValidationError('Капча устарела, обновите и попробуйте снова');
+
+  const normalizedAnswer = captchaAnswer.trim();
+  if (hashValue(normalizedAnswer) !== expectedHash) {
+    throw new ValidationError('Неверный ответ капчи');
   }
 
-  const existingAttempt = await prisma.registrationAttempt.findFirst({
-    where: {
-      telegramId,
-      status: { in: ['CONFIRMED', 'COMPLETED'] },
-      ...(attemptId ? { id: { not: attemptId } } : {}),
+  await redis.del(key);
+}
+
+router.get('/captcha', rateLimiter(30, 60), async (_req: Request, res: Response) => {
+  const a = Math.floor(Math.random() * 8) + 1;
+  const b = Math.floor(Math.random() * 8) + 1;
+  const answer = String(a + b);
+  const captchaId = randomBytes(18).toString('base64url');
+  await redis.set(`captcha:${captchaId}`, hashValue(answer), 'EX', 300);
+
+  res.json({
+    ok: true,
+    data: {
+      captchaId,
+      question: `${a} + ${b} = ?`,
+      expiresInSec: 300,
     },
-    select: { id: true },
   });
-
-  if (existingAttempt) {
-    throw new ConflictError('Этот Telegram уже использован для регистрации');
-  }
-}
-
-async function completeRegistration(
-  registrationId: string,
-  req: Request,
-) {
-  const attempt = await prisma.registrationAttempt.findUnique({ where: { id: registrationId } });
-  if (!attempt) throw new AuthError('Заявка на регистрацию не найдена');
-
-  if (attempt.status === 'COMPLETED') {
-    throw new ConflictError('Регистрация уже завершена');
-  }
-
-  if (attempt.expiresAt < new Date()) {
-    await prisma.registrationAttempt.update({
-      where: { id: attempt.id },
-      data: { status: 'EXPIRED' },
-    });
-    throw new AuthError('Время подтверждения истекло');
-  }
-
-  if (attempt.status !== 'CONFIRMED') {
-    throw new AuthError('Подтвердите регистрацию в Telegram');
-  }
-
-  if (!attempt.telegramId) {
-    throw new AuthError('Telegram-подтверждение не найдено');
-  }
-
-  await assertTelegramAvailability(attempt.telegramId, attempt.id);
-  await assertRegistrationAvailability(attempt.phone, attempt.tag);
-
-  const result = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: {
-        phone: attempt.phone,
-        tag: attempt.tag,
-        telegramId: attempt.telegramId,
-        telegramUsername: attempt.telegramUsername,
-        name: attempt.name,
-        bio: attempt.bio || '',
-        password: attempt.passwordHash,
-      },
-    });
-
-    await tx.tagHistory.create({
-      data: { tag: user.tag, userId: user.id },
-    });
-
-    const tokens = generateTokens({ userId: user.id, tag: user.tag });
-
-    await tx.session.create({
-      data: {
-        userId: user.id,
-        refreshToken: tokens.refreshToken,
-        deviceInfo: req.headers['user-agent'] || null,
-        ipAddress: req.ip || null,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    await tx.registrationAttempt.update({
-      where: { id: attempt.id },
-      data: { status: 'COMPLETED' },
-    });
-
-    return { user, tokens };
-  });
-
-  return {
-    user: {
-      id: result.user.id,
-      tag: result.user.tag,
-      name: result.user.name,
-      phone: result.user.phone,
-      bio: result.user.bio,
-    },
-    ...result.tokens,
-  };
-}
-
-// ── POST /auth/register ──
-router.post('/register', rateLimiter(5, 60), async (_req: Request, _res: Response, next: NextFunction) => {
-  next(new ValidationError('Используйте /auth/register/start и завершите подтверждение через Telegram'));
 });
 
-// ── POST /auth/register/start ──
-router.post('/register/start', rateLimiter(5, 60), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', rateLimiter(5, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = registerSchema.parse(req.body);
-    await assertRegistrationAvailability(data.phone, data.tag);
+    await verifyCaptcha(data.captchaId, data.captchaAnswer);
+    await assertNicknameAvailability(data.nickname);
 
-    // Telegram deep-link payload (start=...) is limited to 64 chars.
-    // Use a compact URL-safe token so `verify_<token>` always fits.
-    const rawVerificationToken = randomBytes(24).toString('base64url');
-    const verificationTokenHash = hashVerificationToken(rawVerificationToken);
     const passwordHash = await bcrypt.hash(data.password, 12);
-    const ttlMs = config.telegram.verificationTtlMinutes * 60 * 1000;
-    const expiresAt = new Date(Date.now() + ttlMs);
+    const recoveryCode = generateRecoveryCode();
+    const recoveryCodeHash = hashValue(recoveryCode);
+    const anonPhone = await generateAnonymousPhone();
+    const tag = toTag(data.nickname);
 
-    const attempt = await prisma.registrationAttempt.create({
-      data: {
-        phone: data.phone,
-        tag: data.tag,
-        name: data.name,
-        bio: data.bio || '',
-        passwordHash,
-        verificationTokenHash,
-        expiresAt,
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          phone: anonPhone,
+          tag,
+          name: data.name,
+          bio: '',
+          password: passwordHash,
+        },
+      });
+
+      await tx.tagHistory.create({
+        data: { tag: user.tag, userId: user.id },
+      });
+
+      await tx.userRecovery.upsert({
+        where: { userId: user.id },
+        update: { recoveryCodeHash },
+        create: { userId: user.id, recoveryCodeHash },
+      });
+
+      const tokens = generateTokens({ userId: user.id, tag: user.tag });
+
+      await tx.session.create({
+        data: {
+          userId: user.id,
+          refreshToken: tokens.refreshToken,
+          deviceInfo: req.headers['user-agent'] || null,
+          ipAddress: req.ip || null,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      return { user, tokens };
     });
-
-    const botUsername = normalizeTelegramBotUsername(config.telegram.botUsername);
-    const telegramDeepLink = botUsername
-      ? `https://t.me/${botUsername}?start=verify_${rawVerificationToken}`
-      : '';
 
     res.status(201).json({
       ok: true,
       data: {
-        registrationId: attempt.id,
-        expiresAt,
-        telegramDeepLink,
+        user: { id: result.user.id, tag: result.user.tag, name: result.user.name, bio: result.user.bio, avatar: result.user.avatar },
+        ...result.tokens,
+        recoveryCode,
       },
     });
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      next(new ValidationError(err.errors[0].message));
-    } else {
-      next(err);
-    }
-  }
-});
-
-// ── POST /auth/register/status ──
-router.post('/register/status', rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { registrationId } = registerStatusSchema.parse(req.body);
-    const attempt = await prisma.registrationAttempt.findUnique({
-      where: { id: registrationId },
-      select: { status: true, expiresAt: true, confirmedAt: true },
-    });
-
-    if (!attempt) throw new AuthError('Заявка на регистрацию не найдена');
-
-    res.json({ ok: true, data: attempt });
-  } catch (err) {
     if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
     else next(err);
   }
 });
 
-// ── POST /auth/register/complete ──
-router.post('/register/complete', rateLimiter(10, 60), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { registrationId } = registerCompleteSchema.parse(req.body);
-    const data = await completeRegistration(registrationId, req);
-    res.status(201).json({ ok: true, data });
-  } catch (err) {
-    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
-    else next(err);
-  }
+router.post('/register/start', rateLimiter(5, 60), async (_req: Request, _res: Response, next: NextFunction) => {
+  next(new ValidationError('Используйте /auth/register'));
 });
 
-// ── POST /auth/internal/telegram/confirm ──
-router.post('/internal/telegram/confirm', rateLimiter(60, 60), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (!config.telegram.internalToken) {
-      throw new AuthError('Telegram internal token не настроен');
-    }
-
-    const internalToken = req.header('x-telegram-internal-token');
-    if (internalToken !== config.telegram.internalToken) {
-      throw new AuthError('Недействительный токен бота');
-    }
-
-    const { token, telegramUser } = telegramConfirmSchema.parse(req.body);
-    const tokenHash = hashVerificationToken(token);
-
-    const attempt = await prisma.registrationAttempt.findUnique({ where: { verificationTokenHash: tokenHash } });
-    if (!attempt) throw new AuthError('Токен подтверждения не найден');
-
-    if (attempt.status === 'COMPLETED') {
-      res.json({ ok: true, data: { status: attempt.status } });
-      return;
-    }
-
-    if (attempt.status === 'CONFIRMED') {
-      res.json({ ok: true, data: { status: attempt.status } });
-      return;
-    }
-
-    if (attempt.expiresAt < new Date()) {
-      await prisma.registrationAttempt.update({
-        where: { id: attempt.id },
-        data: { status: 'EXPIRED' },
-      });
-      throw new AuthError('Время подтверждения истекло');
-    }
-
-    await assertTelegramAvailability(String(telegramUser.id), attempt.id);
-
-    await prisma.registrationAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: 'CONFIRMED',
-        confirmedAt: new Date(),
-        telegramId: String(telegramUser.id),
-        telegramUsername: telegramUser.username || null,
-      },
-    });
-
-    res.json({ ok: true, data: { status: 'CONFIRMED' } });
-  } catch (err) {
-    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
-    else next(err);
-  }
+router.post('/register/status', rateLimiter(30, 60), async (_req: Request, _res: Response, next: NextFunction) => {
+  next(new ValidationError('Telegram-регистрация отключена'));
 });
 
-// ── POST /auth/login ──
+router.post('/register/complete', rateLimiter(10, 60), async (_req: Request, _res: Response, next: NextFunction) => {
+  next(new ValidationError('Telegram-регистрация отключена'));
+});
+
+router.post('/internal/telegram/confirm', rateLimiter(60, 60), async (_req: Request, _res: Response, next: NextFunction) => {
+  next(new ValidationError('Telegram-регистрация отключена'));
+});
+
 router.post('/login', rateLimiter(10, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = loginSchema.parse(req.body);
+    await verifyCaptcha(data.captchaId, data.captchaAnswer);
 
-    const user = await prisma.user.findUnique({ where: { phone: data.phone } });
-    if (!user) throw new AuthError('Неверный номер или пароль');
+    const user = await prisma.user.findUnique({ where: { tag: toTag(data.nickname) } });
+    if (!user) throw new AuthError('Неверный ник или пароль');
 
     const valid = await bcrypt.compare(data.password, user.password);
-    if (!valid) throw new AuthError('Неверный номер или пароль');
+    if (!valid) throw new AuthError('Неверный ник или пароль');
 
     const tokens = generateTokens({ userId: user.id, tag: user.tag });
 
@@ -352,7 +218,6 @@ router.post('/login', rateLimiter(10, 60), async (req: Request, res: Response, n
       },
     });
 
-    // Обновляем онлайн-статус
     await prisma.user.update({ where: { id: user.id }, data: { online: true, lastSeen: new Date() } });
 
     res.json({
@@ -368,7 +233,30 @@ router.post('/login', rateLimiter(10, 60), async (req: Request, res: Response, n
   }
 });
 
-// ── POST /auth/refresh ──
+router.post('/recovery/reset-password', rateLimiter(5, 60), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = recoveryResetSchema.parse(req.body);
+    await verifyCaptcha(data.captchaId, data.captchaAnswer);
+
+    const user = await prisma.user.findUnique({ where: { tag: toTag(data.nickname) }, select: { id: true } });
+    if (!user) throw new AuthError('Аккаунт не найден');
+
+    const recovery = await prisma.userRecovery.findUnique({ where: { userId: user.id } });
+    if (!recovery || recovery.recoveryCodeHash !== hashValue(data.recoveryCode.trim().toUpperCase())) {
+      throw new AuthError('Неверный recovery code');
+    }
+
+    const passwordHash = await bcrypt.hash(data.newPassword, 12);
+    await prisma.user.update({ where: { id: user.id }, data: { password: passwordHash } });
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+
+    res.json({ ok: true, data: { reset: true } });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
+    else next(err);
+  }
+});
+
 router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
@@ -387,7 +275,6 @@ router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response,
 
     const tokens = generateTokens({ userId: user.id, tag: user.tag });
 
-    // Ротация refresh token
     await prisma.session.update({
       where: { id: session.id },
       data: { refreshToken: tokens.refreshToken, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
@@ -399,7 +286,6 @@ router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response,
   }
 });
 
-// ── POST /auth/logout ──
 router.post('/logout', authMiddleware, rateLimiter(30, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { refreshToken } = logoutSchema.parse(req.body);
