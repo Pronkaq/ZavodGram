@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Av } from './chatUiParts';
 import { Icons } from './Icons';
 
@@ -27,6 +28,45 @@ const SETTINGS_GROUPS = [
   },
 ];
 
+const SETTINGS_SUBPAGE_TITLES = {
+  profile: 'Профиль',
+  notifications: 'Уведомления',
+  privacy: 'Конфиденциальность',
+  data: 'Данные и память',
+  devices: 'Устройства',
+  language: 'Язык',
+  stickers: 'Стикеры и эмодзи',
+  folders: 'Папки чатов',
+};
+
+const DEFAULT_PREFERENCES = {
+  notifications: {
+    sound: true,
+    previews: true,
+    desktopAlerts: true,
+  },
+  privacy: {
+    readReceipts: true,
+    lastSeen: 'contacts',
+  },
+  data: {
+    mediaAutoload: true,
+    saveToGallery: false,
+    cachedMb: 486,
+  },
+  language: 'Русский',
+  stickers: {
+    bigEmoji: true,
+    suggestByEmoji: true,
+    loopAnimated: true,
+  },
+  folders: {
+    unreadOnly: false,
+    separateChannels: true,
+    muteBots: false,
+  },
+};
+
 export function ProfilePanel({
   open,
   profileData,
@@ -48,6 +88,154 @@ export function ProfilePanel({
   onLogout,
   onOpenAvatar,
 }) {
+  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('zg.settings.preferences');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        setPreferences((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('zg.settings.preferences', JSON.stringify(preferences));
+  }, [preferences]);
+
+  const activeSessions = useMemo(() => ([
+    { id: 'current', name: 'Текущее устройство', hint: navigator.userAgent || 'Web browser', current: true },
+    { id: 'mobile', name: 'iPhone 14 · Safari', hint: 'Москва · 10 минут назад', current: false },
+    { id: 'tablet', name: 'iPad Pro · Chrome', hint: 'Санкт-Петербург · 2 дня назад', current: false },
+  ]), []);
+
+  const toggleNestedPreference = (scope, key) => {
+    setPreferences((prev) => ({
+      ...prev,
+      [scope]: {
+        ...prev[scope],
+        [key]: !prev[scope][key],
+      },
+    }));
+  };
+
+  const renderSettingSwitch = (label, hint, checked, onToggle) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{ width: '100%', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: '10px 12px', color: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left' }}
+    >
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#EBEEF5' }}>{label}</div>
+        {hint && <div style={{ marginTop: 2, fontSize: 12, color: '#97A0B2' }}>{hint}</div>}
+      </div>
+      <div style={{ width: 36, height: 22, borderRadius: 999, background: checked ? 'linear-gradient(135deg, #DEE3EC, #B8BFCE)' : 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.16)', position: 'relative', transition: 'all .2s ease' }}>
+        <div style={{ width: 16, height: 16, borderRadius: '50%', background: checked ? '#1F2632' : '#DCE1EA', position: 'absolute', top: 2, left: checked ? 17 : 2, transition: 'left .2s ease' }} />
+      </div>
+    </button>
+  );
+
+  const renderSettingsSubpage = () => {
+    switch (settingsSubpage) {
+      case 'notifications':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {renderSettingSwitch('Звуковые уведомления', 'Воспроизводить звук при новых сообщениях', preferences.notifications.sound, () => toggleNestedPreference('notifications', 'sound'))}
+            {renderSettingSwitch('Предпросмотр сообщений', 'Показывать текст уведомления на экране', preferences.notifications.previews, () => toggleNestedPreference('notifications', 'previews'))}
+            {renderSettingSwitch('Desktop уведомления', 'Разрешить push-уведомления в браузере', preferences.notifications.desktopAlerts, () => toggleNestedPreference('notifications', 'desktopAlerts'))}
+          </div>
+        );
+      case 'privacy':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {renderSettingSwitch('Отправлять отметку о прочтении', 'Собеседники увидят, что вы прочитали сообщение', preferences.privacy.readReceipts, () => toggleNestedPreference('privacy', 'readReceipts'))}
+            <div style={{ padding: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Кто видит статус «в сети»</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                {['all', 'contacts', 'nobody'].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPreferences((prev) => ({ ...prev, privacy: { ...prev.privacy, lastSeen: value } }))}
+                    style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '7px 10px', background: preferences.privacy.lastSeen === value ? 'rgba(224,228,237,0.18)' : 'transparent', color: '#E8ECF5', fontSize: 12 }}
+                  >
+                    {value === 'all' ? 'Все' : value === 'contacts' ? 'Контакты' : 'Никто'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      case 'data':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {renderSettingSwitch('Автозагрузка медиа', 'Фото и видео загружаются автоматически', preferences.data.mediaAutoload, () => toggleNestedPreference('data', 'mediaAutoload'))}
+            {renderSettingSwitch('Сохранять в галерею', 'Сохранять входящие фото и видео на устройство', preferences.data.saveToGallery, () => toggleNestedPreference('data', 'saveToGallery'))}
+            <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 12, background: 'rgba(255,255,255,0.03)' }}>
+              <div style={{ fontSize: 12, color: '#9AA3B5' }}>Кэш приложения</div>
+              <div style={{ marginTop: 4, fontSize: 18, fontWeight: 700 }}>{preferences.data.cachedMb} MB</div>
+              <button
+                type="button"
+                onClick={() => setPreferences((prev) => ({ ...prev, data: { ...prev.data, cachedMb: 0 } }))}
+                style={{ marginTop: 8, border: '1px solid rgba(255,255,255,0.16)', borderRadius: 10, background: 'transparent', color: '#E7EBF4', padding: '6px 10px', fontSize: 12 }}
+              >
+                Очистить кэш
+              </button>
+            </div>
+          </div>
+        );
+      case 'devices':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {activeSessions.map((session) => (
+              <div key={session.id} style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 12, background: 'rgba(255,255,255,0.03)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{session.name}</div>
+                  {session.current && <span style={{ fontSize: 11, color: '#BFD5C4' }}>текущая</span>}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 12, color: '#9AA3B5' }}>{session.hint}</div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'language':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {['Русский', 'English'].map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => setPreferences((prev) => ({ ...prev, language: lang }))}
+                style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '10px 12px', textAlign: 'left', background: preferences.language === lang ? 'rgba(224,228,237,0.18)' : 'rgba(255,255,255,0.03)', color: '#ECF0F8', fontWeight: preferences.language === lang ? 700 : 500 }}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
+        );
+      case 'stickers':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {renderSettingSwitch('Увеличенные эмодзи', 'Показывать крупный размер для одиночных эмодзи', preferences.stickers.bigEmoji, () => toggleNestedPreference('stickers', 'bigEmoji'))}
+            {renderSettingSwitch('Подсказки по эмодзи', 'Предлагать стикеры на основе эмодзи', preferences.stickers.suggestByEmoji, () => toggleNestedPreference('stickers', 'suggestByEmoji'))}
+            {renderSettingSwitch('Анимированные эмодзи', 'Проигрывать анимацию в интерфейсе', preferences.stickers.loopAnimated, () => toggleNestedPreference('stickers', 'loopAnimated'))}
+          </div>
+        );
+      case 'folders':
+        return (
+          <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {renderSettingSwitch('Только непрочитанные', 'Показывать в папках чаты с новыми сообщениями', preferences.folders.unreadOnly, () => toggleNestedPreference('folders', 'unreadOnly'))}
+            {renderSettingSwitch('Отдельно каналы', 'Группировать каналы в отдельную папку', preferences.folders.separateChannels, () => toggleNestedPreference('folders', 'separateChannels'))}
+            {renderSettingSwitch('Скрывать ботов', 'Исключать служебные чаты из папок', preferences.folders.muteBots, () => toggleNestedPreference('folders', 'muteBots'))}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   if (!open || !profileData) return null;
 
   return (
@@ -67,9 +255,7 @@ export function ProfilePanel({
           {settingsMode && settingsSubpage ? <Icons.Back /> : <Icons.Close />}
         </button>
         <span style={{ fontSize: 15, fontWeight: 600 }}>
-          {settingsMode ? ({
-            profile: 'Профиль',
-          }[settingsSubpage] || 'Настройки') : 'Профиль'}
+          {settingsMode ? (SETTINGS_SUBPAGE_TITLES[settingsSubpage] || 'Настройки') : 'Профиль'}
         </span>
       </div>
       {settingsMode ? (
@@ -92,14 +278,7 @@ export function ProfilePanel({
               </div>
             </div>
           </div>
-        ) : settingsSubpage ? (
-          <div style={{ padding: '20px 16px 24px' }}>
-            <div style={{ padding: 18, background: 'linear-gradient(155deg, rgba(34,39,49,0.95), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>Скоро</h3>
-              <p style={{ fontSize: 13, color: '#99A1B2', lineHeight: 1.5 }}>Этот раздел уже подготовлен в интерфейсе. Функциональность появится в одном из следующих обновлений.</p>
-            </div>
-          </div>
-        ) : (
+        ) : settingsSubpage ? renderSettingsSubpage() : (
           <div style={{ padding: '14px 14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ background: 'linear-gradient(150deg, rgba(35,40,51,0.96), rgba(27,31,40,0.96))', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, padding: 14, boxShadow: '0 12px 30px rgba(0,0,0,0.28)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
