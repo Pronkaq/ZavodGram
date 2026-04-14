@@ -43,8 +43,6 @@ export function AuthProvider({ children }) {
   const registerStart = async (formData) => {
     const data = await authApi.register(formData);
     setTokens(data.accessToken, data.refreshToken);
-    setUser(data.user);
-    connectSocket();
     return data;
   };
 
