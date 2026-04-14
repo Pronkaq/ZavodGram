@@ -78,6 +78,12 @@ export default function AuthPage() {
     setLoading(false);
   };
 
+  const modeActions = [
+    { id: 'login', label: 'Вход' },
+    { id: 'register', label: 'Регистрация' },
+    { id: 'recovery', label: 'Восстановление' },
+  ].filter((action) => action.id !== mode);
+
   return (
     <div style={s.page} className="zg-auth">
       <div style={s.card}>
@@ -118,10 +124,20 @@ export default function AuthPage() {
           <button style={s.btn} type="submit" disabled={loading}>{loading ? '...' : mode === 'login' ? 'Войти' : mode === 'register' ? 'Создать аккаунт' : 'Сбросить пароль'}</button>
         </form>
 
-        <div style={{ display: 'grid', gap: 8 }}>
-          <button style={s.switch} onClick={() => { setMode('login'); setError(''); setSuccess(''); }}>Вход</button>
-          <button style={s.switch} onClick={() => { setMode('register'); setError(''); setSuccess(''); }}>Регистрация</button>
-          <button style={s.switch} onClick={() => { setMode('recovery'); setError(''); setSuccess(''); }}>Восстановление</button>
+        <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+          {modeActions.map((action) => (
+            <button
+              key={action.id}
+              style={s.switch}
+              onClick={() => {
+                setMode(action.id);
+                setError('');
+                setSuccess('');
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
       </div>
       <style>{`
@@ -135,20 +151,78 @@ export default function AuthPage() {
 }
 
 const s = {
-  page: { minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(circle at 20% 20%, #1b2a41, #0f1726 60%)', padding: 20 },
-  card: { width: '100%', maxWidth: 420, background: '#121c2d', border: '1px solid #25344f', borderRadius: 16, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.45)' },
-  logo: { width: 44, height: 44, borderRadius: 12, background: '#4f8cff', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, marginBottom: 12 },
-  title: { margin: 0, color: '#e4e8ee', fontSize: 26 },
-  subtitle: { margin: '6px 0 18px', color: '#9fb0cb' },
+  page: {
+    minHeight: '100vh',
+    display: 'grid',
+    placeItems: 'center',
+    background:
+      'radial-gradient(900px 480px at 14% 10%, rgba(255,255,255,.06), transparent 64%), radial-gradient(980px 620px at 86% 90%, rgba(255,255,255,.04), transparent 68%), linear-gradient(155deg, #060708 0%, #090b0d 52%, #0c0d10 100%)',
+    padding: 20,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    background: 'linear-gradient(180deg, rgba(15, 16, 18, 0.95) 0%, rgba(10, 11, 13, 0.95) 100%)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: '0 24px 60px rgba(0,0,0,.45)',
+    backdropFilter: 'blur(18px)',
+  },
+  logo: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    background: 'linear-gradient(135deg, #2a2f37, #1d2026)',
+    color: '#fff',
+    display: 'grid',
+    placeItems: 'center',
+    fontWeight: 800,
+    marginBottom: 12,
+  },
+  title: { margin: 0, color: '#f1f3f8', fontSize: 26 },
+  subtitle: { margin: '6px 0 18px', color: '#98a3bd' },
   form: { display: 'grid', gap: 10 },
-  input: { width: '100%', padding: '11px 12px', borderRadius: 10, border: '1px solid #2a3a57', outline: 'none', background: '#0f1726', color: '#e4e8ee', marginBottom: 2 },
-  btn: { marginTop: 4, padding: '12px 14px', borderRadius: 10, border: 'none', background: '#4f8cff', color: '#fff', fontWeight: 700, cursor: 'pointer' },
-  switch: { background: 'transparent', border: '1px solid #2a3a57', color: '#9fb0cb', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' },
+  input: {
+    width: '100%',
+    padding: '11px 12px',
+    borderRadius: 10,
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    outline: 'none',
+    background: 'rgba(255, 255, 255, 0.03)',
+    color: '#f1f3f8',
+    marginBottom: 2,
+  },
+  btn: {
+    marginTop: 4,
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: 'none',
+    background: 'linear-gradient(180deg, #2b2f36 0%, #202329 100%)',
+    color: '#f5f7fb',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  switch: {
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    color: '#cbd3e4',
+    borderRadius: 10,
+    padding: '10px 12px',
+    cursor: 'pointer',
+  },
   error: { background: 'rgba(255,86,86,.12)', border: '1px solid rgba(255,86,86,.35)', color: '#ffb3b3', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
   success: { background: 'rgba(78,216,130,.12)', border: '1px solid rgba(78,216,130,.35)', color: '#b7f5cf', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
-  recovery: { background: 'rgba(79,140,255,.12)', border: '1px solid rgba(79,140,255,.35)', color: '#cbdcff', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
-  captchaBox: { border: '1px solid #2a3a57', borderRadius: 10, padding: 10, marginTop: 4 },
+  recovery: { background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.14)', color: '#d9dfec', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
+  captchaBox: { border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 10, padding: 10, marginTop: 4 },
   captchaQuestion: { color: '#c5d2e6', marginBottom: 8 },
   captchaRow: { display: 'grid', gridTemplateColumns: '1fr 44px', gap: 8, alignItems: 'center' },
-  captchaBtn: { height: 44, borderRadius: 10, border: '1px solid #2a3a57', background: '#17243a', color: '#d5e1f4', cursor: 'pointer' },
+  captchaBtn: {
+    height: 44,
+    borderRadius: 10,
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    background: 'rgba(255, 255, 255, 0.03)',
+    color: '#d9dfec',
+    cursor: 'pointer',
+  },
 };
