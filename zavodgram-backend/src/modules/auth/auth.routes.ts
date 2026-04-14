@@ -247,8 +247,11 @@ router.post('/recovery/reset-password', rateLimiter(5, 60), async (req: Request,
     }
 
     const passwordHash = await bcrypt.hash(data.newPassword, 12);
-    await prisma.user.update({ where: { id: user.id }, data: { password: passwordHash } });
-    await prisma.session.deleteMany({ where: { userId: user.id } });
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: user.id }, data: { password: passwordHash } }),
+      prisma.session.deleteMany({ where: { userId: user.id } }),
+      prisma.userRecovery.deleteMany({ where: { userId: user.id } }),
+    ]);
 
     res.json({ ok: true, data: { reset: true } });
   } catch (err) {
