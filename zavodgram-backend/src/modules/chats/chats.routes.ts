@@ -131,6 +131,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
             where: { chatId: { in: privateChatIds }, userId: { not: userId } },
             select: {
               chatId: true,
+              contentProtectionAccepted: true,
               user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } },
             },
           })
@@ -154,11 +155,12 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
 
     const unreadMap = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount)]));
     const membershipMap = new Map(myMemberships.map((m) => [m.chatId, m]));
-    const peerMap = new Map(peers.map((p) => [p.chatId, p.user]));
+    const peerMap = new Map(peers.map((p) => [p.chatId, p]));
     const lastMessageMap = new Map(lastMessageRows.map((m) => [m.chatId, m]));
     const chatsWithUnread = chats.map((chat) => {
       const myMembership = membershipMap.get(chat.id);
-      const peer = (chat.type === 'PRIVATE' || chat.type === 'SECRET') ? (peerMap.get(chat.id) || null) : null;
+      const peerMembership = (chat.type === 'PRIVATE' || chat.type === 'SECRET') ? (peerMap.get(chat.id) || null) : null;
+      const peer = peerMembership?.user || null;
       const lastMessage = lastMessageMap.get(chat.id);
       return {
         id: chat.id,
@@ -172,6 +174,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         myRole: myMembership?.role || 'MEMBER',
         myCommentsMuted: myMembership?.commentsMuted || false,
         contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+        contentProtectionRequestedByPeer: peerMembership?.contentProtectionAccepted || false,
         contentProtectionEnabled: chat.contentProtectionEnabled || false,
         lastMessagePreview: lastMessage ? (lastMessage.text || (lastMessage.hasMedia ? '[медиа]' : '')) : '',
         lastMessageAt: lastMessage?.createdAt || null,
@@ -222,6 +225,9 @@ router.get('/:id', authMiddleware, rateLimiter(120, 60), async (req: Request, re
         ...chat,
         myRole: myMembership?.role || 'MEMBER',
         contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+        contentProtectionRequestedByPeer: (chat.type === 'PRIVATE' || chat.type === 'SECRET')
+          ? !!chat.members.find((member) => member.userId !== req.user!.userId)?.contentProtectionAccepted
+          : false,
       },
     });
   } catch (err) { next(err); }
@@ -292,10 +298,17 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       if (data.contentProtectionEnabled === undefined) throw new ValidationError('Укажите contentProtectionEnabled');
 
       const updatedPrivate = await prisma.$transaction(async (tx) => {
-        await tx.chatMember.update({
-          where: { chatId_userId: { chatId, userId: req.user!.userId } },
-          data: { contentProtectionAccepted: data.contentProtectionEnabled },
-        });
+        if (data.contentProtectionEnabled === false) {
+          await tx.chatMember.updateMany({
+            where: { chatId },
+            data: { contentProtectionAccepted: false },
+          });
+        } else {
+          await tx.chatMember.update({
+            where: { chatId_userId: { chatId, userId: req.user!.userId } },
+            data: { contentProtectionAccepted: true },
+          });
+        }
 
         const memberStates = await tx.chatMember.findMany({
           where: { chatId },

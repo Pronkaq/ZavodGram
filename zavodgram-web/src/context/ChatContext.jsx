@@ -378,6 +378,14 @@ export function ChatProvider({ children }) {
           ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
           ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
           ...(data.contentProtectionEnabled !== undefined ? { contentProtectionEnabled: data.contentProtectionEnabled } : {}),
+          ...(data.contentProtectionRequestPending !== undefined ? {
+            contentProtectionRequestedByMe: data.contentProtectionRequestedByUserId === user.id
+              ? !!data.contentProtectionRequestPending
+              : (data.contentProtectionEnabled ? false : !!c.contentProtectionRequestedByMe),
+            contentProtectionRequestedByPeer: data.contentProtectionRequestedByUserId !== user.id
+              ? !!data.contentProtectionRequestPending
+              : (data.contentProtectionEnabled ? false : !!c.contentProtectionRequestedByPeer),
+          } : {}),
         } : c));
       }),
 
