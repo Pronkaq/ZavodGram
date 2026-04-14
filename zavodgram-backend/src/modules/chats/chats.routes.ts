@@ -314,10 +314,13 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       });
 
       const myMembership = updatedPrivate.members.find((member) => member.userId === req.user!.userId);
+      const pendingPeerConfirmation = data.contentProtectionEnabled === true && !updatedPrivate.contentProtectionEnabled;
 
       redisPub.publish('chat:updated', JSON.stringify({
         chatId,
         contentProtectionEnabled: updatedPrivate.contentProtectionEnabled,
+        contentProtectionRequestPending: pendingPeerConfirmation,
+        contentProtectionRequestedByUserId: req.user!.userId,
       }));
 
       await cacheInvalidate(`chat:${chatId}`);
