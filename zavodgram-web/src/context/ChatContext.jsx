@@ -355,6 +355,22 @@ export function ChatProvider({ children }) {
 
       // Chat info updated (name, avatar, description)
       onSocket('chat:updated', (data) => {
+        if (
+          data.contentProtectionRequestPending
+          && data.contentProtectionRequestedByUserId
+          && data.contentProtectionRequestedByUserId !== user.id
+        ) {
+          const targetChat = chats.find((chat) => chat.id === data.chatId);
+          if (targetChat) {
+            setNotifications((prev) => ([{
+              id: Date.now(),
+              chatId: data.chatId,
+              chatName: targetChat.name || targetChat.peer?.name || 'Личный чат',
+              text: 'Собеседник запросил включение щита контента. Подтвердите в чате.',
+              time: new Date(),
+            }, ...prev].slice(0, 50)));
+          }
+        }
         setChats((prev) => prev.map((c) => c.id === data.chatId ? {
           ...c,
           ...(data.name !== undefined ? { name: data.name } : {}),
@@ -362,6 +378,14 @@ export function ChatProvider({ children }) {
           ...(data.avatar !== undefined ? { avatar: data.avatar } : {}),
           ...(data.channelSlug !== undefined ? { channelSlug: data.channelSlug } : {}),
           ...(data.contentProtectionEnabled !== undefined ? { contentProtectionEnabled: data.contentProtectionEnabled } : {}),
+          ...(data.contentProtectionRequestPending !== undefined ? {
+            contentProtectionRequestedByMe: data.contentProtectionRequestedByUserId === user.id
+              ? !!data.contentProtectionRequestPending
+              : (data.contentProtectionEnabled ? false : !!c.contentProtectionRequestedByMe),
+            contentProtectionRequestedByPeer: data.contentProtectionRequestedByUserId !== user.id
+              ? !!data.contentProtectionRequestPending
+              : (data.contentProtectionEnabled ? false : !!c.contentProtectionRequestedByPeer),
+          } : {}),
         } : c));
       }),
 
@@ -391,7 +415,7 @@ export function ChatProvider({ children }) {
     ];
 
     return () => cleanups.forEach((c) => c());
-  }, [user, loadMessages, scheduleLoadChats]);
+  }, [user, chats, loadMessages, scheduleLoadChats]);
 
   // ── Actions ──
   const sendMessage = useCallback((chatId, text, replyToId, forwardedFromId, options = {}) => {
