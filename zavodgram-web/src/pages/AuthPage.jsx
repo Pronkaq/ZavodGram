@@ -78,6 +78,12 @@ export default function AuthPage() {
     setLoading(false);
   };
 
+  const modeActions = [
+    { id: 'login', label: 'Вход' },
+    { id: 'register', label: 'Регистрация' },
+    { id: 'recovery', label: 'Восстановление' },
+  ].filter((action) => action.id !== mode);
+
   return (
     <div style={s.page} className="zg-auth">
       <div style={s.card}>
@@ -119,9 +125,19 @@ export default function AuthPage() {
         </form>
 
         <div style={{ display: 'grid', gap: 8 }}>
-          <button style={s.switch} onClick={() => { setMode('login'); setError(''); setSuccess(''); }}>Вход</button>
-          <button style={s.switch} onClick={() => { setMode('register'); setError(''); setSuccess(''); }}>Регистрация</button>
-          <button style={s.switch} onClick={() => { setMode('recovery'); setError(''); setSuccess(''); }}>Восстановление</button>
+          {modeActions.map((action) => (
+            <button
+              key={action.id}
+              style={s.switch}
+              onClick={() => {
+                setMode(action.id);
+                setError('');
+                setSuccess('');
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
       </div>
       <style>{`
@@ -135,20 +151,78 @@ export default function AuthPage() {
 }
 
 const s = {
-  page: { minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'radial-gradient(circle at 20% 20%, #1b2a41, #0f1726 60%)', padding: 20 },
-  card: { width: '100%', maxWidth: 420, background: '#121c2d', border: '1px solid #25344f', borderRadius: 16, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,.45)' },
-  logo: { width: 44, height: 44, borderRadius: 12, background: '#4f8cff', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, marginBottom: 12 },
-  title: { margin: 0, color: '#e4e8ee', fontSize: 26 },
-  subtitle: { margin: '6px 0 18px', color: '#9fb0cb' },
+  page: {
+    minHeight: '100vh',
+    display: 'grid',
+    placeItems: 'center',
+    background:
+      'radial-gradient(1000px 550px at 15% 12%, rgba(255,255,255,.18), transparent 62%), radial-gradient(1200px 700px at 85% 88%, rgba(0,0,0,.45), transparent 64%), linear-gradient(155deg, #0f1319 0%, #151922 52%, #1d2129 100%)',
+    padding: 20,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    background: 'linear-gradient(180deg, rgba(19, 24, 36, 0.95) 0%, rgba(13, 18, 30, 0.95) 100%)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: '0 24px 60px rgba(0,0,0,.45)',
+    backdropFilter: 'blur(18px)',
+  },
+  logo: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    background: 'linear-gradient(135deg, #4a9ee5, #7c6bde)',
+    color: '#fff',
+    display: 'grid',
+    placeItems: 'center',
+    fontWeight: 800,
+    marginBottom: 12,
+  },
+  title: { margin: 0, color: '#ecf1ff', fontSize: 26 },
+  subtitle: { margin: '6px 0 18px', color: '#98a3bd' },
   form: { display: 'grid', gap: 10 },
-  input: { width: '100%', padding: '11px 12px', borderRadius: 10, border: '1px solid #2a3a57', outline: 'none', background: '#0f1726', color: '#e4e8ee', marginBottom: 2 },
-  btn: { marginTop: 4, padding: '12px 14px', borderRadius: 10, border: 'none', background: '#4f8cff', color: '#fff', fontWeight: 700, cursor: 'pointer' },
-  switch: { background: 'transparent', border: '1px solid #2a3a57', color: '#9fb0cb', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' },
+  input: {
+    width: '100%',
+    padding: '11px 12px',
+    borderRadius: 10,
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    outline: 'none',
+    background: 'rgba(255, 255, 255, 0.04)',
+    color: '#ecf1ff',
+    marginBottom: 2,
+  },
+  btn: {
+    marginTop: 4,
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: 'none',
+    background: 'linear-gradient(135deg, #4a9ee5, #7c6bde)',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  switch: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    color: '#ecf1ff',
+    borderRadius: 10,
+    padding: '10px 12px',
+    cursor: 'pointer',
+  },
   error: { background: 'rgba(255,86,86,.12)', border: '1px solid rgba(255,86,86,.35)', color: '#ffb3b3', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
   success: { background: 'rgba(78,216,130,.12)', border: '1px solid rgba(78,216,130,.35)', color: '#b7f5cf', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
-  recovery: { background: 'rgba(79,140,255,.12)', border: '1px solid rgba(79,140,255,.35)', color: '#cbdcff', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
-  captchaBox: { border: '1px solid #2a3a57', borderRadius: 10, padding: 10, marginTop: 4 },
+  recovery: { background: 'rgba(74,158,229,.12)', border: '1px solid rgba(74,158,229,.35)', color: '#cbdcff', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
+  captchaBox: { border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 10, padding: 10, marginTop: 4 },
   captchaQuestion: { color: '#c5d2e6', marginBottom: 8 },
   captchaRow: { display: 'grid', gridTemplateColumns: '1fr 44px', gap: 8, alignItems: 'center' },
-  captchaBtn: { height: 44, borderRadius: 10, border: '1px solid #2a3a57', background: '#17243a', color: '#d5e1f4', cursor: 'pointer' },
+  captchaBtn: {
+    height: 44,
+    borderRadius: 10,
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    background: 'rgba(255, 255, 255, 0.05)',
+    color: '#d5e1f4',
+    cursor: 'pointer',
+  },
 };
