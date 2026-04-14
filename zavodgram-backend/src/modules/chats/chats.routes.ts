@@ -11,6 +11,10 @@ import { redisPub } from '../../core/redis';
 
 const router = Router();
 const channelSlugSchema = z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Некорректная ссылка канала');
+const deriveProtectionRequestFlags = (chatEnabled: boolean, myAccepted: boolean, peerAccepted: boolean) => ({
+  contentProtectionRequestedByMe: chatEnabled ? !myAccepted : myAccepted,
+  contentProtectionRequestedByPeer: chatEnabled ? !peerAccepted : peerAccepted,
+});
 
 // ── POST /chats — Create chat ──
 const createChatSchema = z.object({
@@ -131,6 +135,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
             where: { chatId: { in: privateChatIds }, userId: { not: userId } },
             select: {
               chatId: true,
+              contentProtectionAccepted: true,
               user: { select: { id: true, name: true, tag: true, avatar: true, lastSeen: true } },
             },
           })
@@ -154,11 +159,19 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
 
     const unreadMap = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount)]));
     const membershipMap = new Map(myMemberships.map((m) => [m.chatId, m]));
-    const peerMap = new Map(peers.map((p) => [p.chatId, p.user]));
+    const peerMap = new Map(peers.map((p) => [p.chatId, p]));
     const lastMessageMap = new Map(lastMessageRows.map((m) => [m.chatId, m]));
     const chatsWithUnread = chats.map((chat) => {
       const myMembership = membershipMap.get(chat.id);
-      const peer = (chat.type === 'PRIVATE' || chat.type === 'SECRET') ? (peerMap.get(chat.id) || null) : null;
+      const peerMembership = (chat.type === 'PRIVATE' || chat.type === 'SECRET') ? (peerMap.get(chat.id) || null) : null;
+      const peer = peerMembership?.user || null;
+      const protectionFlags = (chat.type === 'PRIVATE' || chat.type === 'SECRET')
+        ? deriveProtectionRequestFlags(
+          !!chat.contentProtectionEnabled,
+          !!myMembership?.contentProtectionAccepted,
+          !!peerMembership?.contentProtectionAccepted,
+        )
+        : { contentProtectionRequestedByMe: false, contentProtectionRequestedByPeer: false };
       const lastMessage = lastMessageMap.get(chat.id);
       return {
         id: chat.id,
@@ -171,7 +184,8 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         muted: myMembership?.muted || false,
         myRole: myMembership?.role || 'MEMBER',
         myCommentsMuted: myMembership?.commentsMuted || false,
-        contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+        contentProtectionRequestedByMe: protectionFlags.contentProtectionRequestedByMe,
+        contentProtectionRequestedByPeer: protectionFlags.contentProtectionRequestedByPeer,
         contentProtectionEnabled: chat.contentProtectionEnabled || false,
         lastMessagePreview: lastMessage ? (lastMessage.text || (lastMessage.hasMedia ? '[медиа]' : '')) : '',
         lastMessageAt: lastMessage?.createdAt || null,
@@ -216,12 +230,21 @@ router.get('/:id', authMiddleware, rateLimiter(120, 60), async (req: Request, re
     if (!isMember && chat.type !== 'CHANNEL') throw new ForbiddenError();
 
     const myMembership = chat.members.find((m) => m.userId === req.user!.userId);
+    const peerMembership = chat.members.find((m) => m.userId !== req.user!.userId);
+    const protectionFlags = (chat.type === 'PRIVATE' || chat.type === 'SECRET')
+      ? deriveProtectionRequestFlags(
+        !!chat.contentProtectionEnabled,
+        !!myMembership?.contentProtectionAccepted,
+        !!peerMembership?.contentProtectionAccepted,
+      )
+      : { contentProtectionRequestedByMe: false, contentProtectionRequestedByPeer: false };
     res.json({
       ok: true,
       data: {
         ...chat,
         myRole: myMembership?.role || 'MEMBER',
-        contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+        contentProtectionRequestedByMe: protectionFlags.contentProtectionRequestedByMe,
+        contentProtectionRequestedByPeer: protectionFlags.contentProtectionRequestedByPeer,
       },
     });
   } catch (err) { next(err); }
@@ -292,6 +315,12 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       if (data.contentProtectionEnabled === undefined) throw new ValidationError('Укажите contentProtectionEnabled');
 
       const updatedPrivate = await prisma.$transaction(async (tx) => {
+        const currentChat = await tx.chat.findUnique({
+          where: { id: chatId },
+          select: { contentProtectionEnabled: true },
+        });
+        if (!currentChat) throw new NotFoundError('Чат');
+
         await tx.chatMember.update({
           where: { chatId_userId: { chatId, userId: req.user!.userId } },
           data: { contentProtectionAccepted: data.contentProtectionEnabled },
@@ -301,7 +330,13 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
           where: { chatId },
           select: { contentProtectionAccepted: true },
         });
-        const protectionActive = memberStates.length >= 2 && memberStates.every((member) => member.contentProtectionAccepted);
+        const allAccepted = memberStates.length >= 2 && memberStates.every((member) => member.contentProtectionAccepted);
+        const allDeclined = memberStates.length >= 2 && memberStates.every((member) => !member.contentProtectionAccepted);
+        const protectionActive = allAccepted
+          ? true
+          : allDeclined
+            ? false
+            : !!currentChat.contentProtectionEnabled;
 
         return tx.chat.update({
           where: { id: chatId },
@@ -314,10 +349,21 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
       });
 
       const myMembership = updatedPrivate.members.find((member) => member.userId === req.user!.userId);
+      const pendingPeerConfirmation = updatedPrivate.members.length >= 2
+        && updatedPrivate.members.some((member) => member.contentProtectionAccepted)
+        && updatedPrivate.members.some((member) => !member.contentProtectionAccepted);
+      const peerMembership = updatedPrivate.members.find((member) => member.userId !== req.user!.userId);
+      const protectionFlags = deriveProtectionRequestFlags(
+        !!updatedPrivate.contentProtectionEnabled,
+        !!myMembership?.contentProtectionAccepted,
+        !!peerMembership?.contentProtectionAccepted,
+      );
 
       redisPub.publish('chat:updated', JSON.stringify({
         chatId,
         contentProtectionEnabled: updatedPrivate.contentProtectionEnabled,
+        contentProtectionRequestPending: pendingPeerConfirmation,
+        contentProtectionRequestedByUserId: req.user!.userId,
       }));
 
       await cacheInvalidate(`chat:${chatId}`);
@@ -325,7 +371,8 @@ router.patch('/:id', authMiddleware, rateLimiter(20, 60), async (req: Request, r
         ok: true,
         data: {
           ...updatedPrivate,
-          contentProtectionRequestedByMe: myMembership?.contentProtectionAccepted || false,
+          contentProtectionRequestedByMe: protectionFlags.contentProtectionRequestedByMe,
+          contentProtectionRequestedByPeer: protectionFlags.contentProtectionRequestedByPeer,
         },
       });
       return;

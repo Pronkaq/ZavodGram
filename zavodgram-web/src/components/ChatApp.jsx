@@ -340,8 +340,12 @@ export default function ChatApp() {
 
   const {
     protectedDirectChat,
+    incomingProtectionRequest,
+    incomingRequestType,
     shieldActivationNotice,
     toggleDirectContentProtection,
+    acceptDirectContentProtectionRequest,
+    declineDirectContentProtectionRequest,
   } = useDirectContentProtection({
     activeChat,
     acd,
@@ -699,7 +703,15 @@ export default function ChatApp() {
                       } : {}),
                     }}
                     onClick={toggleDirectContentProtection}
-                    title={acd?.contentProtectionRequestedByMe ? 'Отменить запрос защиты контента' : 'Отправить запрос на защиту контента'}
+                    title={acd?.contentProtectionEnabled
+                      ? (acd?.contentProtectionRequestedByMe
+                        ? 'Отменить запрос на отключение защиты контента'
+                        : 'Отправить запрос на отключение защиты контента')
+                      : incomingProtectionRequest
+                        ? 'Ожидается ваше решение по запросу'
+                        : acd?.contentProtectionRequestedByMe
+                          ? 'Отменить запрос защиты контента'
+                          : 'Отправить запрос на защиту контента'}
                   >
                     <Icons.Shield />
                   </button>
@@ -735,6 +747,43 @@ export default function ChatApp() {
               onNewTopicTitleChange={(value) => { setNewTopicTitle(value); setTopicError(''); }}
               onCreateTopic={createTopic}
             />
+            {isDirectChat && incomingProtectionRequest && (
+              <div style={{ padding: '8px 14px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(153, 197, 255, 0.45)',
+                  background: 'rgba(42, 64, 98, 0.35)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#EAF2FF' }}>
+                    <Icons.Shield />
+                    {incomingRequestType === 'ENABLE'
+                      ? 'Собеседник включил сейф-режим. Принять?'
+                      : 'Собеседник просит отключить сейф-режим. Подтвердить?'}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button style={{ ...s.ib, height: 32, minWidth: 90 }} onClick={declineDirectContentProtectionRequest}>Отклонить</button>
+                    <button
+                      style={{
+                        ...s.ib,
+                        height: 32,
+                        minWidth: 90,
+                        color: '#DFFFEA',
+                        border: '1px solid rgba(88, 255, 154, 0.9)',
+                        background: 'rgba(24, 66, 43, 0.42)',
+                      }}
+                      onClick={acceptDirectContentProtectionRequest}
+                    >
+                      Принять
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {topicError && <div style={{ padding: '0 14px 8px', color: '#D5D8DE', fontSize: 12 }}>{topicError}</div>}
 
             {/* Messages */}

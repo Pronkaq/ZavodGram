@@ -7,24 +7,65 @@ export function useDirectContentProtection({
   loadChats,
 }) {
   const [shieldActivationNotice, setShieldActivationNotice] = useState('');
-  const protectedDirectChat = (acd?.type === 'PRIVATE' || acd?.type === 'SECRET') && !!acd?.contentProtectionEnabled;
+  const isDirectChat = acd?.type === 'PRIVATE' || acd?.type === 'SECRET';
+  const protectedDirectChat = isDirectChat && !!acd?.contentProtectionEnabled;
+  const incomingProtectionRequest = isDirectChat
+    && !!acd?.contentProtectionRequestedByPeer
+    && !acd?.contentProtectionRequestedByMe;
+  const incomingRequestType = acd?.contentProtectionEnabled ? 'DISABLE' : 'ENABLE';
 
   const toggleDirectContentProtection = useCallback(async () => {
-    const isDirect = acd?.type === 'PRIVATE' || acd?.type === 'SECRET';
-    if (!activeChat || !isDirect) return;
+    if (!activeChat || !isDirectChat) return;
     try {
-      const willEnableProtection = !acd?.contentProtectionRequestedByMe;
-      const updated = await chatsApi.update(activeChat, { contentProtectionEnabled: willEnableProtection });
+      const willRequestEnable = !acd?.contentProtectionEnabled;
+      const nextVote = acd?.contentProtectionEnabled
+        ? !!acd?.contentProtectionRequestedByMe
+        : !acd?.contentProtectionRequestedByMe;
+      const updated = await chatsApi.update(activeChat, { contentProtectionEnabled: nextVote });
       await loadChats();
-      if (willEnableProtection) {
+      if (willRequestEnable && nextVote) {
         setShieldActivationNotice(updated?.contentProtectionEnabled
           ? 'Щит контента включён'
           : 'Запрос на щит отправлен — ждём подтверждение второй стороны');
+      } else if (!willRequestEnable && !nextVote) {
+        setShieldActivationNotice(updated?.contentProtectionEnabled
+          ? 'Запрос на отключение отправлен — ждём подтверждение второй стороны'
+          : 'Щит контента отключён');
+      } else if (!nextVote) {
+        setShieldActivationNotice('Запрос на включение щита отменён');
+      } else {
+        setShieldActivationNotice('Запрос на отключение щита отменён');
       }
     } catch (err) {
       alert(err.message || 'Не удалось переключить защиту контента');
     }
-  }, [activeChat, acd?.type, acd?.contentProtectionRequestedByMe, chatsApi, loadChats]);
+  }, [activeChat, isDirectChat, acd?.contentProtectionEnabled, acd?.contentProtectionRequestedByMe, chatsApi, loadChats]);
+
+  const acceptDirectContentProtectionRequest = useCallback(async () => {
+    if (!activeChat || !incomingProtectionRequest) return;
+    try {
+      const updated = await chatsApi.update(activeChat, { contentProtectionEnabled: true });
+      await loadChats();
+      setShieldActivationNotice(incomingRequestType === 'ENABLE'
+        ? (updated?.contentProtectionEnabled ? 'Щит контента включён у обоих участников' : 'Запрос принят')
+        : (updated?.contentProtectionEnabled ? 'Отключение отменено' : 'Щит контента отключён у обоих участников'));
+    } catch (err) {
+      alert(err.message || 'Не удалось принять запрос');
+    }
+  }, [activeChat, incomingProtectionRequest, incomingRequestType, chatsApi, loadChats]);
+
+  const declineDirectContentProtectionRequest = useCallback(async () => {
+    if (!activeChat || !incomingProtectionRequest) return;
+    try {
+      await chatsApi.update(activeChat, { contentProtectionEnabled: false });
+      await loadChats();
+      setShieldActivationNotice(incomingRequestType === 'ENABLE'
+        ? 'Запрос на щит отклонён'
+        : 'Запрос на отключение щита отклонён');
+    } catch (err) {
+      alert(err.message || 'Не удалось отклонить запрос');
+    }
+  }, [activeChat, incomingProtectionRequest, incomingRequestType, chatsApi, loadChats]);
 
   useEffect(() => {
     if (!shieldActivationNotice) return undefined;
@@ -53,7 +94,11 @@ export function useDirectContentProtection({
 
   return {
     protectedDirectChat,
+    incomingProtectionRequest,
+    incomingRequestType,
     shieldActivationNotice,
     toggleDirectContentProtection,
+    acceptDirectContentProtectionRequest,
+    declineDirectContentProtectionRequest,
   };
 }
