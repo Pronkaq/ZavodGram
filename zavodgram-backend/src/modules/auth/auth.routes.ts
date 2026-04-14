@@ -100,18 +100,71 @@ async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
   await redis.del(key);
 }
 
+type CaptchaChallenge = {
+  question: string;
+  answer: string;
+};
+
+function getRandomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pickCaptchaChallenge(): CaptchaChallenge {
+  const challenges: CaptchaChallenge[] = [
+    (() => {
+      const a = getRandomInt(2, 9);
+      const b = getRandomInt(2, 9);
+      const c = getRandomInt(1, 9);
+      return {
+        question: `Посчитайте: (${a} × ${b}) - ${c} = ?`,
+        answer: String(a * b - c),
+      };
+    })(),
+    (() => {
+      const a = getRandomInt(10, 99);
+      const b = getRandomInt(10, 99);
+      const sum = a + b;
+      const reversed = String(sum).split('').reverse().join('');
+      return {
+        question: `Сложите ${a} и ${b}, затем введите сумму задом наперёд`,
+        answer: reversed,
+      };
+    })(),
+    (() => {
+      const a = getRandomInt(11, 99);
+      const b = getRandomInt(11, 99);
+      const c = getRandomInt(11, 99);
+      const max = Math.max(a, b, c);
+      return {
+        question: `Какое число больше: ${a}, ${b}, ${c}?`,
+        answer: String(max),
+      };
+    })(),
+    (() => {
+      const a = getRandomInt(100, 999);
+      const sum = String(a)
+        .split('')
+        .reduce((acc, digit) => acc + Number(digit), 0);
+      return {
+        question: `Введите сумму цифр числа ${a}`,
+        answer: String(sum),
+      };
+    })(),
+  ];
+
+  return challenges[getRandomInt(0, challenges.length - 1)];
+}
+
 router.get('/captcha', rateLimiter(30, 60), async (_req: Request, res: Response) => {
-  const a = Math.floor(Math.random() * 8) + 1;
-  const b = Math.floor(Math.random() * 8) + 1;
-  const answer = String(a + b);
+  const challenge = pickCaptchaChallenge();
   const captchaId = randomBytes(18).toString('base64url');
-  await redis.set(`captcha:${captchaId}`, hashValue(answer), 'EX', 300);
+  await redis.set(`captcha:${captchaId}`, hashValue(challenge.answer), 'EX', 300);
 
   res.json({
     ok: true,
     data: {
       captchaId,
-      question: `${a} + ${b} = ?`,
+      question: challenge.question,
       expiresInSec: 300,
     },
   });
