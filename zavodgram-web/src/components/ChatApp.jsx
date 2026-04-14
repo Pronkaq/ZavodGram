@@ -341,6 +341,7 @@ export default function ChatApp() {
   const {
     protectedDirectChat,
     incomingProtectionRequest,
+    incomingRequestType,
     shieldActivationNotice,
     toggleDirectContentProtection,
     acceptDirectContentProtectionRequest,
@@ -703,7 +704,9 @@ export default function ChatApp() {
                     }}
                     onClick={toggleDirectContentProtection}
                     title={acd?.contentProtectionEnabled
-                      ? 'Щит контента активен'
+                      ? (acd?.contentProtectionRequestedByMe
+                        ? 'Отменить запрос на отключение защиты контента'
+                        : 'Отправить запрос на отключение защиты контента')
                       : incomingProtectionRequest
                         ? 'Ожидается ваше решение по запросу'
                         : acd?.contentProtectionRequestedByMe
@@ -758,7 +761,9 @@ export default function ChatApp() {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#EAF2FF' }}>
                     <Icons.Shield />
-                    Собеседник включил сейф-режим. Принять?
+                    {incomingRequestType === 'ENABLE'
+                      ? 'Собеседник включил сейф-режим. Принять?'
+                      : 'Собеседник просит отключить сейф-режим. Подтвердить?'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button style={{ ...s.ib, height: 32, minWidth: 90 }} onClick={declineDirectContentProtectionRequest}>Отклонить</button>

@@ -366,7 +366,9 @@ export function ChatProvider({ children }) {
               id: Date.now(),
               chatId: data.chatId,
               chatName: targetChat.name || targetChat.peer?.name || 'Личный чат',
-              text: 'Собеседник запросил включение щита контента. Подтвердите в чате.',
+              text: data.contentProtectionEnabled
+                ? 'Собеседник запросил отключение щита контента. Подтвердите в чате.'
+                : 'Собеседник запросил включение щита контента. Подтвердите в чате.',
               time: new Date(),
             }, ...prev].slice(0, 50)));
           }
