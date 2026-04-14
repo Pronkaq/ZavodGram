@@ -41,7 +41,7 @@ const upload = multer({
       'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4',
     ];
     if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new ValidationError('ÐÐµÐ¿Ð¾Ð´Ð´ÐµÑ€Ð¶Ð¸Ð²Ð°ÐµÐ¼Ñ‹Ð¹ Ñ‚Ð¸Ð¿ Ñ„Ð°Ð¹Ð»Ð°') as any);
+    else cb(new ValidationError('Неподдерживаемый тип файла') as any);
   },
 });
 
@@ -53,10 +53,10 @@ function getMediaType(mime: string): 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO' {
 }
 
 
-function resolveAuthPayload(req: Request): AuthPayload {
+function resolveAuthPayload(req: Request, options?: { allowQueryToken?: boolean }): AuthPayload {
   const header = req.headers.authorization;
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  const queryToken = typeof req.query.token === 'string' ? req.query.token : null;
+  const queryToken = options?.allowQueryToken && typeof req.query.token === 'string' ? req.query.token : null;
   const token = bearer || queryToken;
   if (!token) throw new AuthError();
   try {
@@ -259,12 +259,29 @@ async function streamMediaFile(req: Request, res: Response, filePath: string, mi
   createReadStream(filePath, { start, end }).pipe(res);
 }
 
+function normalizeUploadRelativePath(rawPath: string) {
+  if (!rawPath.startsWith('/internal/')) {
+    throw new ValidationError('Некорректный путь к медиафайлу');
+  }
+  return rawPath.replace('/internal/', '');
+}
+
+function resolveUploadPathFromRelative(relativePath: string) {
+  const uploadRoot = path.resolve(config.upload.dir);
+  const absolute = path.resolve(uploadRoot, relativePath);
+  if (!absolute.startsWith(uploadRoot + path.sep) && absolute !== uploadRoot) {
+    throw new ForbiddenError('Некорректный путь к файлу');
+  }
+  return absolute;
+}
+
+
 router.post('/upload', authMiddleware, rateLimiter(20, 60), upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!req.file) throw new ValidationError('Ð¤Ð°Ð¹Ð» Ð½Ðµ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð»Ñ‘Ð½');
+    if (!req.file) throw new ValidationError('Файл не прикреплён');
 
     if (req.body.messageId) {
-      throw new ValidationError('ÐŸÑ€ÑÐ¼Ð°Ñ Ð¿Ñ€Ð¸Ð²ÑÐ·ÐºÐ° Ðº messageId Ð·Ð°Ð¿Ñ€ÐµÑ‰ÐµÐ½Ð°, Ð¸ÑÐ¿Ð¾Ð»ÑŒÐ·ÑƒÐ¹Ñ‚Ðµ POST /api/media/:id/attach');
+      throw new ValidationError('Прямая привязка к messageId запрещена, используйте POST /api/media/:id/attach');
     }
 
     const media = await persistFile(req.file, req.user!.userId);
@@ -275,9 +292,9 @@ router.post('/upload', authMiddleware, rateLimiter(20, 60), upload.single('file'
 router.post('/upload-multiple', authMiddleware, rateLimiter(10, 60), upload.array('files', 10), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) throw new ValidationError('Ð¤Ð°Ð¹Ð»Ñ‹ Ð½Ðµ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð»ÐµÐ½Ñ‹');
+    if (!files || files.length === 0) throw new ValidationError('Файлы не прикреплены');
     if (req.body.messageId) {
-      throw new ValidationError('ÐŸÑ€ÑÐ¼Ð°Ñ Ð¿Ñ€Ð¸Ð²ÑÐ·ÐºÐ° Ðº messageId Ð·Ð°Ð¿Ñ€ÐµÑ‰ÐµÐ½Ð°, Ð¸ÑÐ¿Ð¾Ð»ÑŒÐ·ÑƒÐ¹Ñ‚Ðµ POST /api/media/:id/attach');
+      throw new ValidationError('Прямая привязка к messageId запрещена, используйте POST /api/media/:id/attach');
     }
 
     const results = [];
@@ -300,12 +317,12 @@ router.post('/:id/attach', authMiddleware, rateLimiter(60, 60), async (req: Requ
 
     await requireChatMembership(prisma, chatId, userId);
     const message = await requireMessageInChat(prisma, messageId, chatId);
-    if (message.fromId !== userId) throw new ForbiddenError('ÐœÐ¾Ð¶Ð½Ð¾ Ð¿Ñ€Ð¸ÐºÑ€ÐµÐ¿Ð»ÑÑ‚ÑŒ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ Ðº ÑÐ²Ð¾Ð¸Ð¼ ÑÐ¾Ð¾Ð±Ñ‰ÐµÐ½Ð¸ÑÐ¼');
+    if (message.fromId !== userId) throw new ForbiddenError('Можно прикреплять только к своим сообщениям');
 
     const media = await prisma.mediaFile.findUnique({ where: { id: mediaId } });
-    if (!media) throw new NotFoundError('ÐœÐµÐ´Ð¸Ð°Ñ„Ð°Ð¹Ð»');
-    if (media.uploaderId !== userId) throw new ForbiddenError('Ð§ÑƒÐ¶Ð¾Ð¹ Ð¼ÐµÐ´Ð¸Ð°Ñ„Ð°Ð¹Ð»');
-    if (media.messageId && media.messageId !== messageId) throw new ForbiddenError('Ð¤Ð°Ð¹Ð» ÑƒÐ¶Ðµ Ð¿Ñ€Ð¸Ð²ÑÐ·Ð°Ð½ Ðº Ð´Ñ€ÑƒÐ³Ð¾Ð¼Ñƒ ÑÐ¾Ð¾Ð±Ñ‰ÐµÐ½Ð¸ÑŽ');
+    if (!media) throw new NotFoundError('Медиафайл');
+    if (media.uploaderId !== userId) throw new ForbiddenError('Чужой медиафайл');
+    if (media.messageId && media.messageId !== messageId) throw new ForbiddenError('Файл уже привязан к другому сообщению');
 
     const updated = await prisma.mediaFile.update({
       where: { id: mediaId },
@@ -318,14 +335,14 @@ router.post('/:id/attach', authMiddleware, rateLimiter(60, 60), async (req: Requ
 
 router.get('/:id/download', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const payload = resolveAuthPayload(req);
+    const payload = resolveAuthPayload(req, { allowQueryToken: true });
     const media = await prisma.mediaFile.findUnique({ where: { id: req.params.id } });
-    if (!media) throw new NotFoundError('ÐœÐµÐ´Ð¸Ð°Ñ„Ð°Ð¹Ð»');
+    if (!media) throw new NotFoundError('Медиафайл');
 
     await assertMediaReadableByUser(media, payload.userId);
 
-    const relative = media.url.replace('/internal/', '');
-    const filePath = path.resolve(config.upload.dir, relative);
+    const relative = normalizeUploadRelativePath(media.url);
+    const filePath = resolveUploadPathFromRelative(relative);
 
     await streamMediaFile(req, res, filePath, media.mimeType, media.originalName);
   } catch (err) { next(err); }
@@ -344,8 +361,8 @@ router.post('/:id/transcribe', authMiddleware, rateLimiter(20, 60), async (req: 
       throw new ValidationError('Расшифровка недоступна: не настроен провайдер');
     }
 
-    const relative = media.url.replace('/internal/', '');
-    const filePath = path.resolve(config.upload.dir, relative);
+    const relative = normalizeUploadRelativePath(media.url);
+    const filePath = resolveUploadPathFromRelative(relative);
     const text = await transcribeWithOpenAI(filePath, media.originalName, media.mimeType);
 
     res.json({ ok: true, data: { mediaId: media.id, text } });
@@ -355,7 +372,7 @@ router.post('/:id/transcribe', authMiddleware, rateLimiter(20, 60), async (req: 
 
 router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const payload = resolveAuthPayload(req);
+    const payload = resolveAuthPayload(req, { allowQueryToken: true });
     const rawPath = typeof req.query.path === 'string' ? req.query.path : '';
     const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
 
@@ -363,11 +380,12 @@ router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, 
       where: { OR: [{ url: normalized }, { thumbnail: normalized }] },
     });
 
-    if (!media) throw new NotFoundError('ÐœÐµÐ´Ð¸Ð°Ñ„Ð°Ð¹Ð»');
+    if (!media) throw new NotFoundError('Медиафайл');
     await assertMediaReadableByUser(media, payload.userId);
 
-    const relative = media.url.replace('/internal/', '');
-    const filePath = path.resolve(config.upload.dir, relative);
+    const requestedPath = normalized === media.thumbnail ? media.thumbnail ?? media.url : media.url;
+    const relative = normalizeUploadRelativePath(requestedPath);
+    const filePath = resolveUploadPathFromRelative(relative);
 
     await streamMediaFile(req, res, filePath, media.mimeType, media.originalName);
   } catch (err) { next(err); }
