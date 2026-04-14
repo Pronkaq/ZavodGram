@@ -124,7 +124,7 @@ export default function AuthPage() {
           <button style={s.btn} type="submit" disabled={loading}>{loading ? '...' : mode === 'login' ? 'Войти' : mode === 'register' ? 'Создать аккаунт' : 'Сбросить пароль'}</button>
         </form>
 
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
           {modeActions.map((action) => (
             <button
               key={action.id}
@@ -156,13 +156,13 @@ const s = {
     display: 'grid',
     placeItems: 'center',
     background:
-      'radial-gradient(1000px 550px at 15% 12%, rgba(255,255,255,.18), transparent 62%), radial-gradient(1200px 700px at 85% 88%, rgba(0,0,0,.45), transparent 64%), linear-gradient(155deg, #0f1319 0%, #151922 52%, #1d2129 100%)',
+      'radial-gradient(900px 480px at 14% 10%, rgba(255,255,255,.06), transparent 64%), radial-gradient(980px 620px at 86% 90%, rgba(255,255,255,.04), transparent 68%), linear-gradient(155deg, #060708 0%, #090b0d 52%, #0c0d10 100%)',
     padding: 20,
   },
   card: {
     width: '100%',
     maxWidth: 420,
-    background: 'linear-gradient(180deg, rgba(19, 24, 36, 0.95) 0%, rgba(13, 18, 30, 0.95) 100%)',
+    background: 'linear-gradient(180deg, rgba(15, 16, 18, 0.95) 0%, rgba(10, 11, 13, 0.95) 100%)',
     border: '1px solid rgba(255, 255, 255, 0.08)',
     borderRadius: 16,
     padding: 24,
@@ -173,14 +173,14 @@ const s = {
     width: 44,
     height: 44,
     borderRadius: 12,
-    background: 'linear-gradient(135deg, #4a9ee5, #7c6bde)',
+    background: 'linear-gradient(135deg, #2a2f37, #1d2026)',
     color: '#fff',
     display: 'grid',
     placeItems: 'center',
     fontWeight: 800,
     marginBottom: 12,
   },
-  title: { margin: 0, color: '#ecf1ff', fontSize: 26 },
+  title: { margin: 0, color: '#f1f3f8', fontSize: 26 },
   subtitle: { margin: '6px 0 18px', color: '#98a3bd' },
   form: { display: 'grid', gap: 10 },
   input: {
@@ -189,8 +189,8 @@ const s = {
     borderRadius: 10,
     border: '1px solid rgba(255, 255, 255, 0.08)',
     outline: 'none',
-    background: 'rgba(255, 255, 255, 0.04)',
-    color: '#ecf1ff',
+    background: 'rgba(255, 255, 255, 0.03)',
+    color: '#f1f3f8',
     marginBottom: 2,
   },
   btn: {
@@ -198,22 +198,22 @@ const s = {
     padding: '12px 14px',
     borderRadius: 10,
     border: 'none',
-    background: 'linear-gradient(135deg, #4a9ee5, #7c6bde)',
-    color: '#fff',
+    background: 'linear-gradient(180deg, #2b2f36 0%, #202329 100%)',
+    color: '#f5f7fb',
     fontWeight: 700,
     cursor: 'pointer',
   },
   switch: {
-    background: 'rgba(255, 255, 255, 0.05)',
+    background: 'rgba(255, 255, 255, 0.03)',
     border: '1px solid rgba(255, 255, 255, 0.12)',
-    color: '#ecf1ff',
+    color: '#cbd3e4',
     borderRadius: 10,
     padding: '10px 12px',
     cursor: 'pointer',
   },
   error: { background: 'rgba(255,86,86,.12)', border: '1px solid rgba(255,86,86,.35)', color: '#ffb3b3', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
   success: { background: 'rgba(78,216,130,.12)', border: '1px solid rgba(78,216,130,.35)', color: '#b7f5cf', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
-  recovery: { background: 'rgba(74,158,229,.12)', border: '1px solid rgba(74,158,229,.35)', color: '#cbdcff', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
+  recovery: { background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.14)', color: '#d9dfec', borderRadius: 10, padding: '10px 12px', fontSize: 14 },
   captchaBox: { border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 10, padding: 10, marginTop: 4 },
   captchaQuestion: { color: '#c5d2e6', marginBottom: 8 },
   captchaRow: { display: 'grid', gridTemplateColumns: '1fr 44px', gap: 8, alignItems: 'center' },
@@ -221,8 +221,8 @@ const s = {
     height: 44,
     borderRadius: 10,
     border: '1px solid rgba(255, 255, 255, 0.12)',
-    background: 'rgba(255, 255, 255, 0.05)',
-    color: '#d5e1f4',
+    background: 'rgba(255, 255, 255, 0.03)',
+    color: '#d9dfec',
     cursor: 'pointer',
   },
 };
