@@ -606,6 +606,11 @@ export default function ChatApp() {
             const isMine = msg.fromId === user.id || msg.from?.id === user.id;
             const sender = msg.from || {};
             const isHL = searchResults[msgSearchIdx] === msg.id;
+            const mediaLockedBySafeMode = (msg.media || []).some((item) => item?.protectedBySafeMode);
+            const mediaBlocked = !!acd?.contentProtectionEnabled || mediaLockedBySafeMode;
+            const mediaBlockedReason = mediaLockedBySafeMode
+              ? 'Медиа недоступно: отправлено во время сейф-режима.'
+              : 'Медиа скрыто: в чате включена защита контента.';
             return (
               <div key={msg.id} id={`msg-${msg.id}`} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'flex-end', gap: 6, transition: 'background .3s', borderRadius: 8, ...(isHL ? { background: 'rgba(255,255,255,0.12)' } : {}) }}
                 onContextMenu={e => ctx(e, { ...msg, mine: isMine })}
@@ -642,7 +647,8 @@ export default function ChatApp() {
                   )}
                   <MediaAttachment
                     media={msg.media}
-                    mediaBlocked={!!acd?.contentProtectionEnabled}
+                    mediaBlocked={mediaBlocked}
+                    mediaBlockedReason={mediaBlockedReason}
                     onTranscribe={handleTranscribe}
                     transcriptions={transcriptions}
                     transcriptionLoading={transcriptionLoading}
@@ -816,6 +822,11 @@ export default function ChatApp() {
                 const isMine = msg.fromId === user.id || msg.from?.id === user.id;
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
+                const mediaLockedBySafeMode = (msg.media || []).some((item) => item?.protectedBySafeMode);
+                const mediaBlocked = !!acd?.contentProtectionEnabled || mediaLockedBySafeMode;
+                const mediaBlockedReason = mediaLockedBySafeMode
+                  ? 'Медиа недоступно: отправлено во время сейф-режима.'
+                  : 'Медиа скрыто: в чате включена защита контента.';
                 const postComments = getPostComments(msg);
                 const commentsButtonActive = msg.commentsEnabled || isOwnerOrAdmin;
                 const postVisual = (msg.media || []).find((m) => m.type === 'IMAGE' || m.type === 'VIDEO');
@@ -845,7 +856,7 @@ export default function ChatApp() {
                         ? { background: 'linear-gradient(180deg, rgba(36,42,55,0.95), rgba(27,31,41,0.98))', border: '1px solid rgba(220,224,235,0.13)', boxShadow: '0 10px 26px rgba(0,0,0,0.25)', overflow: 'hidden' }
                         : (isMine ? { background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(231,234,240,0.15))', borderBottomRightRadius: 4, border: '1px solid rgba(255,255,255,0.1)' } : { background: 'rgba(255,255,255,0.05)', borderBottomLeftRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }))
                     }}>
-                      {isChannel && postVisual && !acd?.contentProtectionEnabled && (
+                      {isChannel && postVisual && !mediaBlocked && (
                         <div
                           role="button"
                           tabIndex={0}
@@ -895,7 +906,8 @@ export default function ChatApp() {
                       )}
                       <MediaAttachment
                         media={isChannel ? (msg.media || []).filter((m) => m.id !== postVisual?.id) : msg.media}
-                        mediaBlocked={!!acd?.contentProtectionEnabled}
+                        mediaBlocked={mediaBlocked}
+                        mediaBlockedReason={mediaBlockedReason}
                         onTranscribe={handleTranscribe}
                         transcriptions={transcriptions}
                         transcriptionLoading={transcriptionLoading}

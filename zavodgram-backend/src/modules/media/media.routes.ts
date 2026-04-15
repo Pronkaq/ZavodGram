@@ -67,7 +67,7 @@ function resolveAuthPayload(req: Request, options?: { allowQueryToken?: boolean 
 }
 
 async function assertMediaReadableByUser(
-  media: { id: string; uploaderId: string; messageId: string | null },
+  media: { id: string; uploaderId: string; messageId: string | null; protectedBySafeMode: boolean },
   userId: string
 ) {
   //  :
@@ -110,11 +110,14 @@ async function assertMediaReadableByUser(
   //        membership 
   const message = await prisma.message.findUnique({
     where: { id: media.messageId },
-    include: { chat: { select: { contentProtectionEnabled: true } } },
+    include: { chat: { select: { type: true, contentProtectionEnabled: true } } },
   });
   if (!message || message.deleted) throw new NotFoundError('');
-  if (message.chat?.contentProtectionEnabled) {
-    throw new ForbiddenError('Медиа в этом чате защищено и недоступно для скачивания');
+
+  const activeProtectionLock = message.chat?.contentProtectionEnabled
+    && (message.chat.type === 'PRIVATE' || message.chat.type === 'SECRET');
+  if (activeProtectionLock || media.protectedBySafeMode) {
+    throw new ForbiddenError('Медиа в этом чате недоступно');
   }
 
   await requireChatMembership(prisma, message.chatId, userId);

@@ -38,12 +38,12 @@ export function Av({ src, name, size = 46, radius = 12, color, online, onClick, 
   );
 }
 
-export function MediaAttachment({ media, mediaBlocked = false, onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia, showMeta = true, carouselImages = false, mediaMaxWidth = 260 }) {
+export function MediaAttachment({ media, mediaBlocked = false, mediaBlockedReason = '', onTranscribe, transcriptions = {}, transcriptionLoading = {}, transcriptionAvailable = true, actionButtonStyle = {}, onOpenMedia, showMeta = true, carouselImages = false, mediaMaxWidth = 260 }) {
   if (!media || media.length === 0) return null;
   if (mediaBlocked) {
     return (
       <div style={{ padding: '8px 10px', borderRadius: 10, marginBottom: 6, border: '1px dashed rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#AEB5C3', fontSize: 12 }}>
-        Медиа скрыто: в чате включена защита контента.
+        {mediaBlockedReason || 'Медиа скрыто: в чате включена защита контента.'}
       </div>
     );
   }

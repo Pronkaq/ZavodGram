@@ -291,6 +291,7 @@ model MediaFile {
   width      Int?
   height     Int?
   duration   Int?      // для видео/аудио в секундах
+  protectedBySafeMode Boolean @default(false)
   createdAt  DateTime  @default(now())
 
   @@index([messageId])
