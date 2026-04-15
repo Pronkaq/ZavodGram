@@ -167,31 +167,6 @@ function isCaptchaMarkedAsUsed(captchaId: string) {
   return usedCaptchaStore.has(captchaId);
 }
 
-function pruneExpiredLocalCaptchas(now = Date.now()) {
-  for (const [key, record] of localCaptchaStore.entries()) {
-    if (record.expiresAt <= now) localCaptchaStore.delete(key);
-  }
-}
-
-function trimLocalCaptchaStore() {
-  if (localCaptchaStore.size < LOCAL_CAPTCHA_MAX_ENTRIES) return;
-
-  let oldestKey: string | null = null;
-  let oldestExpiresAt = Number.POSITIVE_INFINITY;
-
-  for (const [key, record] of localCaptchaStore.entries()) {
-    if (record.expiresAt < oldestExpiresAt) {
-      oldestExpiresAt = record.expiresAt;
-      oldestKey = key;
-    }
-  }
-
-  if (oldestKey) {
-    localCaptchaStore.delete(oldestKey);
-    logger.warn('Local captcha fallback store reached capacity, evicting oldest entry');
-  }
-}
-
 function setLocalCaptcha(captchaId: string, answerHash: string, ttlSec: number) {
   pruneExpiredLocalCaptchas();
   trimLocalCaptchaStore();
@@ -233,13 +208,14 @@ async function getCaptchaHash(captchaId: string): Promise<string | null> {
 
 async function saveCaptchaHash(captchaId: string, answerHash: string, ttlSec: number): Promise<void> {
   const key = `captcha:${captchaId}`;
+  setLocalCaptcha(captchaId, answerHash, ttlSec);
+
   try {
     await redis.set(key, answerHash, 'EX', ttlSec);
   } catch (err) {
     logger.error('Failed to save captcha to Redis, using local fallback', {
       error: err instanceof Error ? err.message : String(err),
     });
-    setLocalCaptcha(captchaId, answerHash, ttlSec);
   }
 }
 
