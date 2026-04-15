@@ -221,15 +221,22 @@ async function saveCaptchaHash(captchaId: string, answerHash: string, ttlSec: nu
 
 async function deleteCaptcha(captchaId: string): Promise<void> {
   const key = `captcha:${captchaId}`;
+  let redisDeleteFailed = false;
+
   try {
     await redis.del(key);
   } catch (err) {
+    redisDeleteFailed = true;
     logger.error('Failed to delete captcha from Redis', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
 
   deleteLocalCaptcha(captchaId);
+
+  if (redisDeleteFailed) {
+    throw new Error('Failed to invalidate captcha in Redis');
+  }
 }
 
 async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
