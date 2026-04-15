@@ -23,7 +23,8 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
 // ── Rate limiter ──
 export function rateLimiter(limit: number, windowSec: number) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const key = `${req.ip}:${req.path}`;
+    const actor = req.user?.userId || (typeof req.body?.nickname === 'string' ? req.body.nickname.toLowerCase() : 'anon');
+    const key = `${req.method}:${req.ip}:${req.path}:${actor}`;
     const allowed = await rateLimit(key, limit, windowSec);
     if (!allowed) {
       res.status(429).json({

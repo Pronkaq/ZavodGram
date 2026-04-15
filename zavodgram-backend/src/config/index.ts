@@ -1,14 +1,31 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function requiredEnv(name: string, fallback?: string) {
+  const value = process.env[name] || fallback || '';
+  if (!value) {
+    throw new Error(`Missing required env: ${name}`);
+  }
+  return value;
+}
+
+function ensureSafeSecret(name: string, value: string) {
+  const lower = value.toLowerCase();
+  const insecure = lower.includes('change-me') || lower === 'secret' || value.length < 32;
+  if (insecure && process.env.NODE_ENV === 'production') {
+    throw new Error(`Unsafe secret configured for ${name}`);
+  }
+  return value;
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '4000'),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'change-me',
-    refreshSecret: process.env.JWT_REFRESH_SECRET || 'change-me-refresh',
+    secret: ensureSafeSecret('JWT_SECRET', requiredEnv('JWT_SECRET', 'change-me')),
+    refreshSecret: ensureSafeSecret('JWT_REFRESH_SECRET', requiredEnv('JWT_REFRESH_SECRET', 'change-me-refresh')),
     expiresIn: process.env.JWT_EXPIRES_IN || '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   },
@@ -37,7 +54,7 @@ export const config = {
   },
 
   encryption: {
-    key: process.env.ENCRYPTION_KEY || 'change-me-32-bytes-key!!!!!!!!!!!',
+    key: ensureSafeSecret('ENCRYPTION_KEY', requiredEnv('ENCRYPTION_KEY', 'change-me-32-bytes-key!!!!!!!!!!!')),
   },
 
   transcription: {
