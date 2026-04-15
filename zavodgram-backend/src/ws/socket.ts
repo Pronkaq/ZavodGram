@@ -4,31 +4,19 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { logger } from '../core/logger';
 import { prisma } from '../core/database';
-import { setUserOnline, setUserOffline, setTyping, redisPub, redisSub } from '../core/redis';
+import { setUserOnline, setUserOffline, setTyping, redisPub, redisSub, isUserBlocked, rateLimit } from '../core/redis';
 import { createNotification } from '../modules/notifications/notifications.routes';
 import { AuthPayload } from '../middleware/auth';
 import { requireChatMembership, requireMessageInChat } from '../core/security';
-import { buildMessagePreview, sanitizeMessageForClient } from '../modules/messages/protectedContent';
+import { buildMessagePreview, PROTECTED_MESSAGE_PLACEHOLDER, sanitizeMessageForClient } from '../modules/messages/protectedContent';
 
 interface AuthSocket extends Socket {
   user?: AuthPayload;
 }
 
-const socketWindow = new Map<string, { count: number; resetAt: number }>();
-
-function enforceSocketRate(userId: string, action: string, limit: number, windowMs: number) {
-  const now = Date.now();
-  const key = `${userId}:${action}`;
-  const current = socketWindow.get(key);
-
-  if (!current || current.resetAt <= now) {
-    socketWindow.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-
-  if (current.count >= limit) return false;
-  current.count += 1;
-  return true;
+async function enforceSocketRate(userId: string, action: string, limit: number, windowMs: number) {
+  const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
+  return rateLimit(`ws:${userId}:${action}`, limit, windowSec);
 }
 
 async function resolveRootPost(chatId: string, messageId: string) {
@@ -55,8 +43,13 @@ export function setupWebSocket(httpServer: HttpServer) {
 
     try {
       const payload = jwt.verify(token, config.jwt.secret) as AuthPayload;
-      socket.user = payload;
-      next();
+      isUserBlocked(payload.userId)
+        .then((blocked) => {
+          if (blocked) return next(new Error('AUTH_BLOCKED'));
+          socket.user = payload;
+          next();
+        })
+        .catch(() => next(new Error('AUTH_INVALID')));
     } catch {
       next(new Error('AUTH_INVALID'));
     }
@@ -131,7 +124,7 @@ export function setupWebSocket(httpServer: HttpServer) {
       topicId?: string;
     }) => {
       try {
-        if (!enforceSocketRate(userId, 'message:send', 40, 60000)) return;
+        if (!(await enforceSocketRate(userId, 'message:send', 40, 60000))) return;
         const membership = await requireChatMembership(prisma, data.chatId, userId);
         const chatMeta = await prisma.chat.findUnique({
           where: { id: data.chatId },
@@ -229,10 +222,12 @@ export function setupWebSocket(httpServer: HttpServer) {
         const senderName = message.from.name;
 
         const BATCH_SIZE = 50;
-        const notificationText = buildMessagePreview(message, {
-          chatType: chatMeta.type,
-          contentProtectionEnabled: chatMeta.contentProtectionEnabled,
-        }).slice(0, 100);
+        const notificationText = message.protectedBySafeMode
+          ? PROTECTED_MESSAGE_PLACEHOLDER
+          : buildMessagePreview(message, {
+              chatType: chatMeta.type,
+              contentProtectionEnabled: chatMeta.contentProtectionEnabled,
+            }).slice(0, 100);
         const notificationBody = `${senderName}: ${notificationText}`;
         for (let i = 0; i < chatMembers.length; i += BATCH_SIZE) {
           const batch = chatMembers.slice(i, i + BATCH_SIZE);
@@ -265,7 +260,7 @@ export function setupWebSocket(httpServer: HttpServer) {
 
     socket.on('message:edit', async (data: { messageId: string; chatId: string; text: string }) => {
       try {
-        if (!enforceSocketRate(userId, 'message:edit', 30, 60000)) return;
+        if (!(await enforceSocketRate(userId, 'message:edit', 30, 60000))) return;
         await requireChatMembership(prisma, data.chatId, userId);
 
         const msg = await requireMessageInChat(prisma, data.messageId, data.chatId);
@@ -292,7 +287,7 @@ export function setupWebSocket(httpServer: HttpServer) {
 
     socket.on('message:delete', async (data: { messageId: string; chatId: string }) => {
       try {
-        if (!enforceSocketRate(userId, 'message:delete', 30, 60000)) return;
+        if (!(await enforceSocketRate(userId, 'message:delete', 30, 60000))) return;
         const membership = await requireChatMembership(prisma, data.chatId, userId);
         const chat = await prisma.chat.findUnique({
           where: { id: data.chatId },
@@ -312,7 +307,7 @@ export function setupWebSocket(httpServer: HttpServer) {
     });
 
     socket.on('typing:start', async (data: { chatId: string }) => {
-      if (!enforceSocketRate(userId, 'typing:start', 100, 60000)) return;
+      if (!(await enforceSocketRate(userId, 'typing:start', 100, 60000))) return;
       try {
         await requireChatMembership(prisma, data.chatId, userId);
         await setTyping(data.chatId, userId);
@@ -324,7 +319,7 @@ export function setupWebSocket(httpServer: HttpServer) {
 
     socket.on('message:react', async (data: { chatId: string; messageId: string; emoji: string }) => {
       try {
-        if (!enforceSocketRate(userId, 'message:react', 120, 60000)) return;
+        if (!(await enforceSocketRate(userId, 'message:react', 120, 60000))) return;
         if (!data.emoji || data.emoji.length > 16) return;
         await requireChatMembership(prisma, data.chatId, userId);
         await requireMessageInChat(prisma, data.messageId, data.chatId);
@@ -361,7 +356,7 @@ export function setupWebSocket(httpServer: HttpServer) {
 
     socket.on('message:read', async (data: { chatId: string; messageId: string }) => {
       try {
-        if (!enforceSocketRate(userId, 'message:read', 100, 60000)) return;
+        if (!(await enforceSocketRate(userId, 'message:read', 100, 60000))) return;
         await requireChatMembership(prisma, data.chatId, userId);
 
         let messageToMarkId = data.messageId;

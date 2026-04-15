@@ -5,7 +5,7 @@ import helmet from 'helmet';
 
 import { config } from './config';
 import { logger } from './core/logger';
-import { connectDB, disconnectDB } from './core/database';
+import { connectDB, disconnectDB, prisma } from './core/database';
 import { redis } from './core/redis';
 import { errorHandler } from './middleware/errorHandler';
 import { setupWebSocket } from './ws/socket';
@@ -23,6 +23,7 @@ import { startTelegramChannelMirror } from './modules/messages/telegramChannelMi
 async function bootstrap() {
   const app = express();
   const httpServer = createServer(app);
+  app.set('trust proxy', 1);
 
   // ── Middleware ──
   app.use(helmet({
@@ -42,6 +43,18 @@ async function bootstrap() {
   // ── Health check ──
   app.get('/health', (_req, res) => {
     res.json({ ok: true, version: '0.3.1', uptime: process.uptime() });
+  });
+
+  app.get('/ready', async (_req, res) => {
+    try {
+      await Promise.all([
+        prismaHealthcheck(),
+        redis.ping(),
+      ]);
+      res.json({ ok: true });
+    } catch {
+      res.status(503).json({ ok: false });
+    }
   });
 
   // ── API Routes ──
@@ -88,6 +101,10 @@ async function bootstrap() {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+async function prismaHealthcheck() {
+  await prisma.$queryRaw`SELECT 1`;
 }
 
 bootstrap().catch((err) => {

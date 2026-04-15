@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
-import { createHash, randomBytes } from 'crypto';
+import { createHmac, createHash, randomBytes } from 'crypto';
 import type { StringValue } from 'ms';
 import { prisma } from '../../core/database';
 import { config } from '../../config';
@@ -59,6 +59,14 @@ function hashValue(value: string) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function hashRefreshToken(refreshToken: string) {
+  return createHmac('sha256', config.jwt.refreshSecret).update(refreshToken).digest('hex');
+}
+
+function normalizeNickname(nickname: string) {
+  return nickname.trim().toLowerCase();
+}
+
 function toTag(nickname: string) {
   return `@${nickname}`;
 }
@@ -98,6 +106,14 @@ async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
   }
 
   await redis.del(key);
+}
+
+async function assertRecoveryAllowed(nickname: string) {
+  const normalizedNickname = normalizeNickname(nickname);
+  const key = `recovery:attempts:${normalizedNickname}`;
+  const attempts = await redis.incr(key);
+  if (attempts === 1) await redis.expire(key, 15 * 60);
+  if (attempts > 10) throw new AuthError('Не удалось сбросить пароль');
 }
 
 type CaptchaChallenge = {
@@ -155,7 +171,7 @@ function pickCaptchaChallenge(): CaptchaChallenge {
   return challenges[getRandomInt(0, challenges.length - 1)];
 }
 
-router.get('/captcha', rateLimiter(30, 60), async (_req: Request, res: Response) => {
+router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response) => {
   const challenge = pickCaptchaChallenge();
   const captchaId = randomBytes(18).toString('base64url');
   await redis.set(`captcha:${captchaId}`, hashValue(challenge.answer), 'EX', 300);
@@ -208,7 +224,7 @@ router.post('/register', rateLimiter(5, 60), async (req: Request, res: Response,
       await tx.session.create({
         data: {
           userId: user.id,
-          refreshToken: tokens.refreshToken,
+          refreshToken: hashRefreshToken(tokens.refreshToken),
           deviceInfo: req.headers['user-agent'] || null,
           ipAddress: req.ip || null,
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -264,7 +280,7 @@ router.post('/login', rateLimiter(10, 60), async (req: Request, res: Response, n
     await prisma.session.create({
       data: {
         userId: user.id,
-        refreshToken: tokens.refreshToken,
+        refreshToken: hashRefreshToken(tokens.refreshToken),
         deviceInfo: req.headers['user-agent'] || null,
         ipAddress: req.ip || null,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -290,13 +306,14 @@ router.post('/recovery/reset-password', rateLimiter(5, 60), async (req: Request,
   try {
     const data = recoveryResetSchema.parse(req.body);
     await verifyCaptcha(data.captchaId, data.captchaAnswer);
+    await assertRecoveryAllowed(data.nickname);
 
     const user = await prisma.user.findUnique({ where: { tag: toTag(data.nickname) }, select: { id: true } });
-    if (!user) throw new AuthError('Аккаунт не найден');
+    if (!user) throw new AuthError('Не удалось сбросить пароль');
 
     const recovery = await prisma.userRecovery.findUnique({ where: { userId: user.id } });
     if (!recovery || recovery.recoveryCodeHash !== hashValue(data.recoveryCode.trim().toUpperCase())) {
-      throw new AuthError('Неверный recovery code');
+      throw new AuthError('Не удалось сбросить пароль');
     }
 
     const passwordHash = await bcrypt.hash(data.newPassword, 12);
@@ -305,6 +322,7 @@ router.post('/recovery/reset-password', rateLimiter(5, 60), async (req: Request,
       prisma.session.deleteMany({ where: { userId: user.id } }),
       prisma.userRecovery.deleteMany({ where: { userId: user.id } }),
     ]);
+    await redis.del(`recovery:attempts:${normalizeNickname(data.nickname)}`);
 
     res.json({ ok: true, data: { reset: true } });
   } catch (err) {
@@ -317,10 +335,11 @@ router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response,
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
     if (!refreshToken) throw new AuthError('Refresh token не предоставлен');
+    const refreshTokenHash = hashRefreshToken(refreshToken);
 
     const payload = jwt.verify(refreshToken, config.jwt.refreshSecret) as AuthPayload & { jti: string };
 
-    const session = await prisma.session.findUnique({ where: { refreshToken } });
+    const session = await prisma.session.findUnique({ where: { refreshToken: refreshTokenHash } });
     if (!session || session.expiresAt < new Date()) {
       if (session) await prisma.session.delete({ where: { id: session.id } });
       throw new AuthError('Сессия истекла');
@@ -333,7 +352,7 @@ router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response,
 
     await prisma.session.update({
       where: { id: session.id },
-      data: { refreshToken: tokens.refreshToken, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      data: { refreshToken: hashRefreshToken(tokens.refreshToken), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
     });
 
     res.json({ ok: true, data: tokens });
@@ -346,7 +365,7 @@ router.post('/logout', authMiddleware, rateLimiter(30, 60), async (req: Request,
   try {
     const { refreshToken } = logoutSchema.parse(req.body);
     if (refreshToken) {
-      await prisma.session.deleteMany({ where: { refreshToken, userId: req.user!.userId } });
+      await prisma.session.deleteMany({ where: { refreshToken: hashRefreshToken(refreshToken), userId: req.user!.userId } });
     }
 
     await prisma.user.update({ where: { id: req.user!.userId }, data: { online: false, lastSeen: new Date() } });
