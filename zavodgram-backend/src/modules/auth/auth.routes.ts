@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
-import { createHash, randomBytes } from 'crypto';
+import { createHmac, createHash, randomBytes } from 'crypto';
 import type { StringValue } from 'ms';
 import { prisma } from '../../core/database';
 import { config } from '../../config';
@@ -57,6 +57,10 @@ function generateTokens(payload: AuthPayload) {
 
 function hashValue(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function hashRefreshToken(refreshToken: string) {
+  return createHmac('sha256', config.jwt.refreshSecret).update(refreshToken).digest('hex');
 }
 
 function normalizeNickname(nickname: string) {
@@ -220,7 +224,7 @@ router.post('/register', rateLimiter(5, 60), async (req: Request, res: Response,
       await tx.session.create({
         data: {
           userId: user.id,
-          refreshToken: hashValue(tokens.refreshToken),
+          refreshToken: hashRefreshToken(tokens.refreshToken),
           deviceInfo: req.headers['user-agent'] || null,
           ipAddress: req.ip || null,
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -276,7 +280,7 @@ router.post('/login', rateLimiter(10, 60), async (req: Request, res: Response, n
     await prisma.session.create({
       data: {
         userId: user.id,
-        refreshToken: hashValue(tokens.refreshToken),
+        refreshToken: hashRefreshToken(tokens.refreshToken),
         deviceInfo: req.headers['user-agent'] || null,
         ipAddress: req.ip || null,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -318,6 +322,7 @@ router.post('/recovery/reset-password', rateLimiter(5, 60), async (req: Request,
       prisma.session.deleteMany({ where: { userId: user.id } }),
       prisma.userRecovery.deleteMany({ where: { userId: user.id } }),
     ]);
+    await redis.del(`recovery:attempts:${normalizeNickname(data.nickname)}`);
 
     res.json({ ok: true, data: { reset: true } });
   } catch (err) {
@@ -330,7 +335,7 @@ router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response,
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
     if (!refreshToken) throw new AuthError('Refresh token не предоставлен');
-    const refreshTokenHash = hashValue(refreshToken);
+    const refreshTokenHash = hashRefreshToken(refreshToken);
 
     const payload = jwt.verify(refreshToken, config.jwt.refreshSecret) as AuthPayload & { jti: string };
 
@@ -347,7 +352,7 @@ router.post('/refresh', rateLimiter(30, 60), async (req: Request, res: Response,
 
     await prisma.session.update({
       where: { id: session.id },
-      data: { refreshToken: hashValue(tokens.refreshToken), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      data: { refreshToken: hashRefreshToken(tokens.refreshToken), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
     });
 
     res.json({ ok: true, data: tokens });
@@ -360,7 +365,7 @@ router.post('/logout', authMiddleware, rateLimiter(30, 60), async (req: Request,
   try {
     const { refreshToken } = logoutSchema.parse(req.body);
     if (refreshToken) {
-      await prisma.session.deleteMany({ where: { refreshToken: hashValue(refreshToken), userId: req.user!.userId } });
+      await prisma.session.deleteMany({ where: { refreshToken: hashRefreshToken(refreshToken), userId: req.user!.userId } });
     }
 
     await prisma.user.update({ where: { id: req.user!.userId }, data: { online: false, lastSeen: new Date() } });
