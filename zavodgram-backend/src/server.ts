@@ -23,6 +23,7 @@ import { startTelegramChannelMirror } from './modules/messages/telegramChannelMi
 async function bootstrap() {
   const app = express();
   const httpServer = createServer(app);
+  app.set('trust proxy', 1);
 
   // ── Middleware ──
   app.use(helmet({

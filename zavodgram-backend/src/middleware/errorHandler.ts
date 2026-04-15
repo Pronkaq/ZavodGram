@@ -23,8 +23,11 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
 // ── Rate limiter ──
 export function rateLimiter(limit: number, windowSec: number) {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const xff = req.headers['x-forwarded-for'];
+    const forwardedIp = Array.isArray(xff) ? xff[0] : (xff?.split(',')[0]?.trim() || '');
+    const clientIp = forwardedIp || req.ip || 'unknown-ip';
     const actor = req.user?.userId || (typeof req.body?.nickname === 'string' ? req.body.nickname.toLowerCase() : 'anon');
-    const key = `${req.method}:${req.ip}:${req.path}:${actor}`;
+    const key = `${req.method}:${clientIp}:${req.path}:${actor}`;
     const allowed = await rateLimit(key, limit, windowSec);
     if (!allowed) {
       res.status(429).json({

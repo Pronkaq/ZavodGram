@@ -171,7 +171,7 @@ function pickCaptchaChallenge(): CaptchaChallenge {
   return challenges[getRandomInt(0, challenges.length - 1)];
 }
 
-router.get('/captcha', rateLimiter(30, 60), async (_req: Request, res: Response) => {
+router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response) => {
   const challenge = pickCaptchaChallenge();
   const captchaId = randomBytes(18).toString('base64url');
   await redis.set(`captcha:${captchaId}`, hashValue(challenge.answer), 'EX', 300);
