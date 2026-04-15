@@ -8,6 +8,7 @@ import { cacheInvalidate } from '../../core/redis';
 import { rateLimiter } from '../../middleware/errorHandler';
 import { ensureUuidArray, requireChatMembership, requireChatRole } from '../../core/security';
 import { redisPub } from '../../core/redis';
+import { buildMessagePreview } from '../messages/protectedContent';
 
 const router = Router();
 const channelSlugSchema = z.string().regex(/^[a-z0-9._-]{3,64}$/i, 'Некорректная ссылка канала');
@@ -104,6 +105,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
           fromId: string;
           createdAt: Date;
           hasMedia: boolean;
+          protectedBySafeMode: boolean;
         }>>(Prisma.sql`
           SELECT DISTINCT ON (m."chatId")
             m."chatId",
@@ -111,6 +113,7 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
             m.text,
             m."fromId",
             m."createdAt",
+            m."protectedBySafeMode",
             EXISTS (
               SELECT 1
               FROM "MediaFile" mf
@@ -187,7 +190,12 @@ router.get('/', authMiddleware, rateLimiter(60, 60), async (req: Request, res: R
         contentProtectionRequestedByMe: protectionFlags.contentProtectionRequestedByMe,
         contentProtectionRequestedByPeer: protectionFlags.contentProtectionRequestedByPeer,
         contentProtectionEnabled: chat.contentProtectionEnabled || false,
-        lastMessagePreview: lastMessage ? (lastMessage.text || (lastMessage.hasMedia ? '[медиа]' : '')) : '',
+        lastMessagePreview: lastMessage
+          ? buildMessagePreview(lastMessage, {
+              chatType: chat.type,
+              contentProtectionEnabled: chat.contentProtectionEnabled,
+            })
+          : '',
         lastMessageAt: lastMessage?.createdAt || null,
         lastMessageFromId: lastMessage?.fromId || null,
       };

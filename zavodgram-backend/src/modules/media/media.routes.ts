@@ -114,13 +114,13 @@ async function assertMediaReadableByUser(
   });
   if (!message || message.deleted) throw new NotFoundError('');
 
+  await requireChatMembership(prisma, message.chatId, userId);
+
   const activeProtectionLock = message.chat?.contentProtectionEnabled
     && (message.chat.type === 'PRIVATE' || message.chat.type === 'SECRET');
-  if (activeProtectionLock || media.protectedBySafeMode) {
+  if (media.protectedBySafeMode && !activeProtectionLock) {
     throw new ForbiddenError('Медиа в этом чате недоступно');
   }
-
-  await requireChatMembership(prisma, message.chatId, userId);
 }
 
 async function persistFile(file: Express.Multer.File, userId: string) {

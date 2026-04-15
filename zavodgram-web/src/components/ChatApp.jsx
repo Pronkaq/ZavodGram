@@ -607,7 +607,7 @@ export default function ChatApp() {
             const sender = msg.from || {};
             const isHL = searchResults[msgSearchIdx] === msg.id;
             const mediaLockedBySafeMode = (msg.media || []).some((item) => item?.protectedBySafeMode);
-            const mediaBlocked = !!acd?.contentProtectionEnabled || mediaLockedBySafeMode;
+            const mediaBlocked = mediaLockedBySafeMode && !acd?.contentProtectionEnabled;
             const mediaBlockedReason = mediaLockedBySafeMode
               ? 'Медиа недоступно: отправлено во время сейф-режима.'
               : 'Медиа скрыто: в чате включена защита контента.';
@@ -823,7 +823,7 @@ export default function ChatApp() {
                 const sender = msg.from || {};
                 const isHL = searchResults[msgSearchIdx] === msg.id;
                 const mediaLockedBySafeMode = (msg.media || []).some((item) => item?.protectedBySafeMode);
-                const mediaBlocked = !!acd?.contentProtectionEnabled || mediaLockedBySafeMode;
+                const mediaBlocked = mediaLockedBySafeMode && !acd?.contentProtectionEnabled;
                 const mediaBlockedReason = mediaLockedBySafeMode
                   ? 'Медиа недоступно: отправлено во время сейф-режима.'
                   : 'Медиа скрыто: в чате включена защита контента.';
@@ -1165,7 +1165,7 @@ export default function ChatApp() {
       <ChatMessageContextMenu
         contextMenu={contextMenu}
         styles={s}
-        canForward={!protectedDirectChat && !(contextMenu?.msg?.media || []).some((item) => item?.protectedBySafeMode)}
+        canForward={!protectedDirectChat && !contextMenu?.msg?.protectedBySafeMode && !(contextMenu?.msg?.media || []).some((item) => item?.protectedBySafeMode)}
         canDelete={!protectedDirectChat}
         onReply={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}
         onForward={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}

@@ -5,6 +5,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
 import { rateLimiter } from '../../middleware/errorHandler';
 import { ensureUuidArray, requireChatMembership, requireMessageInChat } from '../../core/security';
+import { isSafeModeActiveForChat, sanitizeMessageForClient } from './protectedContent';
 
 const router = Router();
 const messagesViewSchema = z.enum(['lite', 'full']).default('full');
@@ -27,7 +28,7 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
     const view = messagesViewSchema.parse((req.query.view as string | undefined) || 'full');
 
     await requireChatMembership(prisma, chatId, req.user!.userId);
-    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true } });
+    const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, topicsEnabled: true, contentProtectionEnabled: true } });
     if (!chat) throw new NotFoundError('Чат');
 
     if (chat.type === 'GROUP' && chat.topicsEnabled && !topicId) throw new ValidationError('Для группы с темами укажите topicId');
@@ -57,6 +58,7 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
             edited: true,
             deleted: true,
             encrypted: true,
+            protectedBySafeMode: true,
             commentsEnabled: true,
             replyToId: true,
             forwardedFromId: true,
@@ -66,7 +68,7 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
             from: { select: { id: true, name: true, tag: true, avatar: true } },
             replyTo: {
               select: {
-                id: true, text: true, fromId: true,
+                id: true, text: true, fromId: true, protectedBySafeMode: true,
                 from: { select: { id: true, name: true } },
               },
             },
@@ -79,7 +81,7 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
             from: { select: { id: true, name: true, tag: true, avatar: true } },
             replyTo: {
               select: {
-                id: true, text: true, fromId: true,
+                id: true, text: true, fromId: true, protectedBySafeMode: true,
                 from: { select: { id: true, name: true } },
               },
             },
@@ -100,10 +102,17 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
       data: { lastRead: new Date() },
     });
 
+    const safeMessages = messages
+      .reverse()
+      .map((message) => sanitizeMessageForClient(message, {
+        chatType: chat.type,
+        contentProtectionEnabled: chat.contentProtectionEnabled,
+      }));
+
     res.json({
       ok: true,
       data: {
-        messages: messages.reverse(),
+        messages: safeMessages,
         hasMore,
         nextCursor: hasMore ? messages[0]?.id : null,
       },
@@ -169,8 +178,11 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
       });
       if (!original || original.deleted) throw new NotFoundError('Пересылаемое сообщение');
       if (
-        original.chat?.contentProtectionEnabled
-        && (original.chat.type === 'PRIVATE' || original.chat.type === 'SECRET')
+        original.protectedBySafeMode
+        || (
+          original.chat?.contentProtectionEnabled
+          && (original.chat.type === 'PRIVATE' || original.chat.type === 'SECRET')
+        )
       ) {
         throw new ForbiddenError('Пересылка из защищённого личного чата запрещена');
       }
@@ -187,6 +199,8 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     const shouldLockMediaAfterSafeMode = inputMediaIds.length > 0
       && chat.contentProtectionEnabled
       && (chat.type === 'PRIVATE' || chat.type === 'SECRET');
+    const shouldLockMessageAfterSafeMode = chat.contentProtectionEnabled
+      && (chat.type === 'PRIVATE' || chat.type === 'SECRET');
 
     const message = await prisma.$transaction(async (tx) => {
       const created = await tx.message.create({
@@ -198,6 +212,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
           forwardedFromId: data.forwardedFromId || undefined,
           forwardedFromName,
           encrypted: data.encrypted || false,
+          protectedBySafeMode: shouldLockMessageAfterSafeMode,
           commentsEnabled: chat.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
           topicId: data.topicId || null,
         },
@@ -236,7 +251,13 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
 
     await prisma.chat.update({ where: { id: chatId }, data: { updatedAt: new Date() } });
 
-    res.status(201).json({ ok: true, data: message });
+    res.status(201).json({
+      ok: true,
+      data: sanitizeMessageForClient(message, {
+        chatType: chat.type,
+        contentProtectionEnabled: chat.contentProtectionEnabled,
+      }),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) next(new ValidationError(err.errors[0].message));
     else next(err);
@@ -259,13 +280,23 @@ router.patch('/:chatId/messages/:id', authMiddleware, rateLimiter(30, 60), async
       data: { text, edited: true },
       include: {
         from: { select: { id: true, name: true, tag: true, avatar: true } },
-        replyTo: { select: { id: true, text: true, fromId: true, from: { select: { name: true } } } },
+        replyTo: { select: { id: true, text: true, fromId: true, protectedBySafeMode: true, from: { select: { name: true } } } },
         media: true,
         reactions: { select: { emoji: true, userId: true } },
       },
     });
-
-    res.json({ ok: true, data: updated });
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { type: true, contentProtectionEnabled: true },
+    });
+    if (!chat) throw new NotFoundError('Чат');
+    res.json({
+      ok: true,
+      data: sanitizeMessageForClient(updated, {
+        chatType: chat.type,
+        contentProtectionEnabled: chat.contentProtectionEnabled,
+      }),
+    });
   } catch (err) { next(err); }
 });
 
@@ -304,11 +335,18 @@ router.get('/:chatId/messages/search', authMiddleware, rateLimiter(60, 60), asyn
     if (q.length < 2) { res.json({ ok: true, data: [] }); return; }
 
     await requireChatMembership(prisma, chatId, req.user!.userId);
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { type: true, contentProtectionEnabled: true },
+    });
+    if (!chat) throw new NotFoundError('Чат');
+    const safeModeActive = isSafeModeActiveForChat(chat.type, chat.contentProtectionEnabled);
 
     const messages = await prisma.message.findMany({
       where: {
         chatId,
         deleted: false,
+        ...(safeModeActive ? {} : { protectedBySafeMode: false }),
         text: { contains: q, mode: 'insensitive' },
       },
       orderBy: { createdAt: 'desc' },

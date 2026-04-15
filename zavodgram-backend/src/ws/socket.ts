@@ -8,6 +8,7 @@ import { setUserOnline, setUserOffline, setTyping, redisPub, redisSub } from '..
 import { createNotification } from '../modules/notifications/notifications.routes';
 import { AuthPayload } from '../middleware/auth';
 import { requireChatMembership, requireMessageInChat } from '../core/security';
+import { buildMessagePreview, sanitizeMessageForClient } from '../modules/messages/protectedContent';
 
 interface AuthSocket extends Socket {
   user?: AuthPayload;
@@ -134,7 +135,7 @@ export function setupWebSocket(httpServer: HttpServer) {
         const membership = await requireChatMembership(prisma, data.chatId, userId);
         const chatMeta = await prisma.chat.findUnique({
           where: { id: data.chatId },
-          select: { type: true, topicsEnabled: true },
+          select: { type: true, topicsEnabled: true, contentProtectionEnabled: true },
         });
         if (!chatMeta) return socket.emit('error', { message: 'Чат не найден' });
         if (chatMeta.type === 'GROUP' && chatMeta.topicsEnabled) {
@@ -173,8 +174,11 @@ export function setupWebSocket(httpServer: HttpServer) {
           });
           if (!orig || orig.deleted) return socket.emit('error', { message: 'Источник пересылки не найден' });
           if (
-            orig.chat?.contentProtectionEnabled
-            && (orig.chat.type === 'PRIVATE' || orig.chat.type === 'SECRET')
+            orig.protectedBySafeMode
+            || (
+              orig.chat?.contentProtectionEnabled
+              && (orig.chat.type === 'PRIVATE' || orig.chat.type === 'SECRET')
+            )
           ) {
             return socket.emit('error', { message: 'Пересылка из защищённого личного чата запрещена' });
           }
@@ -196,6 +200,7 @@ export function setupWebSocket(httpServer: HttpServer) {
             forwardedFromId: data.forwardedFromId || undefined,
             forwardedFromName,
             encrypted: data.encrypted || false,
+            protectedBySafeMode: chatMeta.contentProtectionEnabled && (chatMeta.type === 'PRIVATE' || chatMeta.type === 'SECRET'),
             commentsEnabled: chatMeta.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
             topicId: data.topicId || null,
           },
@@ -206,10 +211,14 @@ export function setupWebSocket(httpServer: HttpServer) {
             reactions: { select: { emoji: true, userId: true } },
           },
         });
+        const safeMessage = sanitizeMessageForClient(message, {
+          chatType: chatMeta.type,
+          contentProtectionEnabled: chatMeta.contentProtectionEnabled,
+        });
 
         await prisma.chat.update({ where: { id: data.chatId }, data: { updatedAt: new Date() } });
 
-        redisPub.publish('chat:message', JSON.stringify({ ...message, chatId: data.chatId }));
+        redisPub.publish('chat:message', JSON.stringify({ ...safeMessage, chatId: data.chatId }));
 
         const chatMembers = await prisma.chatMember.findMany({
           where: { chatId: data.chatId, userId: { not: userId }, muted: false },
@@ -220,7 +229,10 @@ export function setupWebSocket(httpServer: HttpServer) {
         const senderName = message.from.name;
 
         const BATCH_SIZE = 50;
-        const notificationText = (text || '[медиа]').slice(0, 100);
+        const notificationText = buildMessagePreview(message, {
+          chatType: chatMeta.type,
+          contentProtectionEnabled: chatMeta.contentProtectionEnabled,
+        }).slice(0, 100);
         const notificationBody = `${senderName}: ${notificationText}`;
         for (let i = 0; i < chatMembers.length; i += BATCH_SIZE) {
           const batch = chatMembers.slice(i, i + BATCH_SIZE);
@@ -244,7 +256,7 @@ export function setupWebSocket(httpServer: HttpServer) {
           );
         }
 
-        socket.emit('message:sent', { tempId: data.chatId, message });
+        socket.emit('message:sent', { tempId: data.chatId, message: safeMessage });
       } catch (err) {
         logger.error('WS message:send error', { error: (err as Error).message });
         socket.emit('error', { message: 'Ошибка отправки' });
@@ -263,8 +275,16 @@ export function setupWebSocket(httpServer: HttpServer) {
           where: { id: data.messageId },
           data: { text: data.text.slice(0, 4096), edited: true },
         });
-
-        redisPub.publish('chat:edit', JSON.stringify({ ...updated, chatId: data.chatId }));
+        const chatMeta = await prisma.chat.findUnique({
+          where: { id: data.chatId },
+          select: { type: true, contentProtectionEnabled: true },
+        });
+        if (!chatMeta) return;
+        const safeUpdated = sanitizeMessageForClient(updated, {
+          chatType: chatMeta.type,
+          contentProtectionEnabled: chatMeta.contentProtectionEnabled,
+        });
+        redisPub.publish('chat:edit', JSON.stringify({ ...safeUpdated, chatId: data.chatId }));
       } catch (err) {
         logger.error('WS message:edit error', { error: (err as Error).message });
       }
