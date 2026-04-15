@@ -8,6 +8,7 @@ import type { StringValue } from 'ms';
 import { prisma } from '../../core/database';
 import { config } from '../../config';
 import { AuthError, ConflictError, ValidationError } from '../../core/errors';
+import { logger } from '../../core/logger';
 import { authMiddleware, AuthPayload } from '../../middleware/auth';
 import { rateLimiter } from '../../middleware/errorHandler';
 import { redis } from '../../core/redis';
@@ -95,9 +96,75 @@ function generateRecoveryCode() {
   return raw.slice(0, 16);
 }
 
-async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
+const CAPTCHA_TTL_SEC = 300;
+
+type CaptchaRecord = {
+  hash: string;
+  expiresAt: number;
+};
+
+const localCaptchaStore = new Map<string, CaptchaRecord>();
+
+function setLocalCaptcha(captchaId: string, answerHash: string, ttlSec: number) {
+  localCaptchaStore.set(captchaId, {
+    hash: answerHash,
+    expiresAt: Date.now() + ttlSec * 1000,
+  });
+}
+
+function getLocalCaptchaHash(captchaId: string): string | null {
+  const record = localCaptchaStore.get(captchaId);
+  if (!record) return null;
+  if (record.expiresAt <= Date.now()) {
+    localCaptchaStore.delete(captchaId);
+    return null;
+  }
+  return record.hash;
+}
+
+function deleteLocalCaptcha(captchaId: string) {
+  localCaptchaStore.delete(captchaId);
+}
+
+async function getCaptchaHash(captchaId: string): Promise<string | null> {
   const key = `captcha:${captchaId}`;
-  const expectedHash = await redis.get(key);
+  try {
+    const value = await redis.get(key);
+    if (value) return value;
+  } catch (err) {
+    logger.error('Failed to read captcha from Redis, trying local fallback', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return getLocalCaptchaHash(captchaId);
+}
+
+async function saveCaptchaHash(captchaId: string, answerHash: string, ttlSec: number): Promise<void> {
+  const key = `captcha:${captchaId}`;
+  try {
+    await redis.set(key, answerHash, 'EX', ttlSec);
+  } catch (err) {
+    logger.error('Failed to save captcha to Redis, using local fallback', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    setLocalCaptcha(captchaId, answerHash, ttlSec);
+  }
+}
+
+async function deleteCaptcha(captchaId: string): Promise<void> {
+  const key = `captcha:${captchaId}`;
+  try {
+    await redis.del(key);
+  } catch (err) {
+    logger.error('Failed to delete captcha from Redis', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  deleteLocalCaptcha(captchaId);
+}
+
+async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
+  const expectedHash = await getCaptchaHash(captchaId);
   if (!expectedHash) throw new ValidationError('Капча устарела, обновите и попробуйте снова');
 
   const normalizedAnswer = captchaAnswer.trim();
@@ -105,7 +172,7 @@ async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
     throw new ValidationError('Неверный ответ капчи');
   }
 
-  await redis.del(key);
+  await deleteCaptcha(captchaId);
 }
 
 async function assertRecoveryAllowed(nickname: string) {
@@ -171,19 +238,23 @@ function pickCaptchaChallenge(): CaptchaChallenge {
   return challenges[getRandomInt(0, challenges.length - 1)];
 }
 
-router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response) => {
-  const challenge = pickCaptchaChallenge();
-  const captchaId = randomBytes(18).toString('base64url');
-  await redis.set(`captcha:${captchaId}`, hashValue(challenge.answer), 'EX', 300);
+router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const challenge = pickCaptchaChallenge();
+    const captchaId = randomBytes(18).toString('base64url');
+    await saveCaptchaHash(captchaId, hashValue(challenge.answer), CAPTCHA_TTL_SEC);
 
-  res.json({
-    ok: true,
-    data: {
-      captchaId,
-      question: challenge.question,
-      expiresInSec: 300,
-    },
-  });
+    res.json({
+      ok: true,
+      data: {
+        captchaId,
+        question: challenge.question,
+        expiresInSec: CAPTCHA_TTL_SEC,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post('/register', rateLimiter(5, 60), async (req: Request, res: Response, next: NextFunction) => {
