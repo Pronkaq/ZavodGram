@@ -171,19 +171,23 @@ function pickCaptchaChallenge(): CaptchaChallenge {
   return challenges[getRandomInt(0, challenges.length - 1)];
 }
 
-router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response) => {
-  const challenge = pickCaptchaChallenge();
-  const captchaId = randomBytes(18).toString('base64url');
-  await redis.set(`captcha:${captchaId}`, hashValue(challenge.answer), 'EX', 300);
+router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const challenge = pickCaptchaChallenge();
+    const captchaId = randomBytes(18).toString('base64url');
+    await redis.set(`captcha:${captchaId}`, hashValue(challenge.answer), 'EX', 300);
 
-  res.json({
-    ok: true,
-    data: {
-      captchaId,
-      question: challenge.question,
-      expiresInSec: 300,
-    },
-  });
+    res.json({
+      ok: true,
+      data: {
+        captchaId,
+        question: challenge.question,
+        expiresInSec: 300,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post('/register', rateLimiter(5, 60), async (req: Request, res: Response, next: NextFunction) => {
