@@ -20,6 +20,27 @@ import notificationsRoutes from './modules/notifications/notifications.routes';
 import adminRoutes from './modules/admin/admin.routes';
 import { startTelegramChannelMirror } from './modules/messages/telegramChannelMirror';
 
+const DB_RETRY_DELAY_MS = 5000;
+
+let dbReady = false;
+
+async function connectDbWithRetry() {
+  while (!dbReady) {
+    try {
+      await connectDB();
+      dbReady = true;
+      logger.info('✓ Database connected and ready');
+      return;
+    } catch (err) {
+      logger.error('Database is unavailable, retrying', {
+        error: err instanceof Error ? err.message : String(err),
+        retryInMs: DB_RETRY_DELAY_MS,
+      });
+      await new Promise((resolve) => setTimeout(resolve, DB_RETRY_DELAY_MS));
+    }
+  }
+}
+
 async function bootstrap() {
   const app = express();
   const httpServer = createServer(app);
@@ -47,6 +68,7 @@ async function bootstrap() {
 
   app.get('/ready', async (_req, res) => {
     try {
+      if (!dbReady) throw new Error('DB not ready');
       await Promise.all([
         prismaHealthcheck(),
         redis.ping(),
@@ -55,6 +77,26 @@ async function bootstrap() {
     } catch {
       res.status(503).json({ ok: false });
     }
+  });
+
+  app.use('/api', (req, res, next) => {
+    if (dbReady) {
+      next();
+      return;
+    }
+
+    if (req.path === '/auth/captcha') {
+      next();
+      return;
+    }
+
+    res.status(503).json({
+      ok: false,
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Сервис временно недоступен, попробуйте еще раз',
+      },
+    });
   });
 
   // ── API Routes ──
@@ -68,9 +110,6 @@ async function bootstrap() {
 
   // ── Error handler (must be last) ──
   app.use(errorHandler);
-
-  // ── Database ──
-  await connectDB();
 
   // ── WebSocket ──
   setupWebSocket(httpServer);
@@ -89,6 +128,8 @@ async function bootstrap() {
 ╚══════════════════════════════════════╝
     `);
   });
+
+  void connectDbWithRetry();
 
   // ── Graceful shutdown ──
   const shutdown = async (signal: string) => {
