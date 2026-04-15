@@ -4,6 +4,7 @@ import { onSocket, ws } from '../api/socket';
 import { useAuth } from './AuthContext';
 
 const ChatContext = createContext(null);
+const SAFE_MODE_PLACEHOLDER = 'Сообщение недоступно: отправлено во время safe mode.';
 
 const topicKey = (chatId, topicId) => (topicId ? `${chatId}::${topicId}` : chatId);
 
@@ -19,6 +20,13 @@ const mergeMessagesUnique = (existing = [], incoming = []) => {
     if (at === bt) return String(a.id).localeCompare(String(b.id));
     return at - bt;
   });
+};
+
+const deriveMessagePreview = (msg) => {
+  if (!msg) return '';
+  if (msg.protectedBySafeMode) return SAFE_MODE_PLACEHOLDER;
+  if (msg.text) return msg.text;
+  return (msg.media?.length || 0) > 0 ? '[медиа]' : '';
 };
 
 export function ChatProvider({ children }) {
@@ -249,7 +257,7 @@ export function ChatProvider({ children }) {
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
-            lastMessagePreview: msg.text || ((msg.media?.length || 0) > 0 ? '[медиа]' : ''),
+            lastMessagePreview: deriveMessagePreview(msg),
             lastMessageAt: msg.createdAt || new Date().toISOString(),
             lastMessageFromId: msg.fromId || null,
             updatedAt: new Date().toISOString(),
