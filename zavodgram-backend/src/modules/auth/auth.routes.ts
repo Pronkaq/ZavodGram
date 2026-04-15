@@ -206,17 +206,15 @@ async function getCaptchaHash(captchaId: string): Promise<string | null> {
   return getLocalCaptchaHash(captchaId);
 }
 
-async function saveCaptchaHash(captchaId: string, answerHash: string, ttlSec: number): Promise<void> {
+function saveCaptchaHash(captchaId: string, answerHash: string, ttlSec: number): void {
   const key = `captcha:${captchaId}`;
   setLocalCaptcha(captchaId, answerHash, ttlSec);
 
-  try {
-    await redis.set(key, answerHash, 'EX', ttlSec);
-  } catch (err) {
+  redis.set(key, answerHash, 'EX', ttlSec).catch((err) => {
     logger.error('Failed to save captcha to Redis, using local fallback', {
       error: err instanceof Error ? err.message : String(err),
     });
-  }
+  });
 }
 
 async function deleteCaptcha(captchaId: string): Promise<void> {
@@ -323,7 +321,7 @@ router.get('/captcha', rateLimiter(120, 60), async (_req: Request, res: Response
   try {
     const challenge = pickCaptchaChallenge();
     const captchaId = randomBytes(18).toString('base64url');
-    await saveCaptchaHash(captchaId, hashValue(challenge.answer), CAPTCHA_TTL_SEC);
+    saveCaptchaHash(captchaId, hashValue(challenge.answer), CAPTCHA_TTL_SEC);
 
     res.json({
       ok: true,
