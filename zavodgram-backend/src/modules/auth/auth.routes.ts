@@ -97,6 +97,7 @@ function generateRecoveryCode() {
 }
 
 const CAPTCHA_TTL_SEC = 300;
+const LOCAL_CAPTCHA_MAX_ENTRIES = 5_000;
 
 type CaptchaRecord = {
   hash: string;
@@ -105,7 +106,35 @@ type CaptchaRecord = {
 
 const localCaptchaStore = new Map<string, CaptchaRecord>();
 
+function pruneExpiredLocalCaptchas(now = Date.now()) {
+  for (const [key, record] of localCaptchaStore.entries()) {
+    if (record.expiresAt <= now) localCaptchaStore.delete(key);
+  }
+}
+
+function trimLocalCaptchaStore() {
+  if (localCaptchaStore.size < LOCAL_CAPTCHA_MAX_ENTRIES) return;
+
+  let oldestKey: string | null = null;
+  let oldestExpiresAt = Number.POSITIVE_INFINITY;
+
+  for (const [key, record] of localCaptchaStore.entries()) {
+    if (record.expiresAt < oldestExpiresAt) {
+      oldestExpiresAt = record.expiresAt;
+      oldestKey = key;
+    }
+  }
+
+  if (oldestKey) {
+    localCaptchaStore.delete(oldestKey);
+    logger.warn('Local captcha fallback store reached capacity, evicting oldest entry');
+  }
+}
+
 function setLocalCaptcha(captchaId: string, answerHash: string, ttlSec: number) {
+  pruneExpiredLocalCaptchas();
+  trimLocalCaptchaStore();
+
   localCaptchaStore.set(captchaId, {
     hash: answerHash,
     expiresAt: Date.now() + ttlSec * 1000,
@@ -113,6 +142,8 @@ function setLocalCaptcha(captchaId: string, answerHash: string, ttlSec: number) 
 }
 
 function getLocalCaptchaHash(captchaId: string): string | null {
+  pruneExpiredLocalCaptchas();
+
   const record = localCaptchaStore.get(captchaId);
   if (!record) return null;
   if (record.expiresAt <= Date.now()) {
@@ -153,14 +184,22 @@ async function saveCaptchaHash(captchaId: string, answerHash: string, ttlSec: nu
 
 async function deleteCaptcha(captchaId: string): Promise<void> {
   const key = `captcha:${captchaId}`;
+  let redisDeleteFailed = false;
+
   try {
     await redis.del(key);
   } catch (err) {
+    redisDeleteFailed = true;
     logger.error('Failed to delete captcha from Redis', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+
   deleteLocalCaptcha(captchaId);
+
+  if (redisDeleteFailed) {
+    throw new Error('Failed to invalidate captcha in Redis');
+  }
 }
 
 async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
@@ -172,7 +211,15 @@ async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
     throw new ValidationError('Неверный ответ капчи');
   }
 
-  await deleteCaptcha(captchaId);
+  try {
+    await deleteCaptcha(captchaId);
+  } catch (err) {
+    logger.error('Captcha accepted but invalidation failed', {
+      captchaId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new ValidationError('Не удалось завершить проверку капчи, попробуйте еще раз');
+  }
 }
 
 async function assertRecoveryAllowed(nickname: string) {
