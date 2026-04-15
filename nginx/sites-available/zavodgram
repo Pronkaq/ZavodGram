@@ -1,5 +1,5 @@
 server {
-    server_name zavodgram.spronka.ru;
+    server_name web.zavodgram.ru zavodgram.spronka.ru;
     client_max_body_size 100m;
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
@@ -34,13 +34,17 @@ server {
 
 }
 server {
+    if ($host = web.zavodgram.ru) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
     if ($host = zavodgram.spronka.ru) {
         return 301 https://$host$request_uri;
     } # managed by Certbot
 
 
     listen 80;
-    server_name zavodgram.spronka.ru;
+    server_name web.zavodgram.ru zavodgram.spronka.ru;
     return 404; # managed by Certbot
 
 

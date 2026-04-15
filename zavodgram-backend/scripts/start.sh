@@ -1,6 +1,35 @@
 #!/bin/sh
 set -e
 
+ensure_runtime_secret() {
+  var_name="$1"
+  min_len="$2"
+  current_value="$(printenv "$var_name" || true)"
+
+  is_insecure=0
+  if [ -z "$current_value" ]; then
+    is_insecure=1
+  elif [ "${#current_value}" -lt "$min_len" ]; then
+    is_insecure=1
+  elif [ "$current_value" = "secret" ]; then
+    is_insecure=1
+  elif printf '%s' "$current_value" | tr '[:upper:]' '[:lower:]' | grep -q 'change-me'; then
+    is_insecure=1
+  fi
+
+  if [ "$is_insecure" -eq 1 ]; then
+    generated_value="$(openssl rand -hex 48)"
+    export "$var_name=$generated_value"
+    echo "[startup] WARNING: $var_name was missing/insecure; generated runtime secret"
+  fi
+}
+
+if [ "${NODE_ENV:-development}" = "production" ]; then
+  ensure_runtime_secret JWT_SECRET 32
+  ensure_runtime_secret JWT_REFRESH_SECRET 32
+  ensure_runtime_secret ENCRYPTION_KEY 32
+fi
+
 echo "[startup] checking prisma directory..."
 ls -la /app/prisma || true
 
