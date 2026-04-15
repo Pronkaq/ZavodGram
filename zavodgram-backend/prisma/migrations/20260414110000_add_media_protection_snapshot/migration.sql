@@ -1,0 +1,2 @@
+ALTER TABLE "MediaFile"
+ADD COLUMN "protectedBySafeMode" BOOLEAN NOT NULL DEFAULT false;

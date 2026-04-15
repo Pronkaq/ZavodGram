@@ -84,7 +84,7 @@ router.get('/:chatId/messages', authMiddleware, rateLimiter(120, 60), async (req
               },
             },
             media: {
-              select: { id: true, type: true, originalName: true, mimeType: true, size: true, thumbnail: true, width: true, height: true },
+              select: { id: true, type: true, originalName: true, mimeType: true, size: true, thumbnail: true, width: true, height: true, protectedBySafeMode: true },
             },
             reactions: {
               select: { emoji: true, userId: true },
@@ -184,9 +184,9 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     }
 
     const inputMediaIds = ensureUuidArray(data.mediaIds || [], 'mediaIds');
-    if (chat.contentProtectionEnabled && inputMediaIds.length > 0) {
-      throw new ForbiddenError('В этом чате отправка медиа отключена защитой контента');
-    }
+    const shouldLockMediaAfterSafeMode = inputMediaIds.length > 0
+      && chat.contentProtectionEnabled
+      && (chat.type === 'PRIVATE' || chat.type === 'SECRET');
 
     const message = await prisma.$transaction(async (tx) => {
       const created = await tx.message.create({
@@ -214,7 +214,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
 
         await tx.mediaFile.updateMany({
           where: { id: { in: inputMediaIds }, uploaderId: req.user!.userId, messageId: null },
-          data: { messageId: created.id },
+          data: { messageId: created.id, protectedBySafeMode: shouldLockMediaAfterSafeMode },
         });
       }
 
