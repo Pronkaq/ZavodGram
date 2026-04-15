@@ -44,7 +44,8 @@ export function useDirectContentProtection({
   const acceptDirectContentProtectionRequest = useCallback(async () => {
     if (!activeChat || !incomingProtectionRequest) return;
     try {
-      const updated = await chatsApi.update(activeChat, { contentProtectionEnabled: true });
+      const nextVote = incomingRequestType === 'ENABLE';
+      const updated = await chatsApi.update(activeChat, { contentProtectionEnabled: nextVote });
       await loadChats();
       setShieldActivationNotice(incomingRequestType === 'ENABLE'
         ? (updated?.contentProtectionEnabled ? 'Щит контента включён у обоих участников' : 'Запрос принят')
@@ -57,7 +58,8 @@ export function useDirectContentProtection({
   const declineDirectContentProtectionRequest = useCallback(async () => {
     if (!activeChat || !incomingProtectionRequest) return;
     try {
-      await chatsApi.update(activeChat, { contentProtectionEnabled: false });
+      const nextVote = incomingRequestType !== 'ENABLE';
+      await chatsApi.update(activeChat, { contentProtectionEnabled: nextVote });
       await loadChats();
       setShieldActivationNotice(incomingRequestType === 'ENABLE'
         ? 'Запрос на щит отклонён'
