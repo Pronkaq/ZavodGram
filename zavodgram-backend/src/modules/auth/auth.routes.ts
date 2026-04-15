@@ -105,6 +105,67 @@ type CaptchaRecord = {
 };
 
 const localCaptchaStore = new Map<string, CaptchaRecord>();
+const usedCaptchaStore = new Map<string, number>();
+
+function pruneExpiredLocalCaptchas(now = Date.now()) {
+  for (const [key, record] of localCaptchaStore.entries()) {
+    if (record.expiresAt <= now) localCaptchaStore.delete(key);
+  }
+}
+
+function trimLocalCaptchaStore() {
+  if (localCaptchaStore.size < LOCAL_CAPTCHA_MAX_ENTRIES) return;
+
+  let oldestKey: string | null = null;
+  let oldestExpiresAt = Number.POSITIVE_INFINITY;
+
+  for (const [key, record] of localCaptchaStore.entries()) {
+    if (record.expiresAt < oldestExpiresAt) {
+      oldestExpiresAt = record.expiresAt;
+      oldestKey = key;
+    }
+  }
+
+  if (oldestKey) {
+    localCaptchaStore.delete(oldestKey);
+    logger.warn('Local captcha fallback store reached capacity, evicting oldest entry');
+  }
+}
+
+function pruneUsedCaptchaMarks(now = Date.now()) {
+  for (const [key, expiresAt] of usedCaptchaStore.entries()) {
+    if (expiresAt <= now) usedCaptchaStore.delete(key);
+  }
+}
+
+function trimUsedCaptchaStore() {
+  if (usedCaptchaStore.size < LOCAL_CAPTCHA_MAX_ENTRIES) return;
+
+  let oldestKey: string | null = null;
+  let oldestExpiresAt = Number.POSITIVE_INFINITY;
+
+  for (const [key, expiresAt] of usedCaptchaStore.entries()) {
+    if (expiresAt < oldestExpiresAt) {
+      oldestExpiresAt = expiresAt;
+      oldestKey = key;
+    }
+  }
+
+  if (oldestKey) {
+    usedCaptchaStore.delete(oldestKey);
+  }
+}
+
+function markCaptchaAsUsed(captchaId: string, ttlSec: number) {
+  pruneUsedCaptchaMarks();
+  trimUsedCaptchaStore();
+  usedCaptchaStore.set(captchaId, Date.now() + ttlSec * 1000);
+}
+
+function isCaptchaMarkedAsUsed(captchaId: string) {
+  pruneUsedCaptchaMarks();
+  return usedCaptchaStore.has(captchaId);
+}
 
 function pruneExpiredLocalCaptchas(now = Date.now()) {
   for (const [key, record] of localCaptchaStore.entries()) {
@@ -203,6 +264,10 @@ async function deleteCaptcha(captchaId: string): Promise<void> {
 }
 
 async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
+  if (isCaptchaMarkedAsUsed(captchaId)) {
+    throw new ValidationError('Капча устарела, обновите и попробуйте снова');
+  }
+
   const expectedHash = await getCaptchaHash(captchaId);
   if (!expectedHash) throw new ValidationError('Капча устарела, обновите и попробуйте снова');
 
@@ -211,15 +276,8 @@ async function verifyCaptcha(captchaId: string, captchaAnswer: string) {
     throw new ValidationError('Неверный ответ капчи');
   }
 
-  try {
-    await deleteCaptcha(captchaId);
-  } catch (err) {
-    logger.error('Captcha accepted but invalidation failed', {
-      captchaId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw new ValidationError('Не удалось завершить проверку капчи, попробуйте еще раз');
-  }
+  markCaptchaAsUsed(captchaId, CAPTCHA_TTL_SEC);
+  await deleteCaptcha(captchaId);
 }
 
 async function assertRecoveryAllowed(nickname: string) {
