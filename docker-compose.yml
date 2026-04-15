@@ -43,8 +43,9 @@ services:
     environment:
       DATABASE_URL: postgresql://zavodgram:${DB_PASSWORD:-secret}@postgres:5432/zavodgram?schema=public
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-too}
+      JWT_SECRET: ${JWT_SECRET:-zavodgram-local-jwt-secret-2026-please-change}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-zavodgram-local-jwt-refresh-secret-2026-change}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-zavodgram-local-encryption-key-32b}
       PORT: 4000
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
