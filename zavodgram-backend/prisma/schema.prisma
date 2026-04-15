@@ -214,6 +214,7 @@ model Message {
   edited    Boolean       @default(false)
   deleted   Boolean       @default(false)
   encrypted Boolean       @default(false)  // E2E encrypted content
+  protectedBySafeMode Boolean @default(false)
   commentsEnabled Boolean @default(true)
 
   // Ответ на сообщение

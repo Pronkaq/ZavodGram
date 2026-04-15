@@ -169,8 +169,11 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
       });
       if (!original || original.deleted) throw new NotFoundError('Пересылаемое сообщение');
       if (
-        original.chat?.contentProtectionEnabled
-        && (original.chat.type === 'PRIVATE' || original.chat.type === 'SECRET')
+        original.protectedBySafeMode
+        || (
+          original.chat?.contentProtectionEnabled
+          && (original.chat.type === 'PRIVATE' || original.chat.type === 'SECRET')
+        )
       ) {
         throw new ForbiddenError('Пересылка из защищённого личного чата запрещена');
       }
@@ -187,6 +190,8 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
     const shouldLockMediaAfterSafeMode = inputMediaIds.length > 0
       && chat.contentProtectionEnabled
       && (chat.type === 'PRIVATE' || chat.type === 'SECRET');
+    const shouldLockMessageAfterSafeMode = chat.contentProtectionEnabled
+      && (chat.type === 'PRIVATE' || chat.type === 'SECRET');
 
     const message = await prisma.$transaction(async (tx) => {
       const created = await tx.message.create({
@@ -198,6 +203,7 @@ router.post('/:chatId/messages', authMiddleware, rateLimiter(40, 60), async (req
           forwardedFromId: data.forwardedFromId || undefined,
           forwardedFromName,
           encrypted: data.encrypted || false,
+          protectedBySafeMode: shouldLockMessageAfterSafeMode,
           commentsEnabled: chat.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
           topicId: data.topicId || null,
         },
