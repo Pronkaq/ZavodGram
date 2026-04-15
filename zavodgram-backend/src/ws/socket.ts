@@ -134,7 +134,7 @@ export function setupWebSocket(httpServer: HttpServer) {
         const membership = await requireChatMembership(prisma, data.chatId, userId);
         const chatMeta = await prisma.chat.findUnique({
           where: { id: data.chatId },
-          select: { type: true, topicsEnabled: true },
+          select: { type: true, topicsEnabled: true, contentProtectionEnabled: true },
         });
         if (!chatMeta) return socket.emit('error', { message: 'Чат не найден' });
         if (chatMeta.type === 'GROUP' && chatMeta.topicsEnabled) {
@@ -173,8 +173,11 @@ export function setupWebSocket(httpServer: HttpServer) {
           });
           if (!orig || orig.deleted) return socket.emit('error', { message: 'Источник пересылки не найден' });
           if (
-            orig.chat?.contentProtectionEnabled
-            && (orig.chat.type === 'PRIVATE' || orig.chat.type === 'SECRET')
+            orig.protectedBySafeMode
+            || (
+              orig.chat?.contentProtectionEnabled
+              && (orig.chat.type === 'PRIVATE' || orig.chat.type === 'SECRET')
+            )
           ) {
             return socket.emit('error', { message: 'Пересылка из защищённого личного чата запрещена' });
           }
@@ -196,6 +199,7 @@ export function setupWebSocket(httpServer: HttpServer) {
             forwardedFromId: data.forwardedFromId || undefined,
             forwardedFromName,
             encrypted: data.encrypted || false,
+            protectedBySafeMode: chatMeta.contentProtectionEnabled && (chatMeta.type === 'PRIVATE' || chatMeta.type === 'SECRET'),
             commentsEnabled: chatMeta.type === 'CHANNEL' && !data.replyToId ? (data.commentsEnabled ?? true) : true,
             topicId: data.topicId || null,
           },
