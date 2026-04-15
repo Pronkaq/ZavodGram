@@ -53,11 +53,10 @@ function getMediaType(mime: string): 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO' {
 }
 
 
-function resolveAuthPayload(req: Request, options?: { allowQueryToken?: boolean }): AuthPayload {
+function resolveAuthPayload(req: Request): AuthPayload {
   const header = req.headers.authorization;
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  const queryToken = options?.allowQueryToken && typeof req.query.token === 'string' ? req.query.token : null;
-  const token = bearer || queryToken;
+  const token = bearer;
   if (!token) throw new AuthError();
   try {
     return jwt.verify(token, config.jwt.secret) as AuthPayload;
@@ -338,7 +337,7 @@ router.post('/:id/attach', authMiddleware, rateLimiter(60, 60), async (req: Requ
 
 router.get('/:id/download', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const payload = resolveAuthPayload(req, { allowQueryToken: true });
+    const payload = resolveAuthPayload(req);
     const media = await prisma.mediaFile.findUnique({ where: { id: req.params.id } });
     if (!media) throw new NotFoundError('Медиафайл');
 
@@ -375,7 +374,7 @@ router.post('/:id/transcribe', authMiddleware, rateLimiter(20, 60), async (req: 
 
 router.get('/legacy', rateLimiter(120, 60), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const payload = resolveAuthPayload(req, { allowQueryToken: true });
+    const payload = resolveAuthPayload(req);
     const rawPath = typeof req.query.path === 'string' ? req.query.path : '';
     const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
 
