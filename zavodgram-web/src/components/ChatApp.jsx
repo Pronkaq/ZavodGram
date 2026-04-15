@@ -701,7 +701,7 @@ export default function ChatApp() {
                         border: '1px solid rgba(88, 255, 154, 0.9)',
                         background: 'rgba(24, 66, 43, 0.42)',
                         boxShadow: '0 0 0 1px rgba(92, 255, 160, 0.35), 0 0 16px rgba(88, 255, 154, 0.75), 0 0 32px rgba(88, 255, 154, 0.35)',
-                      } : acd?.contentProtectionRequestedByMe ? {
+                      } : incomingProtectionRequest ? {
                         color: '#EEF6FF',
                         border: '1px solid rgba(153, 197, 255, 0.7)',
                         background: 'rgba(44, 72, 112, 0.34)',
@@ -1165,7 +1165,7 @@ export default function ChatApp() {
       <ChatMessageContextMenu
         contextMenu={contextMenu}
         styles={s}
-        canForward={!protectedDirectChat}
+        canForward={!protectedDirectChat && !(contextMenu?.msg?.media || []).some((item) => item?.protectedBySafeMode)}
         canDelete={!protectedDirectChat}
         onReply={() => { setReplyTo(contextMenu.msg); setEditingMsg(null); setInput(''); setContextMenu(null); inpRef.current?.focus(); }}
         onForward={() => { setForwardMsg(contextMenu.msg); setContextMenu(null); }}
