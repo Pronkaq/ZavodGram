@@ -56,7 +56,8 @@ function getMediaType(mime: string): 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO' {
 function resolveAuthPayload(req: Request): AuthPayload {
   const header = req.headers.authorization;
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  const token = bearer;
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : null;
+  const token = bearer || queryToken;
   if (!token) throw new AuthError();
   try {
     return jwt.verify(token, config.jwt.secret) as AuthPayload;
