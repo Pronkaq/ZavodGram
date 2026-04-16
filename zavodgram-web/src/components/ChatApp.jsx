@@ -35,18 +35,6 @@ import { useChatTopicFlow } from './useChatTopicFlow';
 import { useChatMessageViewport } from './useChatMessageViewport';
 import { useChatComposerActions } from './useChatComposerActions';
 import { useVoiceMessaging } from './useVoiceMessaging';
-import { useChannelManagement } from './useChannelManagement';
-import { useProfileSettings } from './useProfileSettings';
-import { useChatCreation } from './useChatCreation';
-import { useGroupManagement } from './useGroupManagement';
-import { usePostCommentsFlow } from './usePostCommentsFlow';
-import { useChannelAttachments } from './useChannelAttachments';
-import { useMessageReactions } from './useMessageReactions';
-import { useMessageTextRenderer } from './useMessageTextRenderer';
-import { useChannelInviteFlow } from './useChannelInviteFlow';
-import { useSettingsPanelFlow } from './useSettingsPanelFlow';
-import { useComposerSendState } from './useComposerSendState';
-import { useDirectContentProtection } from './useDirectContentProtection';
 
 const tc = typeColors;
 
@@ -236,11 +224,6 @@ export default function ChatApp() {
     messagesApi,
   });
 
-  const { canSend: canSendComposerMessage, sendButtonOpacity } = useComposerSendState({
-    input,
-    pendingMedia,
-  });
-
   const { handleVoiceRecordToggle, handleTranscribe } = useVoiceMessaging({
     activeChat,
     acd,
@@ -290,48 +273,67 @@ export default function ChatApp() {
     });
   }, []);
 
-  const { openProfile, saveProfileCard, handleAvatarUpload } = useProfileSettings({
-    user,
-    usersApi,
-    mediaApi,
-    updateUser,
-    nameEdit,
-    bioEdit,
-    tagEdit,
-    setProfileData,
-    setSettingsMode,
-    setSettingsSubpage,
-    setProfilePanel,
-    setSettingsSaveState,
-  });
+  const openProfile = async (userId) => {
+    if (userId === user.id) { setProfileData({ ...user, online: true }); }
+    else { try { const data = await usersApi.getById(userId); setProfileData(data); } catch {} }
+    setSettingsMode(false);
+    setSettingsSubpage(null);
+    setProfilePanel(userId);
+  };
 
-  const {
-    handleNewChat,
-    openDirectChatWithUser,
-    createGroupOrChannel,
-    searchNewChat,
-  } = useChatCreation({
-    userId: user.id,
-    chats,
-    newChatMode,
-    groupName,
-    groupDesc,
-    groupMembers,
-    setNewChatSearch,
-    setNewChatResults,
-    setShowMobileChat,
-    setPostCommentsModal,
-    setPostCommentReplyTo,
-    setNewChatModal,
-    setNewChatMode,
-    setGroupName,
-    setGroupDesc,
-    setGroupMembers,
-    chatsApi,
-    usersApi,
-    loadChats,
-    selectChat,
-  });
+  const handleNewChat = async (otherUserId, type = 'PRIVATE') => {
+    try {
+      const chat = await chatsApi.create({ type, memberIds: [otherUserId] });
+      await loadChats(); selectChat(chat.id); setShowMobileChat(true);
+      setNewChatModal(false); setNewChatMode('search');
+    } catch (err) { console.error(err); }
+  };
+
+  const openDirectChatWithUser = useCallback(async (targetUser) => {
+    const targetId = targetUser?.id;
+    if (!targetId || targetId === user.id) return;
+
+    const existingDirect = chats.find((chat) => {
+      if (chat.type !== 'PRIVATE' && chat.type !== 'SECRET') return false;
+      if (chat.peer?.id) return chat.peer.id === targetId;
+      const memberIds = new Set((chat.members || []).map((member) => member.userId));
+      return memberIds.has(user.id) && memberIds.has(targetId);
+    });
+
+    if (existingDirect) {
+      selectChat(existingDirect.id);
+      setShowMobileChat(true);
+      setPostCommentsModal(null);
+      setPostCommentReplyTo(null);
+      return;
+    }
+
+    try {
+      const chat = await chatsApi.create({ type: 'PRIVATE', memberIds: [targetId] });
+      await loadChats();
+      selectChat(chat.id);
+      setShowMobileChat(true);
+      setPostCommentsModal(null);
+      setPostCommentReplyTo(null);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [chats, loadChats, selectChat, user.id]);
+
+  const createGroupOrChannel = async () => {
+    if (!groupName.trim()) return;
+    try {
+      const chat = await chatsApi.create({ type: newChatMode, name: groupName, description: groupDesc, memberIds: groupMembers.map(m => m.id) });
+      await loadChats(); selectChat(chat.id); setShowMobileChat(true);
+      setNewChatModal(false); setNewChatMode('search'); setGroupName(''); setGroupDesc(''); setGroupMembers([]);
+    } catch (err) { console.error(err); }
+  };
+
+  const searchNewChat = async (q) => {
+    setNewChatSearch(q);
+    if (q.length < 2) { setNewChatResults([]); return; }
+    try { setNewChatResults(await usersApi.search(q)); } catch {}
+  };
 
   const handleMute = async (chatId) => {
     const chat = chats.find(c => c.id === chatId);
