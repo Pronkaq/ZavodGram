@@ -18,6 +18,7 @@ import messagesRoutes from './modules/messages/messages.routes';
 import mediaRoutes from './modules/media/media.routes';
 import notificationsRoutes from './modules/notifications/notifications.routes';
 import adminRoutes from './modules/admin/admin.routes';
+import channelMirrorRoutes from './modules/channels/channelMirror.routes';
 import { startTelegramChannelMirror } from './modules/messages/telegramChannelMirror';
 
 const DB_RETRY_DELAY_MS = 5000;
@@ -107,6 +108,7 @@ async function bootstrap() {
   app.use('/api/media', mediaRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/channels', channelMirrorRoutes);
 
   // ── Error handler (must be last) ──
   app.use(errorHandler);
