@@ -1212,6 +1212,7 @@ export default function ChatApp() {
         onGroupMemberAdd={(member) => setGroupMembers((prev) => [...prev, member])}
         onGroupMemberRemove={(memberId) => setGroupMembers((prev) => prev.filter((item) => item.id !== memberId))}
         onCreate={createGroupOrChannel}
+        onMirrorCreated={(channel) => { loadChats(); selectChat(channel.id); setShowMobileChat(true); setNewChatModal(false); }}
       />
 
       <ChannelInfoModal
